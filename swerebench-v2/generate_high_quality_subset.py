@@ -122,6 +122,9 @@ def build_summary(rows: list[dict]) -> dict:
         "files": [
             "high_quality_conf_ge_0.95_tasks.csv",
             "high_quality_conf_ge_0.95_instance_ids.txt",
+            "high_quality_conf_ge_0.95_easy_instance_ids.txt",
+            "high_quality_conf_ge_0.95_medium_instance_ids.txt",
+            "high_quality_conf_ge_0.95_hard_instance_ids.txt",
         ],
     }
 
