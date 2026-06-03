@@ -1,4 +1,5 @@
 runs/
+swerebench-v2/harbor-tasks/
 __pycache__/
 *.pyc
 .DS_Store

@@ -1,2 +1,2 @@
 datasets>=4.5.0
-openai>=2.16.0
+datacurve-pier @ git+https://github.com/datacurve-ai/pier
