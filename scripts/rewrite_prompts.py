@@ -36,13 +36,19 @@ tell the agent where the fix is or how to implement it.
 
 Rules:
 - Preserve every user-visible behavioral requirement.
+- Preserve public API names, class/function/method names, CLI flags, config keys,
+  import/export compatibility, and exact input/output literals when they define
+  the requested behavior.
 - Remove issue template boilerplate, external URLs, PR/test references, and
   solution hints.
 - Do not mention tests, hidden tests, patches, PRs, metadata, confidence,
   difficulty, files changed, or exact file paths.
 - Do not invent requirements.
 - Do not name specific source files unless the original requirement is an API
-  addition whose public name is essential.
+  addition whose public import path is essential.
+- Do not erase a bug's concrete observable edge case just because the original
+  issue also included an implementation hint. Keep the symptom and expected
+  behavior; remove only the internal diagnosis.
 - Keep the prompt actionable for an agent exploring the repository.
 - Prefer one to four short paragraphs or a short bullet list.
 
@@ -71,6 +77,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--instance-id", action="append", default=[])
     parser.add_argument("--sleep-seconds", type=float, default=0.0)
+    parser.add_argument(
+        "--fail-on-quality-warnings",
+        action="store_true",
+        help="Exit non-zero if a rewrite drops likely public symbols or exact edge-case literals.",
+    )
     return parser.parse_args()
 
 
@@ -114,6 +125,107 @@ def normalize_text(text: str) -> str:
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = re.sub(r"\n{4,}", "\n\n\n", text)
     return text.strip()
+
+
+def normalize_for_search(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip().lower()
+
+
+def extract_public_symbols(interface: str) -> list[str]:
+    """Return likely public API symbols that should survive a rewrite.
+
+    The generated interface block is noisy, so this intentionally only reads
+    declaration-like lines. Inputs, outputs, descriptions, and file locations
+    are not treated as required prompt content.
+    """
+    if not interface or interface.strip() == "No new interfaces are introduced.":
+        return []
+
+    symbols = []
+    for line in interface.splitlines():
+        match = re.match(r"\s*(Method|Function|Class|CLI|Command|Option):\s*(.+)", line, re.I)
+        if not match:
+            continue
+        declaration = match.group(2).strip()
+        declaration = re.split(r"\s+[–-]\s+|\s+-\s+|\s+in\s+", declaration, maxsplit=1)[0]
+        declaration = declaration.split("(", 1)[0]
+        declaration = declaration.strip("` .")
+        if not declaration:
+            continue
+
+        candidates = re.findall(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*", declaration)
+        for candidate in candidates:
+            if candidate.lower() in {"method", "function", "class", "cli", "command", "option"}:
+                continue
+            if candidate not in symbols:
+                symbols.append(candidate)
+    return symbols
+
+
+def extract_edge_case_literals(text: str) -> list[str]:
+    """Return exact short literals that look like behavior-defining values."""
+    if not text:
+        return []
+
+    literals = []
+    for match in re.finditer(r'"([^"\n]{0,80})"|\'([^\'\n]{0,80})\'', text):
+        literal = match.group(1) if match.group(1) is not None else match.group(2)
+        literal = literal.strip()
+        if should_keep_literal(literal) and literal not in literals:
+            literals.append(literal)
+
+    if re.search(r"\bempty string\b", text, re.I) and "" not in literals:
+        literals.append("")
+    return literals
+
+
+def should_keep_literal(literal: str) -> bool:
+    if literal.startswith(("http://", "https://")):
+        return False
+    if re.search(r"\.(?:py|ts|tsx|js|jsx|go|md|json|yaml|yml|toml)(?::\d+)?$", literal):
+        return False
+    if re.fullmatch(r"v?\d+(?:\.\d+){1,3}", literal):
+        return False
+    if re.fullmatch(r"[A-Fa-f0-9]{12,}", literal):
+        return False
+    return True
+
+
+def rewrite_search_text(rewrite: dict) -> str:
+    return "\n".join(
+        [
+            rewrite.get("rewritten_prompt", ""),
+            "\n".join(rewrite.get("preserved_requirements", [])),
+        ]
+    )
+
+
+def contains_literal(text: str, literal: str) -> bool:
+    if re.fullmatch(r"[A-Za-z0-9_]+", literal):
+        return re.search(rf"\b{re.escape(literal)}\b", text, re.I) is not None
+    return normalize_for_search(literal) in normalize_for_search(text)
+
+
+def validate_rewrite_quality(row: dict, rewrite: dict) -> list[str]:
+    """Warn when a rewrite likely lost behavior-critical prompt content."""
+    rewritten = rewrite_search_text(rewrite)
+    normalized_rewritten = normalize_for_search(rewritten)
+    warnings = []
+
+    for symbol in extract_public_symbols(normalize_text(row["interface"] or "")):
+        if normalize_for_search(symbol) not in normalized_rewritten:
+            warnings.append(f"missing_public_symbol:{symbol}")
+
+    original = normalize_text(row["problem_statement"] or "")
+    for literal in extract_edge_case_literals(original):
+        if literal == "":
+            if not re.search(r'\bempty string\b|""', rewritten, re.I):
+                warnings.append("missing_edge_literal:<empty string>")
+            continue
+        if not contains_literal(rewritten, literal):
+            warnings.append(f"missing_edge_literal:{literal}")
+
+    return warnings
 
 
 def user_prompt(row: dict) -> str:
@@ -185,6 +297,9 @@ def write_markdown(path: Path, record: dict) -> None:
     lines.extend(f"- {item}" for item in rewrite["removed_noise"])
     lines.extend(["", "## Risk Notes", ""])
     lines.extend(f"- {item}" for item in rewrite["risk_notes"])
+    if record["quality_warnings"]:
+        lines.extend(["", "## Quality Warnings", ""])
+        lines.extend(f"- {item}" for item in record["quality_warnings"])
     lines.extend(["", "## Original Prompt", "", original["problem_statement"]])
     if original["interface"]:
         lines.extend(["", "## Original Interface", "", original["interface"]])
@@ -213,11 +328,13 @@ def main() -> None:
     with jsonl_path.open("w", encoding="utf-8") as handle:
         for row in rows:
             rewrite, raw_output = rewrite_prompt(client, args.model, row)
+            quality_warnings = validate_rewrite_quality(row, rewrite)
             task_meta = compact[row["instance_id"]]
             record = {
                 "model": args.model,
                 "task": task_meta,
                 "rewrite": rewrite,
+                "quality_warnings": quality_warnings,
                 "original": {
                     "problem_statement": normalize_text(row["problem_statement"] or ""),
                     "interface": normalize_text(row["interface"] or ""),
@@ -228,6 +345,12 @@ def main() -> None:
             markdown_path = args.output_dir / f"{row['instance_id']}.md"
             write_markdown(markdown_path, record)
             print(f"rewrote {row['instance_id']}")
+            for warning in quality_warnings:
+                print(f"warning {row['instance_id']}: {warning}")
+            if quality_warnings and args.fail_on_quality_warnings:
+                raise SystemExit(
+                    f"quality warnings for {row['instance_id']}: {', '.join(quality_warnings)}"
+                )
             if args.sleep_seconds:
                 time.sleep(args.sleep_seconds)
 
