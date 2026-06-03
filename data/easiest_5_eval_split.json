@@ -1,0 +1,66 @@
+{
+  "name": "easiest_5_eval_split",
+  "selection_method": "Judgmental composite of aggregate pass-rate rank and weak-model-only rank, with weak-model solvability weighted more heavily.",
+  "tasks": [
+    {
+      "task_id": "true-myth-iterable-collection-combinators",
+      "problem_title": "Add iterable collection combinators to true-myth",
+      "repository": "true-myth/true-myth",
+      "language": "typescript",
+      "aggregate_rank": 1,
+      "aggregate_pass_rate_pct": 75.96,
+      "weak_model_rank": 1,
+      "weak_model_pass_rate_pct": 46.43,
+      "weak_models_solved_count": 5,
+      "rationale": "Clear easiest task: rank 1 in both aggregate and weak-model views."
+    },
+    {
+      "task_id": "happy-dom-abort-pending-body-reads",
+      "problem_title": "Abort pending body reads on shutdown",
+      "repository": "capricorn86/happy-dom",
+      "language": "typescript",
+      "aggregate_rank": 2,
+      "aggregate_pass_rate_pct": 74.51,
+      "weak_model_rank": 3,
+      "weak_model_pass_rate_pct": 34.62,
+      "weak_models_solved_count": 5,
+      "rationale": "Very high agreement: aggregate rank 2 and weak-model rank 3."
+    },
+    {
+      "task_id": "wazero-multi-module-snapshots",
+      "problem_title": "Add multi-module memory snapshots to wazero",
+      "repository": "wazero/wazero",
+      "language": "go",
+      "aggregate_rank": 11,
+      "aggregate_pass_rate_pct": 57.69,
+      "weak_model_rank": 2,
+      "weak_model_pass_rate_pct": 35.71,
+      "weak_models_solved_count": 5,
+      "rationale": "Weak-model rank 2 with a strong aggregate rank 11; weak models solve it more often than most aggregate-top tasks."
+    },
+    {
+      "task_id": "psd-tools-blend-range-api",
+      "problem_title": "Add typed blend range access and blend-if compositing",
+      "repository": "psd-tools/psd-tools",
+      "language": "python",
+      "aggregate_rank": 9,
+      "aggregate_pass_rate_pct": 58.65,
+      "weak_model_rank": 4,
+      "weak_model_pass_rate_pct": 32.14,
+      "weak_models_solved_count": 5,
+      "rationale": "Weak-model rank 4 and aggregate rank 9; consistently easy under both signals."
+    },
+    {
+      "task_id": "ytt-jsonpath-query-api",
+      "problem_title": "Add JSONPath query APIs to orderedmap and Starlark modules",
+      "repository": "carvel-dev/ytt",
+      "language": "go",
+      "aggregate_rank": 7,
+      "aggregate_pass_rate_pct": 60.58,
+      "weak_model_rank": 6,
+      "weak_model_pass_rate_pct": 21.43,
+      "weak_models_solved_count": 4,
+      "rationale": "Aggregate rank 7 and weak-model rank 6, solved by more distinct weak models than close alternatives."
+    }
+  ]
+}

@@ -1,0 +1,114 @@
+difficulty_rank,task_id,problem_title,repository,language,prompt_characters,pass_rate_pct,passed,non_error_trials,errored,total_trials,model_efforts,avg_steps,avg_cost_usd,avg_duration_seconds
+1,true-myth-iterable-collection-combinators,Add iterable collection combinators to true-myth,true-myth/true-myth,typescript,1975,75.96,79,104,0,104,26,80.62,3.7329,1253.73
+2,happy-dom-abort-pending-body-reads,Abort pending body reads on shutdown,capricorn86/happy-dom,typescript,665,74.51,76,102,0,102,26,105.12,6.159,1839.11
+3,returns-validated-error-accumulation,Add an error-accumulating Validated container,dry-python/returns,python,3137,65.38,68,104,0,104,26,79.66,3.4768,1301.71
+4,ofetch-per-origin-circuit-breaker,Add a per-origin circuit breaker to ofetch,unjs/ofetch,typescript,3376,63.64,63,99,0,99,26,51.14,2.4907,1853.48
+5,drizzle-orm-window-function-builders,Add typed window function builders with OVER clauses,drizzle-team/drizzle-orm,typescript,2340,62.5,65,104,0,104,26,122.46,4.4584,1503.88
+6,sql-formatter-bigquery-pipe-formatting,Format BigQuery pipe syntax queries correctly,sql-formatter-org/sql-formatter,typescript,1697,61.54,64,104,0,104,26,107.0,4.9841,1997.6
+7,ytt-jsonpath-query-api,Add JSONPath query APIs to orderedmap and Starlark modules,carvel-dev/ytt,go,2418,60.58,63,104,0,104,26,58.02,2.3317,1598.95
+8,httpx-deterministic-cookie-store,Add a deterministic CookieStore with modern Set-Cookie parsing,encode/httpx,typescript,3150,59.62,62,104,0,104,26,82.3,3.1071,1474.54
+9,psd-tools-blend-range-api,Add typed blend range access and blend-if compositing,psd-tools/psd-tools,python,2448,58.65,61,104,0,104,26,76.82,2.6463,1117.23
+10,actionlint-action-pinning-lint,Add action pinning linting for actions and reusable workflows,rhysd/actionlint,go,2060,58.25,60,103,0,103,26,106.56,4.6327,1352.77
+11,wazero-multi-module-snapshots,Add multi-module memory snapshots to wazero,wazero/wazero,go,3584,57.69,60,104,0,104,26,48.86,1.6862,1256.56
+12,query-persist-restored-query-state,Preserve restored query state in persisted snapshots,TanStack/query,typescript,2835,57.28,59,103,0,103,26,116.25,6.1147,1873.86
+13,yjs-map-conflict-detection,Add deterministic map conflict detection to Y.Map writes,yjs/yjs,javascript,1659,56.73,59,104,0,104,26,104.68,5.2819,1860.41
+14,vulture-persistent-analysis-cache,Add a persistent analysis cache to Vulture,jendrikseipp/vulture,python,2280,55.77,58,104,0,104,26,72.58,2.8636,1745.69
+15,testem-per-launcher-reports,Partition report files by launcher and expand report templates,testem/testem,javascript,2092,55.34,57,103,0,103,26,72.44,2.7291,1086.11
+16,abs-module-cache-flags,"Harden module loading, cache introspection, and script flags",abs-lang/abs,go,2524,53.4,55,103,0,103,26,106.93,3.5815,1354.67
+17,ts-pattern-match-each,Add `matchEach` to ts-pattern,gvergnaud/ts-pattern,typescript,2970,50.96,53,104,0,104,26,48.95,1.8609,1058.54
+18,abs-stepped-slices,Add stepped slices for arrays and strings,abs-lang/abs,go,3384,50.96,53,104,0,104,26,98.44,3.881,1517.78
+19,aiomonitor-task-snapshots-diff,"Add task snapshots, inspection, and diffing to aiomonitor",aio-libs/aiomonitor,python,1733,50.0,52,104,0,104,26,68.13,2.9014,1131.43
+20,koota-entity-snapshot-rollback,Add entity snapshot and rollback APIs to Koota,pmndrs/koota,python,2387,50.0,52,104,0,104,26,80.03,3.4784,1273.92
+21,obsidian-linter-scoped-ignore-markers,Add scoped per-rule ignore markers to Obsidian Linter,platers/obsidian-linter,typescript,2142,50.0,52,104,0,104,26,82.52,4.7161,1932.09
+22,arcane-drift-detection-baselines,Add drift detection and compliance baselines,getarcaneapp/arcane,go,5385,50.0,52,104,0,104,26,125.88,5.8775,1854.96
+23,helm-unified-manifest-stream,Add unified manifest stream output across Helm commands,helm/helm,go,954,50.0,52,104,0,104,26,155.46,8.5592,2588.56
+24,vitest-duration-sharding,Add duration-aware sharding to Vitest,vitest-dev/vitest,typescript,4311,48.08,50,104,0,104,26,112.77,4.5783,1509.5
+25,tomlkit-toml-table-converters,Add bidirectional TOML table converters,python-poetry/tomlkit,python,1944,47.12,49,104,0,104,26,94.6,4.4018,1774.41
+26,httpx-multipart-response-parsing,Add multipart response parsing to HTTPX,encode/httpx,python,2112,45.19,47,104,0,104,26,72.32,2.9086,1520.79
+27,task-task-graph-export,"Add task graph export with JSON, DOT, and text output",go-task/task,go,2510,44.66,46,103,0,103,26,114.89,5.2413,1694.32
+28,kombu-single-active-consumer-priority,Add single-active-consumer priority and cancel tracking to virtual transports,celery/kombu,python,4265,44.55,45,101,0,101,26,84.13,3.7716,1329.93
+29,opa-template-string-reconstruction,Reconstruct template strings in partial evaluation output,open-policy-agent/opa,go,1042,44.23,46,104,0,104,26,167.12,8.3308,2468.73
+30,go-genai-streamed-function-args,Expose accumulated streamed function-call args in SDK surfaces,googleapis/go-genai,go,1759,43.69,45,103,0,103,26,93.98,3.8737,1903.92
+31,numba-stencil-boundary-modes,Add boundary modes to `@stencil`,numba/numba,python,797,43.56,44,101,0,101,26,117.86,6.2669,2863.38
+32,textual-richlog-follow-state,Restore RichLog follow-state parity and expand reflow behavior,Textualize/textual,python,1564,42.72,44,103,0,103,26,100.58,4.9349,1783.72
+33,yaegi-go-embed-directives,Add go:embed directive support for interpreted packages,traefik/yaegi,go,1300,42.31,44,104,0,104,26,174.55,7.8452,2182.08
+34,opa-rego-rule-profiling,Add rule evaluation profiling to Rego,open-policy-agent/opa,go,2849,42.27,41,97,0,97,25,131.71,4.3022,1723.75
+35,anko-default-function-arguments,Add default arguments to Anko function parameters,mattn/anko,go,874,41.35,43,104,0,104,26,133.88,7.1082,2620.57
+36,kysely-window-grouping-helpers,Add grouping-set and window-frame SQL helpers,kysely-org/kysely,typescript,2633,41.35,43,104,0,104,26,141.04,6.187,1702.41
+37,goreleaser-retry-publish-auditing,Add retry-aware publishing audit logs,goreleaser/goreleaser,go,1698,40.82,40,98,0,98,25,127.96,6.021,2035.45
+38,bandit-interprocedural-taint-checks,Add interprocedural taint checks for Bandit injection sinks,PyCQA/bandit,python,1081,40.38,42,104,0,104,26,76.09,3.2608,1484.0
+39,valibot-recursive-schema-composition,Add recursive schema composition to Valibot,open-circle/valibot,typescript,1552,40.38,42,104,0,104,26,130.29,8.7234,2843.41
+40,mobly-grouped-test-barriers,Add grouped test phases with synchronized barriers,google/mobly,python,2518,40.2,41,102,0,102,26,77.34,3.7632,1742.46
+41,adaptix-name-mapping-aliases,Add input key aliases to name mapping,reagento/adaptix,python,982,39.81,41,103,0,103,26,131.74,6.8226,1967.39
+42,dynamodb-toolbox-conditional-attribute-requirements,Add conditional required attributes to schemas,dynamodb-toolbox/dynamodb-toolbox,typescript,1243,39.81,41,103,0,103,26,159.74,8.9348,2331.72
+43,etree-xml-diff-patch,"Add XML diff, patch, and merge operations to etree",beevik/etree,go,4462,39.42,41,104,0,104,26,53.92,2.3657,1445.6
+44,eicrud-keyset-pagination-cursor,Add keyset cursor pagination to `$find`,eicrud/eicrud,typescript,1072,39.42,41,104,0,104,26,109.79,4.4898,1789.35
+45,geo-shapeindex-serialization,Add ShapeIndex encoding and decoding,golang/geo,go,684,37.5,39,104,0,104,26,81.57,3.027,1198.86
+46,go-critic-doc-link-checker,Add a checker for broken doc comment links,go-critic/go-critic,go,1873,36.54,38,104,0,104,26,100.23,4.1448,1801.3
+47,mnamer-daemon-watch-lifecycle,"Validate daemon watch, status, and log lifecycle",jkwill87/mnamer,python,2839,35.58,37,104,0,104,26,70.95,2.7905,1357.21
+48,ipython-session-bundle-replay,Add session bundle recording and replay to IPython,ipython/ipython,python,3590,35.58,37,104,0,104,26,75.18,2.6486,1177.06
+49,awilix-async-container-initialization,Add dependency-aware async initialization to the container,jeffijoe/awilix,typescript,2248,35.58,37,104,0,104,26,86.17,3.6864,1617.27
+50,cattrs-partial-structuring-recovery,Add partial structuring with error recovery to cattrs,python-attrs/cattrs,python,1242,35.58,37,104,0,104,26,91.11,3.8078,1666.4
+51,go-git-worktree-merge-conflicts,Add worktree merge conflict handling,go-git/go-git,go,1825,35.58,37,104,0,104,26,122.73,6.204,2061.48
+52,scriggo-method-declarations,Add method declarations and interface dispatch to Scriggo,open2b/scriggo,go,958,35.58,37,104,0,104,26,216.61,15.2329,2989.23
+53,tengo-callable-instance-isolation,Fix isolated Go-side calls for Tengo callables and closures,d5/tengo,go,1246,34.62,36,104,0,104,26,107.44,4.7349,2035.56
+54,fastapi-deprecation-response-headers,"Add deprecation, sunset, and successor headers to FastAPI routes",fastapi/fastapi,python,2972,32.69,34,104,0,104,26,119.81,4.9619,1580.3
+55,sqlite-utils-safe-import-checkpoints,Add safe import checkpoints and invariant validation,simonw/sqlite-utils,python,2509,32.69,34,104,0,104,26,130.8,5.313,1722.49
+56,narwhals-rolling-window-suite,"Add rolling min, max, median, and quantile methods",narwhals-dev/narwhals,python,2140,32.69,34,104,0,104,26,146.57,6.9202,1828.82
+57,kgateway-consistent-hash-policy,Add consistent hash policy support to TrafficPolicy,kgateway-dev/kgateway,go,2181,32.04,33,103,0,103,26,126.66,6.3629,2022.97
+58,anko-typed-variable-bindings,Add typed variable bindings to Anko,mattn/anko,go,1726,31.73,33,104,0,104,26,88.62,3.3939,1293.92
+59,kcp-go-multiplexed-kcp-streams,Add multiplexed ordered streams over KCP,xtaci/kcp-go,go,2367,30.77,32,104,0,104,26,46.32,2.2924,1628.61
+60,participle-grammar-conflict-analysis,Add build-time grammar conflict analysis to participle,alecthomas/participle,go,2991,30.77,32,104,0,104,26,66.52,2.8202,1456.29
+61,scc-bounded-memory-spilling,Add bounded-memory spilling to SCC aggregation,boyter/scc,go,1916,30.77,32,104,0,104,26,94.96,4.1713,1494.94
+62,wasmi-trap-coredumps,Add trap coredump generation to wasmi,wasmi-labs/wasmi,rust,3058,30.77,32,104,0,104,26,160.54,10.7367,2179.41
+63,dynamodb-toolbox-lazy-recursive-schemas,Add lazy recursive schemas with DTO and JSON Schema export,dynamodb-toolbox/dynamodb-toolbox,typescript,1265,29.81,31,104,0,104,26,167.31,10.1645,2413.83
+64,pebble-durability-wait-apis,Add durability callbacks and wait APIs for sync writes,cockroachdb/pebble,go,2660,29.81,31,104,0,104,26,176.25,9.762,2873.02
+65,bandit-incremental-cache-control,Add incremental cache controls to Bandit,PyCQA/bandit,python,1746,27.18,28,103,0,103,26,80.8,3.2732,1390.62
+66,kea-atomic-signal-selectors,Add atomic signal selectors to Kea,keajs/kea,typescript,3376,27.18,28,103,0,103,26,81.24,4.3852,2201.19
+67,tengo-destructuring-bindings,Add destructuring bindings to Tengo,d5/tengo,go,952,26.92,28,104,0,104,26,139.06,6.4499,2029.88
+68,httpx-streaming-json-iteration,Add streaming JSON iteration to HTTPX responses,encode/httpx,python,2532,24.27,25,103,0,103,26,74.09,2.6297,1417.26
+69,igel-persist-feature-schema,"Persist the fitted feature schema across evaluate, predict, serve, and export",nidhaloff/igel,python,1559,24.04,25,104,0,104,26,70.98,2.6814,1390.71
+70,fastapi-implicit-head-options,Add implicit HEAD and automatic OPTIONS responses to FastAPI routes,fastapi/fastapi,python,1602,24.04,25,104,0,104,26,144.83,6.9517,2166.13
+71,prometheus-typed-label-sorting,Fix PromQL label sorting across typed and untyped values,prometheus/prometheus,go,1529,23.08,24,104,0,104,26,95.38,3.6419,1864.22
+72,fd-deterministic-multi-key-sorting,Add deterministic multi-key sorting to fd,sharkdp/fd,rust,3483,23.08,24,104,0,104,26,103.77,4.6311,1586.59
+73,dasel-html-document-format,Add HTML document format handling to Dasel,TomWright/dasel,go,1546,22.33,23,103,0,103,26,72.22,2.9009,1595.68
+74,textual-kitty-key-phases,Complete Kitty keyboard phases and stable fallback key metadata,Textualize/textual,python,1665,22.12,23,104,0,104,26,86.25,3.7771,1519.53
+75,pwntools-tube-multiplexing,Add tube multiplexing to pwntools,Gallopsled/pwntools,python,3450,21.36,22,103,0,103,26,59.6,3.0168,1585.82
+76,obsidian-linter-link-format-conversion,Add link format conversion between wiki and markdown syntax,platers/obsidian-linter,typescript,2097,21.36,22,103,0,103,26,75.5,3.2493,1353.4
+77,arktype-json-schema-refs-dependencies,Add JSON Schema refs and dependency keywords,arktypeio/arktype,typescript,1893,21.36,22,103,0,103,26,122.38,7.3354,2453.62
+78,boa-hierarchical-evaluation-cancellation,Add hierarchical evaluation cancellation to Boa,boa-dev/boa,rust,4154,21.15,22,104,0,104,26,169.11,8.4283,2397.14
+79,onedump-dump-encryption-pipeline,Add transparent encryption to dump uploads,liweiyi88/onedump,go,2449,19.23,20,104,0,104,26,64.76,2.2954,1276.74
+80,sqlfmt-create-table-ddl-formatting,Format CREATE TABLE DDL and add DDL parsing helpers,tconbeer/sqlfmt,python,2969,19.23,20,104,0,104,26,109.08,6.5236,2195.61
+81,mashumaro-flattened-dataclass-fields,Add flattened dataclass fields to Mashumaro field options,Fatal1ty/mashumaro,python,471,18.45,19,103,0,103,26,126.44,6.5126,1997.86
+82,meriyah-explicit-resource-declarations,Add explicit resource management declarations to the parser,meriyah/meriyah,typescript,1256,17.48,18,103,0,103,26,160.32,8.324,2255.1
+83,cliffy-config-file-parsing,Add config file parsing to Cliffy commands,c4spar/cliffy,typescript,1973,17.31,18,104,0,104,26,120.0,5.0438,1722.27
+84,superjson-error-stack-serialization,Add error stack serialization to SuperJSON,flightcontrolhq/superjson,typescript,4061,16.67,17,102,0,102,26,51.19,2.1878,1602.1
+85,dateutil-rfc5545-timezone-interop,Add RFC 5545 timezone interoperability to dateutil recurrence parsing,dateutil/dateutil,python,2890,15.38,16,104,0,104,26,88.18,3.9915,1422.69
+86,optique-conditional-option-dependencies,Add conditional option dependencies to Optique,dahlia/optique,typescript,2991,15.38,16,104,0,104,26,137.03,7.8111,2092.5
+87,clack-async-autocomplete-options,Add async autocomplete options and fetch lifecycle handling,bombshell-dev/clack,typescript,3029,14.71,15,102,0,102,26,67.55,3.9284,2009.16
+88,koota-composite-trait-aspects,Add composite trait aspects to Koota,pmndrs/koota,typescript,1508,14.56,15,103,0,103,26,118.25,8.0664,2253.55
+89,koota-query-predicates,Add value-based query predicates to Koota,pmndrs/koota,typescript,859,14.42,15,104,0,104,26,116.2,6.9575,2527.28
+90,katex-multicolumn-array-spans,Add `\multicolumn` column spans to array-like environments,KaTeX/KaTeX,javascript,683,14.42,15,104,0,104,26,125.48,5.9632,1934.0
+91,pest-character-class-coalescing,Coalesce qualifying choices into character classes,pest-parser/pest,rust,1146,13.46,14,104,0,104,26,98.14,5.0749,1720.16
+92,koota-deferred-mutation-buffer,Add a deferred mutation buffer to batch entity changes,pmndrs/koota,typescript,932,13.46,14,104,0,104,26,101.36,5.7919,1862.83
+93,python-statemachine-state-data-scoping,Add scoped state data to state machine callbacks and history,fgmacedo/python-statemachine,python,1857,12.62,13,103,0,103,26,135.24,6.9665,1866.06
+94,csstree-shorthand-expansion-compression,Add shorthand expansion and compression to the lexer,csstree/csstree,javascript,2799,12.5,13,104,0,104,26,83.76,3.8575,1479.55
+95,testem-bail-on-test-failure,Add bail-on-test-failure handling to Testem,testem/testem,javascript,2376,12.5,13,104,0,104,26,105.98,5.373,1436.43
+96,helm-array-merge-strategies,Add configurable array merge strategies to Helm value coalescing,helm/helm,go,2783,12.5,13,104,0,104,26,130.38,6.1363,2176.31
+97,ink-grid-box-layout,Add CSS Grid layout to the Box component,vadimdemedes/ink,typescript,841,11.65,12,103,0,103,26,118.18,6.2311,2376.31
+98,oxvg-structural-selector-preservation,Preserve structure needed by stylesheet selectors,noahbald/oxvg,rust,757,11.65,12,103,0,103,26,143.17,9.3499,2876.1
+99,skrub-duration-encoding,Add duration encoding to TableVectorizer,skrub-data/skrub,python,3348,11.54,12,104,0,104,26,104.74,4.9461,1710.46
+100,termenv-preserve-ansi-resets,Preserve ANSI resets during truncation and styling,muesli/termenv,go,1557,10.58,11,104,0,104,26,52.38,2.3051,1501.38
+101,updo-policy-alerting,"Add policy-based alerting for failures, latency, and SSL expiry",Owloops/updo,go,4471,10.58,11,104,0,104,26,62.32,2.6798,1180.41
+102,expr-try-catch-errors,Add try/catch error recovery to expr,expr-lang/expr,go,1356,10.58,11,104,0,104,26,171.43,9.3465,2459.8
+103,langchain-request-coalescing,Add request coalescing to `Runnable`,langchain-ai/langchain,python,1691,9.62,10,104,0,104,26,77.31,3.75,1694.87
+104,koota-pair-relation-tracking,Add pair-level relation tracking modifiers,pmndrs/koota,typescript,981,9.62,10,104,0,104,26,122.29,8.007,2351.66
+105,happy-dom-deterministic-intersectionobserver,Implement a deterministic IntersectionObserver in Happy DOM,capricorn86/happy-dom,typescript,1443,8.74,9,103,0,103,26,79.43,3.285,1465.97
+106,obsidian-linter-auto-table-of-contents,Add automatic table of contents generation for Obsidian linter,platers/obsidian-linter,typescript,1459,7.69,8,104,0,104,26,74.52,3.3857,1771.16
+107,effect-sse-httpapi-streaming,Add SSE streaming endpoints to HttpApi,Effect-TS/effect,typescript,2177,7.69,8,104,0,104,26,150.58,8.8559,1971.51
+108,claude-code-by-agents-recursive-delegation,Implement recursive agent delegation through delegate_task tool calls,baryhuang/claude-code-by-agents,typescript,1199,6.73,7,104,0,104,26,57.11,2.4571,1307.68
+109,bandit-structured-nosec-directives,Add structured nosec directives for regions and next line,PyCQA/bandit,python,2721,5.88,6,102,0,102,26,86.83,4.0703,1707.8
+110,kombu-virtual-queue-dead-lettering,"Add dead-lettering, TTL, and overflow handling to virtual queues",celery/kombu,python,4383,5.83,6,103,0,103,26,96.2,4.6628,1515.29
+111,gql-incremental-graphql-delivery,Add GraphQL incremental delivery with @defer and @stream,graphql-python/gql,python,1458,2.88,3,104,0,104,26,112.53,5.3391,1716.43
+112,prometheus-transactional-reload-status,Add transactional reload status and rollback tracking to Prometheus,prometheus/prometheus,typescript,1841,1.92,2,104,0,104,26,177.14,7.7183,2460.32
+113,quill-shared-toolbar-focus,Reuse one toolbar across multiple Quill editors,slab/quill,typescript,1510,0.0,0,104,0,104,26,95.31,5.417,1984.26

@@ -1,0 +1,7 @@
+task_id,attempts,non_error,passed,pass_rate,errors,solve_runs,solve_avg_trial_duration_seconds,solve_avg_agent_duration_seconds,solve_avg_steps,solve_avg_input_tokens,solve_avg_output_tokens,solve_avg_input_output_tokens,solve_avg_cache_tokens,solve_avg_peak_context_tokens,solve_avg_cost_usd
+OVERALL,20,20,7,0.35,0,7,1501.5536695714286,1475.5298562857145,99.42857142857143,7974493.571428572,43422.857142857145,8017916.428571428,7837339.428571428,135504.0,1.8348906000000003
+true-myth-iterable-collection-combinators,4,4,4,1.0,0,4,1075.5286985,1048.29906875,95.25,7136547.0,35496.25,7172043.25,7007328.0,127439.25,1.6371733500000003
+happy-dom-abort-pending-body-reads,4,4,2,0.5,0,2,2105.4029525,2077.745479,132.0,12228204.5,41880.5,12270085.0,12057888.0,167587.0,2.7075356000000004
+wazero-multi-module-snapshots,4,4,0,0.0,0,0,,,,,,,,,
+psd-tools-blend-range-api,4,4,0,0.0,0,0,,,,,,,,,
+ytt-jsonpath-query-api,4,4,1,0.25,0,1,1997.954988,1980.021761,51.0,2818858.0,78214.0,2897072.0,2716288.0,103597.0,0.8804696

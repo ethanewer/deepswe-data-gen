@@ -1,0 +1,53 @@
+{
+  "by_difficulty": {
+    "easy": 3495,
+    "hard": 183,
+    "medium": 5731
+  },
+  "by_language": {
+    "go": 3001,
+    "python": 4144,
+    "ts": 2264
+  },
+  "files": [
+    "high_quality_conf_ge_0.95_tasks.csv",
+    "high_quality_conf_ge_0.95_instance_ids.txt"
+  ],
+  "filters": {
+    "difficulty": [
+      "easy",
+      "medium",
+      "hard"
+    ],
+    "language": [
+      "python",
+      "ts",
+      "go"
+    ],
+    "meta.llm_metadata.code": "A",
+    "meta.llm_metadata.confidence": ">= 0.95",
+    "meta.llm_metadata.detected_issues": "all false",
+    "meta.llm_metadata.intent_completeness": "complete",
+    "meta.llm_metadata.test_alignment_issues": "empty"
+  },
+  "matrix": {
+    "go": {
+      "easy": 973,
+      "hard": 62,
+      "medium": 1966
+    },
+    "python": {
+      "easy": 1694,
+      "hard": 83,
+      "medium": 2367
+    },
+    "ts": {
+      "easy": 828,
+      "hard": 38,
+      "medium": 1398
+    }
+  },
+  "source_dataset": "nebius/SWE-rebench-V2",
+  "split": "train",
+  "total": 9409
+}

@@ -1,0 +1,114 @@
+weak_difficulty_rank,task_id,problem_title,repository,language,prompt_characters,weak_pass_rate_pct,weak_passed,weak_non_error_trials,weak_errored,weak_total_trials,weak_models_solved_count,weak_models_attempted_count,weak_models_solved,avg_weak_steps,avg_weak_cost_usd
+1,true-myth-iterable-collection-combinators,Add iterable collection combinators to true-myth,true-myth/true-myth,typescript,1975,46.43,13,28,0,28,5,7,deepseek-v4-pro;gemini-3-1-pro-preview;gemini-3-flash-preview;grok-build-0-1;qwen3-6-plus,100.25,2.2005
+2,wazero-multi-module-snapshots,Add multi-module memory snapshots to wazero,wazero/wazero,go,3584,35.71,10,28,0,28,5,7,deepseek-v4-pro;gemini-3-1-pro-preview;gemini-3-flash-preview;grok-build-0-1;qwen3-6-plus,74.5,1.3756
+3,happy-dom-abort-pending-body-reads,Abort pending body reads on shutdown,capricorn86/happy-dom,typescript,665,34.62,9,26,0,26,5,7,deepseek-v4-pro;gemini-3-1-pro-preview;gemini-3-flash-preview;grok-build-0-1;qwen3-6-plus,111.85,3.3286
+4,psd-tools-blend-range-api,Add typed blend range access and blend-if compositing,psd-tools/psd-tools,python,2448,32.14,9,28,0,28,5,7,deepseek-v4-pro;gemini-3-1-pro-preview;gemini-3-flash-preview;grok-build-0-1;qwen3-6-plus,93.21,1.6226
+5,testem-per-launcher-reports,Partition report files by launcher and expand report templates,testem/testem,javascript,2092,22.22,6,27,0,27,3,7,deepseek-v4-pro;gemini-3-1-pro-preview;grok-build-0-1,83.22,1.7637
+6,ytt-jsonpath-query-api,Add JSONPath query APIs to orderedmap and Starlark modules,carvel-dev/ytt,go,2418,21.43,6,28,0,28,4,7,deepseek-v4-pro;gemini-3-1-pro-preview;gemini-3-flash-preview;qwen3-6-plus,86.96,1.7831
+7,geo-shapeindex-serialization,Add ShapeIndex encoding and decoding,golang/geo,go,684,21.43,6,28,0,28,3,7,gemini-3-flash-preview;grok-build-0-1;qwen3-6-plus,110.64,1.8158
+8,drizzle-orm-window-function-builders,Add typed window function builders with OVER clauses,drizzle-team/drizzle-orm,typescript,2340,21.43,6,28,0,28,3,7,deepseek-v4-pro;gemini-3-1-pro-preview;grok-build-0-1,146.04,3.3573
+9,opa-rego-rule-profiling,Add rule evaluation profiling to Rego,open-policy-agent/opa,go,2849,20.0,5,25,0,25,4,7,deepseek-v4-pro;gemini-3-1-pro-preview;grok-build-0-1;qwen3-6-plus,197.84,3.1884
+10,returns-validated-error-accumulation,Add an error-accumulating Validated container,dry-python/returns,python,3137,17.86,5,28,0,28,2,7,deepseek-v4-pro;grok-build-0-1,85.21,1.601
+11,actionlint-action-pinning-lint,Add action pinning linting for actions and reusable workflows,rhysd/actionlint,go,2060,14.81,4,27,0,27,3,7,deepseek-v4-pro;gemini-3-1-pro-preview;grok-build-0-1,128.89,3.0019
+12,query-persist-restored-query-state,Preserve restored query state in persisted snapshots,TanStack/query,typescript,2835,14.81,4,27,0,27,2,7,deepseek-v4-pro;grok-build-0-1,111.67,3.2255
+13,vulture-persistent-analysis-cache,Add a persistent analysis cache to Vulture,jendrikseipp/vulture,python,2280,14.29,4,28,0,28,3,7,gemini-3-1-pro-preview;gemini-3-flash-preview;grok-build-0-1,99.04,1.8728
+14,awilix-async-container-initialization,Add dependency-aware async initialization to the container,jeffijoe/awilix,typescript,2248,14.29,4,28,0,28,3,7,deepseek-v4-pro;gemini-3-1-pro-preview;gemini-3-flash-preview,130.57,3.0717
+15,abs-module-cache-flags,"Harden module loading, cache introspection, and script flags",abs-lang/abs,go,2524,11.11,3,27,0,27,2,7,deepseek-v4-pro;grok-build-0-1,128.67,2.4553
+16,fd-deterministic-multi-key-sorting,Add deterministic multi-key sorting to fd,sharkdp/fd,rust,3483,10.71,3,28,0,28,3,7,gemini-3-1-pro-preview;gemini-3-flash-preview;grok-build-0-1,119.61,2.861
+17,narwhals-rolling-window-suite,"Add rolling min, max, median, and quantile methods",narwhals-dev/narwhals,python,2140,10.71,3,28,0,28,3,7,claude-haiku-4-5;minimax-m2-7;qwen3-6-plus,129.32,2.4959
+18,ofetch-per-origin-circuit-breaker,Add a per-origin circuit breaker to ofetch,unjs/ofetch,typescript,3376,10.71,3,28,0,28,2,7,gemini-3-1-pro-preview;gemini-3-flash-preview,70.82,1.8294
+19,abs-stepped-slices,Add stepped slices for arrays and strings,abs-lang/abs,go,3384,10.71,3,28,0,28,2,7,deepseek-v4-pro;qwen3-6-plus,128.86,2.1716
+20,helm-unified-manifest-stream,Add unified manifest stream output across Helm commands,helm/helm,go,954,10.71,3,28,0,28,2,7,deepseek-v4-pro;grok-build-0-1,134.18,3.8829
+21,ts-pattern-match-each,Add `matchEach` to ts-pattern,gvergnaud/ts-pattern,typescript,2970,10.71,3,28,0,28,1,7,gemini-3-1-pro-preview,64.86,1.5388
+22,sql-formatter-bigquery-pipe-formatting,Format BigQuery pipe syntax queries correctly,sql-formatter-org/sql-formatter,typescript,1697,10.71,3,28,0,28,1,7,deepseek-v4-pro,151.68,4.6961
+23,kombu-single-active-consumer-priority,Add single-active-consumer priority and cancel tracking to virtual transports,celery/kombu,python,4265,8.0,2,25,0,25,1,7,gemini-3-1-pro-preview,109.72,2.2085
+24,goreleaser-retry-publish-auditing,Add retry-aware publishing audit logs,goreleaser/goreleaser,go,1698,7.69,2,26,0,26,2,7,gemini-3-1-pro-preview;qwen3-6-plus,133.04,3.0195
+25,happy-dom-deterministic-intersectionobserver,Implement a deterministic IntersectionObserver in Happy DOM,capricorn86/happy-dom,typescript,1443,7.41,2,27,0,27,2,7,gemini-3-1-pro-preview;gemini-3-flash-preview,74.19,1.6643
+26,httpx-streaming-json-iteration,Add streaming JSON iteration to HTTPX responses,encode/httpx,python,2532,7.41,2,27,0,27,1,7,deepseek-v4-pro,90.19,1.8514
+27,oxvg-structural-selector-preservation,Preserve structure needed by stylesheet selectors,noahbald/oxvg,rust,757,7.41,2,27,0,27,1,7,grok-build-0-1,128.3,3.7347
+28,updo-policy-alerting,"Add policy-based alerting for failures, latency, and SSL expiry",Owloops/updo,go,4471,7.14,2,28,0,28,2,7,gemini-3-1-pro-preview;gemini-3-flash-preview,72.64,1.5948
+29,bandit-interprocedural-taint-checks,Add interprocedural taint checks for Bandit injection sinks,PyCQA/bandit,python,1081,7.14,2,28,0,28,2,7,gemini-3-1-pro-preview;grok-build-0-1,89.5,2.0989
+30,obsidian-linter-scoped-ignore-markers,Add scoped per-rule ignore markers to Obsidian Linter,platers/obsidian-linter,typescript,2142,7.14,2,28,0,28,2,7,deepseek-v4-pro;gemini-3-1-pro-preview,96.71,3.1288
+31,dateutil-rfc5545-timezone-interop,Add RFC 5545 timezone interoperability to dateutil recurrence parsing,dateutil/dateutil,python,2890,7.14,2,28,0,28,2,7,gemini-3-1-pro-preview;grok-build-0-1,102.21,2.3178
+32,anko-typed-variable-bindings,Add typed variable bindings to Anko,mattn/anko,go,1726,7.14,2,28,0,28,2,7,gemini-3-1-pro-preview;grok-build-0-1,114.46,2.1845
+33,go-critic-doc-link-checker,Add a checker for broken doc comment links,go-critic/go-critic,go,1873,7.14,2,28,0,28,2,7,gemini-3-flash-preview;grok-build-0-1,119.43,2.1687
+34,yjs-map-conflict-detection,Add deterministic map conflict detection to Y.Map writes,yjs/yjs,javascript,1659,7.14,2,28,0,28,2,7,deepseek-v4-pro;grok-build-0-1,125.46,3.5833
+35,ipython-session-bundle-replay,Add session bundle recording and replay to IPython,ipython/ipython,python,3590,7.14,2,28,0,28,1,7,gemini-3-1-pro-preview,98.82,1.5347
+36,httpx-deterministic-cookie-store,Add a deterministic CookieStore with modern Set-Cookie parsing,encode/httpx,typescript,3150,7.14,2,28,0,28,1,7,grok-build-0-1,99.14,1.905
+37,koota-entity-snapshot-rollback,Add entity snapshot and rollback APIs to Koota,pmndrs/koota,python,2387,7.14,2,28,0,28,1,7,gemini-3-flash-preview,102.18,2.2404
+38,cattrs-partial-structuring-recovery,Add partial structuring with error recovery to cattrs,python-attrs/cattrs,python,1242,7.14,2,28,0,28,1,7,grok-build-0-1,103.54,2.4139
+39,scc-bounded-memory-spilling,Add bounded-memory spilling to SCC aggregation,boyter/scc,go,1916,7.14,2,28,0,28,1,7,deepseek-v4-pro,117.82,2.4624
+40,vitest-duration-sharding,Add duration-aware sharding to Vitest,vitest-dev/vitest,typescript,4311,7.14,2,28,0,28,1,7,gemini-3-1-pro-preview,118.46,2.4972
+41,go-git-worktree-merge-conflicts,Add worktree merge conflict handling,go-git/go-git,go,1825,7.14,2,28,0,28,1,7,grok-build-0-1,141.61,3.7259
+42,tengo-callable-instance-isolation,Fix isolated Go-side calls for Tengo callables and closures,d5/tengo,go,1246,7.14,2,28,0,28,1,7,gemini-3-flash-preview,153.96,3.1878
+43,go-genai-streamed-function-args,Expose accumulated streamed function-call args in SDK surfaces,googleapis/go-genai,go,1759,3.7,1,27,0,27,1,7,grok-build-0-1,116.11,2.3999
+44,task-task-graph-export,"Add task graph export with JSON, DOT, and text output",go-task/task,go,2510,3.7,1,27,0,27,1,7,grok-build-0-1,126.3,2.8583
+45,kcp-go-multiplexed-kcp-streams,Add multiplexed ordered streams over KCP,xtaci/kcp-go,go,2367,3.57,1,28,0,28,1,7,deepseek-v4-pro,62.04,1.4919
+46,etree-xml-diff-patch,"Add XML diff, patch, and merge operations to etree",beevik/etree,go,4462,3.57,1,28,0,28,1,7,grok-build-0-1,73.68,1.4179
+47,igel-persist-feature-schema,"Persist the fitted feature schema across evaluate, predict, serve, and export",nidhaloff/igel,python,1559,3.57,1,28,0,28,1,7,gemini-3-flash-preview,83.54,1.4298
+48,langchain-request-coalescing,Add request coalescing to `Runnable`,langchain-ai/langchain,python,1691,3.57,1,28,0,28,1,7,gemini-3-1-pro-preview,84.32,2.175
+49,participle-grammar-conflict-analysis,Add build-time grammar conflict analysis to participle,alecthomas/participle,go,2991,3.57,1,28,0,28,1,7,grok-build-0-1,90.04,1.6329
+50,mobly-grouped-test-barriers,Add grouped test phases with synchronized barriers,google/mobly,python,2518,3.57,1,28,0,28,1,7,grok-build-0-1,96.75,2.3748
+51,tomlkit-toml-table-converters,Add bidirectional TOML table converters,python-poetry/tomlkit,python,1944,3.57,1,28,0,28,1,7,grok-build-0-1,100.96,2.2318
+52,arcane-drift-detection-baselines,Add drift detection and compliance baselines,getarcaneapp/arcane,go,5385,3.57,1,28,0,28,1,7,qwen3-6-plus,127.89,2.6678
+53,numba-stencil-boundary-modes,Add boundary modes to `@stencil`,numba/numba,python,797,3.57,1,28,0,28,1,7,grok-build-0-1,134.64,3.1477
+54,cliffy-config-file-parsing,Add config file parsing to Cliffy commands,c4spar/cliffy,typescript,1973,3.57,1,28,0,28,1,7,grok-build-0-1,142.54,2.7921
+55,optique-conditional-option-dependencies,Add conditional option dependencies to Optique,dahlia/optique,typescript,2991,3.57,1,28,0,28,1,7,grok-build-0-1,153.64,4.3043
+56,fastapi-deprecation-response-headers,"Add deprecation, sunset, and successor headers to FastAPI routes",fastapi/fastapi,python,2972,3.57,1,28,0,28,1,7,gemini-3-1-pro-preview,156.79,3.6966
+57,opa-template-string-reconstruction,Reconstruct template strings in partial evaluation output,open-policy-agent/opa,go,1042,3.57,1,28,0,28,1,7,gemini-3-flash-preview,175.18,3.3983
+58,anko-default-function-arguments,Add default arguments to Anko function parameters,mattn/anko,go,874,3.57,1,28,0,28,1,7,gemini-3-1-pro-preview,207.0,6.0972
+59,yaegi-go-embed-directives,Add go:embed directive support for interpreted packages,traefik/yaegi,go,1300,3.57,1,28,0,28,1,7,gemini-3-1-pro-preview,233.18,5.8757
+60,pwntools-tube-multiplexing,Add tube multiplexing to pwntools,Gallopsled/pwntools,python,3450,0.0,0,28,0,28,0,7,,62.43,1.429
+61,clack-async-autocomplete-options,Add async autocomplete options and fetch lifecycle handling,bombshell-dev/clack,typescript,3029,0.0,0,28,0,28,0,7,,62.96,1.9065
+62,termenv-preserve-ansi-resets,Preserve ANSI resets during truncation and styling,muesli/termenv,go,1557,0.0,0,28,0,28,0,7,,64.25,1.3832
+63,superjson-error-stack-serialization,Add error stack serialization to SuperJSON,flightcontrolhq/superjson,typescript,4061,0.0,0,27,0,27,0,7,,69.0,1.3047
+64,claude-code-by-agents-recursive-delegation,Implement recursive agent delegation through delegate_task tool calls,baryhuang/claude-code-by-agents,typescript,1199,0.0,0,28,0,28,0,7,,71.57,1.5281
+65,onedump-dump-encryption-pipeline,Add transparent encryption to dump uploads,liweiyi88/onedump,go,2449,0.0,0,28,0,28,0,7,,73.07,1.2477
+66,aiomonitor-task-snapshots-diff,"Add task snapshots, inspection, and diffing to aiomonitor",aio-libs/aiomonitor,python,1733,0.0,0,28,0,28,0,7,,78.89,1.4523
+67,obsidian-linter-link-format-conversion,Add link format conversion between wiki and markdown syntax,platers/obsidian-linter,typescript,2097,0.0,0,27,0,27,0,7,,82.07,1.7233
+68,mnamer-daemon-watch-lifecycle,"Validate daemon watch, status, and log lifecycle",jkwill87/mnamer,python,2839,0.0,0,28,0,28,0,7,,88.18,1.4932
+69,quill-shared-toolbar-focus,Reuse one toolbar across multiple Quill editors,slab/quill,typescript,1510,0.0,0,28,0,28,0,7,,89.89,2.5201
+70,textual-richlog-follow-state,Restore RichLog follow-state parity and expand reflow behavior,Textualize/textual,python,1564,0.0,0,27,0,27,0,7,,90.93,2.2604
+71,textual-kitty-key-phases,Complete Kitty keyboard phases and stable fallback key metadata,Textualize/textual,python,1665,0.0,0,28,0,28,0,7,,91.29,2.1911
+72,obsidian-linter-auto-table-of-contents,Add automatic table of contents generation for Obsidian linter,platers/obsidian-linter,typescript,1459,0.0,0,28,0,28,0,7,,91.93,2.3092
+73,httpx-multipart-response-parsing,Add multipart response parsing to HTTPX,encode/httpx,python,2112,0.0,0,28,0,28,0,7,,92.21,2.0796
+74,csstree-shorthand-expansion-compression,Add shorthand expansion and compression to the lexer,csstree/csstree,javascript,2799,0.0,0,28,0,28,0,7,,95.61,2.5023
+75,dasel-html-document-format,Add HTML document format handling to Dasel,TomWright/dasel,go,1546,0.0,0,27,0,27,0,7,,97.3,2.2695
+76,eicrud-keyset-pagination-cursor,Add keyset cursor pagination to `$find`,eicrud/eicrud,typescript,1072,0.0,0,28,0,28,0,7,,98.04,1.8764
+77,bandit-structured-nosec-directives,Add structured nosec directives for regions and next line,PyCQA/bandit,python,2721,0.0,0,27,0,27,0,7,,104.3,2.2265
+78,kea-atomic-signal-selectors,Add atomic signal selectors to Kea,keajs/kea,typescript,3376,0.0,0,28,0,28,0,7,,104.93,2.6834
+79,bandit-incremental-cache-control,Add incremental cache controls to Bandit,PyCQA/bandit,python,1746,0.0,0,27,0,27,0,7,,106.07,2.3006
+80,arktype-json-schema-refs-dependencies,Add JSON Schema refs and dependency keywords,arktypeio/arktype,typescript,1893,0.0,0,27,0,27,0,7,,108.7,3.0511
+81,skrub-duration-encoding,Add duration encoding to TableVectorizer,skrub-data/skrub,python,3348,0.0,0,28,0,28,0,7,,108.96,2.5115
+82,prometheus-typed-label-sorting,Fix PromQL label sorting across typed and untyped values,prometheus/prometheus,go,1529,0.0,0,28,0,28,0,7,,109.54,2.2806
+83,pest-character-class-coalescing,Coalesce qualifying choices into character classes,pest-parser/pest,rust,1146,0.0,0,28,0,28,0,7,,110.39,2.8331
+84,testem-bail-on-test-failure,Add bail-on-test-failure handling to Testem,testem/testem,javascript,2376,0.0,0,28,0,28,0,7,,112.82,2.9081
+85,kgateway-consistent-hash-policy,Add consistent hash policy support to TrafficPolicy,kgateway-dev/kgateway,go,2181,0.0,0,27,0,27,0,7,,113.37,2.575
+86,gql-incremental-graphql-delivery,Add GraphQL incremental delivery with @defer and @stream,graphql-python/gql,python,1458,0.0,0,28,0,28,0,7,,118.43,2.7893
+87,kombu-virtual-queue-dead-lettering,"Add dead-lettering, TTL, and overflow handling to virtual queues",celery/kombu,python,4383,0.0,0,27,0,27,0,7,,121.48,2.8322
+88,koota-composite-trait-aspects,Add composite trait aspects to Koota,pmndrs/koota,typescript,1508,0.0,0,27,0,27,0,7,,121.89,3.9189
+89,sqlfmt-create-table-ddl-formatting,Format CREATE TABLE DDL and add DDL parsing helpers,tconbeer/sqlfmt,python,2969,0.0,0,28,0,28,0,7,,124.93,3.3965
+90,koota-deferred-mutation-buffer,Add a deferred mutation buffer to batch entity changes,pmndrs/koota,typescript,932,0.0,0,28,0,28,0,7,,125.71,3.7188
+91,valibot-recursive-schema-composition,Add recursive schema composition to Valibot,open-circle/valibot,typescript,1552,0.0,0,28,0,28,0,7,,131.43,4.4696
+92,koota-pair-relation-tracking,Add pair-level relation tracking modifiers,pmndrs/koota,typescript,981,0.0,0,28,0,28,0,7,,132.75,4.5596
+93,koota-query-predicates,Add value-based query predicates to Koota,pmndrs/koota,typescript,859,0.0,0,28,0,28,0,7,,133.39,4.3226
+94,ink-grid-box-layout,Add CSS Grid layout to the Box component,vadimdemedes/ink,typescript,841,0.0,0,27,0,27,0,7,,134.7,3.9514
+95,helm-array-merge-strategies,Add configurable array merge strategies to Helm value coalescing,helm/helm,go,2783,0.0,0,28,0,28,0,7,,134.93,3.4839
+96,katex-multicolumn-array-spans,Add `\multicolumn` column spans to array-like environments,KaTeX/KaTeX,javascript,683,0.0,0,28,0,28,0,7,,140.39,2.6528
+97,effect-sse-httpapi-streaming,Add SSE streaming endpoints to HttpApi,Effect-TS/effect,typescript,2177,0.0,0,28,0,28,0,7,,145.14,3.6534
+98,python-statemachine-state-data-scoping,Add scoped state data to state machine callbacks and history,fgmacedo/python-statemachine,python,1857,0.0,0,27,0,27,0,7,,145.48,3.2585
+99,mashumaro-flattened-dataclass-fields,Add flattened dataclass fields to Mashumaro field options,Fatal1ty/mashumaro,python,471,0.0,0,27,0,27,0,7,,149.3,3.4098
+100,wasmi-trap-coredumps,Add trap coredump generation to wasmi,wasmi-labs/wasmi,rust,3058,0.0,0,28,0,28,0,7,,149.79,4.5771
+101,adaptix-name-mapping-aliases,Add input key aliases to name mapping,reagento/adaptix,python,982,0.0,0,27,0,27,0,7,,155.37,4.1571
+102,dynamodb-toolbox-conditional-attribute-requirements,Add conditional required attributes to schemas,dynamodb-toolbox/dynamodb-toolbox,typescript,1243,0.0,0,27,0,27,0,7,,156.33,3.9983
+103,sqlite-utils-safe-import-checkpoints,Add safe import checkpoints and invariant validation,simonw/sqlite-utils,python,2509,0.0,0,28,0,28,0,7,,160.68,3.6818
+104,prometheus-transactional-reload-status,Add transactional reload status and rollback tracking to Prometheus,prometheus/prometheus,typescript,1841,0.0,0,28,0,28,0,7,,161.29,3.3333
+105,fastapi-implicit-head-options,Add implicit HEAD and automatic OPTIONS responses to FastAPI routes,fastapi/fastapi,python,1602,0.0,0,28,0,28,0,7,,168.11,3.4632
+106,dynamodb-toolbox-lazy-recursive-schemas,Add lazy recursive schemas with DTO and JSON Schema export,dynamodb-toolbox/dynamodb-toolbox,typescript,1265,0.0,0,28,0,28,0,7,,174.61,4.261
+107,kysely-window-grouping-helpers,Add grouping-set and window-frame SQL helpers,kysely-org/kysely,typescript,2633,0.0,0,28,0,28,0,7,,181.21,4.1
+108,boa-hierarchical-evaluation-cancellation,Add hierarchical evaluation cancellation to Boa,boa-dev/boa,rust,4154,0.0,0,28,0,28,0,7,,181.57,4.3672
+109,pebble-durability-wait-apis,Add durability callbacks and wait APIs for sync writes,cockroachdb/pebble,go,2660,0.0,0,28,0,28,0,7,,193.68,5.1425
+110,meriyah-explicit-resource-declarations,Add explicit resource management declarations to the parser,meriyah/meriyah,typescript,1256,0.0,0,27,0,27,0,7,,195.96,4.887
+111,tengo-destructuring-bindings,Add destructuring bindings to Tengo,d5/tengo,go,952,0.0,0,28,0,28,0,7,,214.75,4.8614
+112,expr-try-catch-errors,Add try/catch error recovery to expr,expr-lang/expr,go,1356,0.0,0,28,0,28,0,7,,232.54,6.2403
+113,scriggo-method-declarations,Add method declarations and interface dispatch to Scriggo,open2b/scriggo,go,958,0.0,0,28,0,28,0,7,,240.29,6.9207

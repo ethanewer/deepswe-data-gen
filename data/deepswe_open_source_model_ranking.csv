@@ -1,0 +1,6 @@
+open_weight_rank,strict_open_source_rank,model,family,open_status,include_strict_open_source,provider_in_deepswe,pass_rate_pct,passed,non_error_trials,errored,total_trials,avg_steps,avg_cost_usd,avg_duration_seconds
+1,1,kimi-k2-6,Moonshot Kimi K2.6,open-weight / commonly labeled open-source,yes,openrouter,23.89,108,452,0,452,146.8,3.1616,3404.08
+2,2,mimo-v2-5-pro,Xiaomi MiMo V2.5 Pro,"open-source, MIT license",yes,openrouter,19.47,88,452,0,452,121.49,1.9863,1719.26
+3,3,glm-5-1,Z.ai GLM-5.1,"open weights, MIT license",yes,openrouter,17.52,79,451,0,451,176.6,7.4641,2152.79
+4,4,deepseek-v4-pro,DeepSeek V4 Pro,"open weights, MIT license",yes,openrouter,7.52,34,452,0,452,111.34,4.2184,2284.76
+5,,minimax-m2-7,MiniMax M2.7,open weights with commercial-use restriction; not strict open source,no,openrouter,0.22,1,452,0,452,135.58,0.7044,2160.3

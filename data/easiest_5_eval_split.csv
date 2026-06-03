@@ -1,0 +1,6 @@
+task_id,problem_title,repository,language,aggregate_rank,aggregate_pass_rate_pct,weak_model_rank,weak_model_pass_rate_pct,weak_models_solved_count,rationale
+true-myth-iterable-collection-combinators,Add iterable collection combinators to true-myth,true-myth/true-myth,typescript,1,75.96,1,46.43,5,Clear easiest task: rank 1 in both aggregate and weak-model views.
+happy-dom-abort-pending-body-reads,Abort pending body reads on shutdown,capricorn86/happy-dom,typescript,2,74.51,3,34.62,5,Very high agreement: aggregate rank 2 and weak-model rank 3.
+wazero-multi-module-snapshots,Add multi-module memory snapshots to wazero,wazero/wazero,go,11,57.69,2,35.71,5,Weak-model rank 2 with a strong aggregate rank 11; weak models solve it more often than most aggregate-top tasks.
+psd-tools-blend-range-api,Add typed blend range access and blend-if compositing,psd-tools/psd-tools,python,9,58.65,4,32.14,5,Weak-model rank 4 and aggregate rank 9; consistently easy under both signals.
+ytt-jsonpath-query-api,Add JSONPath query APIs to orderedmap and Starlark modules,carvel-dev/ytt,go,7,60.58,6,21.43,4,"Aggregate rank 7 and weak-model rank 6, solved by more distinct weak models than close alternatives."
