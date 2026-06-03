@@ -47,6 +47,19 @@ def test_validate_rewrite_accepts_preserved_public_symbol():
     assert rewrite_prompts.validate_rewrite_quality(row, rewrite) == []
 
 
+def test_validate_rewrite_accepts_split_qualified_public_symbol():
+    row = {
+        "problem_statement": "Add account transaction simulation.",
+        "interface": "Method: Account.simulateTransaction(calls, options)",
+    }
+    rewrite = {
+        "rewritten_prompt": "Add `simulateTransaction` to `Account` for signed account simulation.",
+        "preserved_requirements": [],
+    }
+
+    assert rewrite_prompts.validate_rewrite_quality(row, rewrite) == []
+
+
 def test_validate_rewrite_warns_when_exact_bug_literal_is_lost():
     row = {
         "problem_statement": (
@@ -85,3 +98,33 @@ def test_validate_rewrite_accepts_exact_bug_literal():
     }
 
     assert rewrite_prompts.validate_rewrite_quality(row, rewrite) == []
+
+
+def test_extract_edge_case_literals_ignores_noise_quotes():
+    text = """\
+Example command named "something-and-notify" is only illustrative.
+The placeholder token is "XXXX".
+The screenshot caption is "Screenshot 2023-06-15 at 3 22 18 AM".
+It is fine if it's already configured.
+The numeric issue id is "970".
+Currently the function returns "stark" when it should return an empty string.
+"""
+
+    assert rewrite_prompts.extract_edge_case_literals(text) == ["stark", ""]
+
+
+def test_user_prompt_lists_detected_public_symbols():
+    row = {
+        "repo": "example/repo",
+        "language": "go",
+        "problem_statement": "Keep credential IDs stable.",
+        "interface": """\
+Method: Container.IsValid()
+Function: NewCredentialContainerFromJWT(jwt string)
+""",
+    }
+
+    prompt = rewrite_prompts.user_prompt(row)
+
+    assert "Likely required public symbols" in prompt
+    assert "Container.IsValid, NewCredentialContainerFromJWT" in prompt

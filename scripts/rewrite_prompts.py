@@ -39,6 +39,11 @@ Rules:
 - Preserve public API names, class/function/method names, CLI flags, config keys,
   import/export compatibility, and exact input/output literals when they define
   the requested behavior.
+- Preserve public interface compatibility details from generated interface
+  notes when they describe callable signatures, constructor/default argument
+  behavior, return shapes, exported struct fields, serialized/config keys, or
+  importable/exported names. Summarize those contracts naturally; do not copy
+  source locations.
 - Remove issue template boilerplate, external URLs, PR/test references, and
   solution hints.
 - Do not mention tests, hidden tests, patches, PRs, metadata, confidence,
@@ -49,6 +54,9 @@ Rules:
 - Do not erase a bug's concrete observable edge case just because the original
   issue also included an implementation hint. Keep the symptom and expected
   behavior; remove only the internal diagnosis.
+- Write in the same natural language as the original task. Do not introduce
+  characters from unrelated writing systems except when they are present in
+  original code/API literals.
 - Keep the prompt actionable for an agent exploring the repository.
 - Prefer one to four short paragraphs or a short bullet list.
 
@@ -168,10 +176,11 @@ def extract_edge_case_literals(text: str) -> list[str]:
         return []
 
     literals = []
-    for match in re.finditer(r'"([^"\n]{0,80})"|\'([^\'\n]{0,80})\'', text):
+    quoted_literal_pattern = r'"([^"\n]{0,80})"|(?<!\w)\'([^\'\n]{0,80})\'(?!\w)'
+    for match in re.finditer(quoted_literal_pattern, text):
         literal = match.group(1) if match.group(1) is not None else match.group(2)
         literal = literal.strip()
-        if should_keep_literal(literal) and literal not in literals:
+        if should_keep_literal(literal, text, match.start(), match.end()) and literal not in literals:
             literals.append(literal)
 
     if re.search(r"\bempty string\b", text, re.I) and "" not in literals:
@@ -179,14 +188,43 @@ def extract_edge_case_literals(text: str) -> list[str]:
     return literals
 
 
-def should_keep_literal(literal: str) -> bool:
+def should_keep_literal(literal: str, text: str, start: int, end: int) -> bool:
+    context = text[max(0, start - 120) : min(len(text), end + 120)]
+    line_start = text.rfind("\n", 0, start) + 1
+    line_end = text.find("\n", end)
+    if line_end == -1:
+        line_end = len(text)
+    line = text[line_start:line_end]
+
     if literal.startswith(("http://", "https://")):
+        return False
+    if len(literal) > 40:
+        return False
+    if re.fullmatch(r"X{2,}", literal):
+        return False
+    if literal.lower().startswith("screenshot "):
+        return False
+    if literal.endswith("="):
+        return False
+    if re.search(r"\.{2,}", literal):
+        return False
+    if re.fullmatch(r"\d+", literal):
         return False
     if re.search(r"\.(?:py|ts|tsx|js|jsx|go|md|json|yaml|yml|toml)(?::\d+)?$", literal):
         return False
     if re.fullmatch(r"v?\d+(?:\.\d+){1,3}", literal):
         return False
     if re.fullmatch(r"[A-Fa-f0-9]{12,}", literal):
+        return False
+    if not re.search(
+        r"\b(actual|bug|currently|error|expect|expected|instead|must|returns?|should|throw|throws?|wrong)\b",
+        context,
+        re.I,
+    ):
+        return False
+    if re.search(r"\b(example|e\\.g\\.|sample)\b", line, re.I) and not re.search(
+        r"\b(expect|expected|must|should|return|returns?)\b", line, re.I
+    ):
         return False
     return True
 
@@ -206,14 +244,28 @@ def contains_literal(text: str, literal: str) -> bool:
     return normalize_for_search(literal) in normalize_for_search(text)
 
 
+def contains_public_symbol(text: str, symbol: str) -> bool:
+    normalized_text = normalize_for_search(text)
+    normalized_symbol = normalize_for_search(symbol)
+    if normalized_symbol in normalized_text:
+        return True
+    if "." in symbol:
+        parts = [part for part in symbol.split(".") if part]
+        if len(parts) == 2:
+            qualifier, member = parts
+            return re.search(rf"\b{re.escape(member)}\b", text, re.I) is not None and re.search(
+                rf"\b{re.escape(qualifier)}\b", text, re.I
+            ) is not None
+    return False
+
+
 def validate_rewrite_quality(row: dict, rewrite: dict) -> list[str]:
     """Warn when a rewrite likely lost behavior-critical prompt content."""
     rewritten = rewrite_search_text(rewrite)
-    normalized_rewritten = normalize_for_search(rewritten)
     warnings = []
 
     for symbol in extract_public_symbols(normalize_text(row["interface"] or "")):
-        if normalize_for_search(symbol) not in normalized_rewritten:
+        if not contains_public_symbol(rewritten, symbol):
             warnings.append(f"missing_public_symbol:{symbol}")
 
     original = normalize_text(row["problem_statement"] or "")
@@ -232,6 +284,8 @@ def user_prompt(row: dict) -> str:
     interface = normalize_text(row["interface"] or "")
     if interface == "No new interfaces are introduced.":
         interface = ""
+    public_symbols = extract_public_symbols(interface)
+    public_symbols_text = ", ".join(public_symbols) if public_symbols else "(none)"
     return "\n".join(
         [
             "Rewrite this task prompt.",
@@ -242,8 +296,20 @@ def user_prompt(row: dict) -> str:
             "Original prompt:",
             normalize_text(row["problem_statement"] or ""),
             "",
-            "Generated interface notes to use only if they describe required public behavior:",
+            (
+                "Generated public interface and compatibility notes. Preserve these when they "
+                "describe callable signatures, constructor/default behavior, return shapes, "
+                "exported fields, config/serialized keys, or import/export compatibility. "
+                "Do not copy source locations."
+            ),
             interface or "(none)",
+            "",
+            (
+                "Likely required public symbols detected from those notes. Include these exact "
+                "names in the rewritten prompt or preserved requirements unless the notes clearly "
+                "make them private/internal:"
+            ),
+            public_symbols_text,
         ]
     )
 
