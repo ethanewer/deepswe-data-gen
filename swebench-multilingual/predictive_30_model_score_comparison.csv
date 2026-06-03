@@ -1,0 +1,7 @@
+model,source,coverage,full_score_pct,subset_score_pct,error_pct_points
+gpt-5-nano,SWE-Router/swebench-multilingual-gpt-5-nano,300,1.3333,0.0,-1.3333
+gpt-5-mini,SWE-Router/swebench-multilingual-gpt-5-mini,300,40.6667,40.0,-0.6667
+claude-opus-4.7,SWE-Router/swebench-multilingual-claude-opus-4.7,300,73.6667,73.3333,-0.3333
+deepseek-v4-flash,SWE-Router/swebench-multilingual-deepseek-v4-flash,300,72.0,73.3333,1.3333
+glm-5,AlienKevin/SWE-bench-multilingual-glm-5-trajectories,300,69.6667,70.0,0.3333
+minimax-m2.5,AlienKevin/SWE-bench-multilingual-minimax-m2.5-trajectories,299,73.3333,73.3333,0.0

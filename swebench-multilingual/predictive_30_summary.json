@@ -1,0 +1,209 @@
+{
+  "files": [
+    "predictive_30_tasks.csv",
+    "predictive_30_instance_ids.txt",
+    "predictive_30_model_score_comparison.csv",
+    "predictive_30_summary.json"
+  ],
+  "known_full_runs": {
+    "claude-opus-4.7": {
+      "coverage": 300,
+      "dataset": "SWE-Router/swebench-multilingual-claude-opus-4.7",
+      "missing_counted_unresolved": [],
+      "rows": 300,
+      "score": 0.7366666666666667,
+      "source": "SWE-Router",
+      "unknown_ids": []
+    },
+    "deepseek-v4-flash": {
+      "coverage": 300,
+      "dataset": "SWE-Router/swebench-multilingual-deepseek-v4-flash",
+      "missing_counted_unresolved": [],
+      "rows": 300,
+      "score": 0.72,
+      "source": "SWE-Router",
+      "unknown_ids": []
+    },
+    "glm-5": {
+      "coverage": 300,
+      "dataset": "AlienKevin/SWE-bench-multilingual-glm-5-trajectories",
+      "mapped": 300,
+      "misses": [],
+      "missing_counted_unresolved": [],
+      "rows": 300,
+      "score": 0.6966666666666667,
+      "source": "AlienKevin"
+    },
+    "gpt-5-mini": {
+      "coverage": 300,
+      "dataset": "SWE-Router/swebench-multilingual-gpt-5-mini",
+      "missing_counted_unresolved": [],
+      "rows": 300,
+      "score": 0.4066666666666667,
+      "source": "SWE-Router",
+      "unknown_ids": []
+    },
+    "gpt-5-nano": {
+      "coverage": 300,
+      "dataset": "SWE-Router/swebench-multilingual-gpt-5-nano",
+      "missing_counted_unresolved": [],
+      "rows": 300,
+      "score": 0.013333333333333334,
+      "source": "SWE-Router",
+      "unknown_ids": []
+    },
+    "minimax-m2.5": {
+      "coverage": 299,
+      "dataset": "AlienKevin/SWE-bench-multilingual-minimax-m2.5-trajectories",
+      "mapped": 299,
+      "misses": [],
+      "missing_counted_unresolved": [
+        "tokio-rs__tokio-7139"
+      ],
+      "rows": 299,
+      "score": 0.7333333333333333,
+      "source": "AlienKevin"
+    }
+  },
+  "known_partial_runs_used_for_difficulty_signal": {
+    "multi-swe-agent-32b-rust": {
+      "coverage": 43,
+      "dataset": "AlienKevin/SWE-bench-Multilingual-trajectories",
+      "rows": 43,
+      "score_on_available_tasks": 0.023255813953488372,
+      "source": "AlienKevin",
+      "unknown_ids": []
+    },
+    "qwen2.5-coder-32b-instruct-rust": {
+      "coverage": 43,
+      "dataset": "AlienKevin/SWE-bench-Multilingual-trajectories",
+      "rows": 43,
+      "score_on_available_tasks": 0.0,
+      "source": "AlienKevin",
+      "unknown_ids": []
+    },
+    "swe-agent-lm-32b-rust": {
+      "coverage": 43,
+      "dataset": "AlienKevin/SWE-bench-Multilingual-trajectories",
+      "rows": 43,
+      "score_on_available_tasks": 0.16279069767441862,
+      "source": "AlienKevin",
+      "unknown_ids": []
+    }
+  },
+  "random_seed": 20260603,
+  "selected_instance_ids": [
+    "jqlang__jq-2750",
+    "nlohmann__json-4237",
+    "redis__redis-10764",
+    "redis__redis-11734",
+    "valkey-io__valkey-790",
+    "caddyserver__caddy-6350",
+    "gin-gonic__gin-3741",
+    "gohugoio__hugo-12204",
+    "hashicorp__terraform-34814",
+    "hashicorp__terraform-34900",
+    "apache__druid-16875",
+    "apache__lucene-12196",
+    "google__gson-2024",
+    "google__gson-2061",
+    "babel__babel-15445",
+    "preactjs__preact-3345",
+    "vuejs__core-11589",
+    "vuejs__core-11899",
+    "briannesbitt__carbon-2752",
+    "php-cs-fixer__php-cs-fixer-7663",
+    "php-cs-fixer__php-cs-fixer-8256",
+    "phpoffice__phpspreadsheet-4186",
+    "fastlane__fastlane-20975",
+    "fluent__fluentd-3641",
+    "jekyll__jekyll-8047",
+    "jordansissel__fpm-1829",
+    "astral-sh__ruff-15543",
+    "burntsushi__ripgrep-2209",
+    "sharkdp__bat-3108",
+    "tokio-rs__tokio-4898"
+  ],
+  "selected_language_group_counts": {
+    "C/C++": 5,
+    "Go": 5,
+    "Java": 4,
+    "JavaScript/TypeScript": 4,
+    "PHP": 4,
+    "Ruby": 4,
+    "Rust": 4
+  },
+  "selected_repo_counts": {
+    "apache/druid": 1,
+    "apache/lucene": 1,
+    "astral-sh/ruff": 1,
+    "babel/babel": 1,
+    "briannesbitt/carbon": 1,
+    "burntsushi/ripgrep": 1,
+    "caddyserver/caddy": 1,
+    "fastlane/fastlane": 1,
+    "fluent/fluentd": 1,
+    "gin-gonic/gin": 1,
+    "gohugoio/hugo": 1,
+    "google/gson": 2,
+    "hashicorp/terraform": 2,
+    "jekyll/jekyll": 1,
+    "jordansissel/fpm": 1,
+    "jqlang/jq": 1,
+    "nlohmann/json": 1,
+    "php-cs-fixer/php-cs-fixer": 2,
+    "phpoffice/phpspreadsheet": 1,
+    "preactjs/preact": 1,
+    "redis/redis": 2,
+    "sharkdp/bat": 1,
+    "tokio-rs/tokio": 1,
+    "valkey-io/valkey": 1,
+    "vuejs/core": 2
+  },
+  "selection_method": {
+    "constraints": {
+      "language_group_counts": "floor/ceil proportional quotas; all choices tried",
+      "max_per_repo": 2
+    },
+    "objective_terms": [
+      "model score RMSE",
+      "model score max absolute error",
+      "full-model task difficulty histogram balance",
+      "all-available task difficulty histogram balance",
+      "year bucket balance"
+    ],
+    "target": "Minimize 30-task score error against known full/nearly-full per-instance model runs."
+  },
+  "subset_size": 30,
+  "task_dataset": "SWE-bench/SWE-bench_Multilingual",
+  "validation": {
+    "mae_pct_points": 0.6666666666666667,
+    "max_abs_error_pct_points": 1.3333333333333335,
+    "pearson_across_known_model_scores": 0.999811599235369,
+    "random_stratified_baseline_pct_points": {
+      "mae": {
+        "median": 5.1111111111111125,
+        "p05": 2.4444444444444478,
+        "p95": 10.333333333333337
+      },
+      "max_abs_error": {
+        "median": 10.666666666666668,
+        "p05": 5.333333333333334,
+        "p95": 19.999999999999996
+      },
+      "pearson": {
+        "median": 0.988097809908569,
+        "p05": 0.9632264924140594,
+        "p95": 0.9975451558670008
+      },
+      "rmse": {
+        "median": 6.292264504341233,
+        "p05": 3.097191081059193,
+        "p95": 11.940438126893186
+      },
+      "samples": 5000
+    },
+    "rmse_pct_points": 0.8388704928078605,
+    "spearman_across_known_model_scores": 0.9411239481143202
+  }
+}

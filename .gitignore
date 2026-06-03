@@ -1,6 +1,16 @@
 runs/
+logs/
+openai__*.json
 swerebench-v2/harbor-tasks/
 swerebench-v2/rewritten-prompts/
+swebench-multilingual/latest_*.txt
+swebench-multilingual/*/images*.txt
+swebench-multilingual/**/preds.json
+swebench-multilingual/**/*.traj.json
+swebench-multilingual/**/minisweagent.log
+swebench-multilingual/**/evaluation_report.json
+swebench-multilingual/**/evaluation_summary.json
+swebench-multilingual/**/exit_statuses_*.yaml
 
 # Python virtual environments
 .venv/
