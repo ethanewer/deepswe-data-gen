@@ -103,6 +103,10 @@ def normalize_language(language: str) -> str:
     return {"ts": "typescript"}.get(language, language)
 
 
+def repo_workdir(row: dict) -> str:
+    return "/" + row["repo"].split("/")[-1]
+
+
 def task_slug(instance_id: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_.-]+", "-", instance_id).strip("-").lower()
 
@@ -210,6 +214,7 @@ def build_task_toml(row: dict) -> str:
         gpus = 0
         allow_internet = false
         mcp_servers = []
+        workdir = {toml_string(repo_workdir(row))}
 
         [environment.env]
 
@@ -225,39 +230,49 @@ def shell_quote(value: str) -> str:
 def build_test_sh(row: dict) -> str:
     test_cmd = row["install_config"]["test_cmd"]
     base_commit = row["base_commit"]
+    workdir = repo_workdir(row)
     return dedent(
         f"""\
         #!/bin/bash
 
         set -uo pipefail
 
+        fail() {{
+            code="${{1:-1}}"
+            mkdir -p /logs/verifier 2>/dev/null || true
+            echo 0 > /logs/verifier/reward.txt 2>/dev/null || true
+            exit "$code"
+        }}
+
         log() {{
             echo "[verifier] $*"
         }}
 
-        if [ -d /testbed ]; then
+        if [ -d {shell_quote(workdir)} ]; then
+            cd {shell_quote(workdir)} || fail 6
+        elif [ -d /testbed ]; then
             cd /testbed
         elif [ -d /app ]; then
             cd /app
         else
-            log "ERROR: neither /testbed nor /app exists"
-            exit 6
+            log "ERROR: no repository workdir exists"
+            fail 6
         fi
 
         PIER_MODEL_BASE_COMMIT={shell_quote(base_commit)}
         PIER_MODEL_PATCH_PATH="/logs/artifacts/model.patch"
 
         log "--- Step 0: Capturing model.patch artifact ---"
-        mkdir -p "$(dirname "$PIER_MODEL_PATCH_PATH")" || exit 7
+        mkdir -p "$(dirname "$PIER_MODEL_PATCH_PATH")" || fail 7
         git config --global --add safe.directory "$(pwd)" 2>/dev/null || true
         if ! git rev-parse --verify "${{PIER_MODEL_BASE_COMMIT}}^{{commit}}" >/dev/null 2>&1; then
             log "ERROR: Base commit $PIER_MODEL_BASE_COMMIT is not present"
-            exit 7
+            fail 7
         fi
-        git reset --soft "$PIER_MODEL_BASE_COMMIT" || exit 7
-        git add -A -- . || exit 7
-        git diff --cached --binary > "$PIER_MODEL_PATCH_PATH" || exit 7
-        git reset -q || exit 7
+        git reset --soft "$PIER_MODEL_BASE_COMMIT" || fail 7
+        git add -A -- . || fail 7
+        git diff --cached --binary > "$PIER_MODEL_PATCH_PATH" || fail 7
+        git reset -q || fail 7
 
         log "--- Step 1: Resetting files touched by verifier patch ---"
         python3 - <<'PY' | while IFS= read -r f; do
@@ -281,14 +296,14 @@ def build_test_sh(row: dict) -> str:
         done
 
         log "--- Step 2: Applying verifier test.patch ---"
-        git apply --whitespace=nowarn /tests/test.patch || exit 3
+        git apply --whitespace=nowarn /tests/test.patch || fail 3
 
         log "--- Step 3: Running SWE-rebench test command ---"
         bash -lc {shell_quote(test_cmd)}
         RESULT=$?
         log "Verifier exit code: $RESULT"
 
-        mkdir -p /logs/verifier || exit 5
+        mkdir -p /logs/verifier || fail 5
         if [ "$RESULT" -eq 0 ]; then
             echo 1 > /logs/verifier/reward.txt
         else
@@ -309,12 +324,6 @@ def build_solve_sh() -> str:
         #!/bin/bash
 
         set -euo pipefail
-
-        if [ -d /testbed ]; then
-            cd /testbed
-        else
-            cd /app
-        fi
 
         git apply --whitespace=nowarn /solution/solution.patch
         """
