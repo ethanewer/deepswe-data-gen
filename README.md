@@ -54,6 +54,25 @@ generated Harbor tasks default to `--instruction-style deepswe`, which removes
 issue-template checkboxes, generated interface blocks, and external URLs from
 the agent-facing prompt.
 
+## Rewrite Prompts
+
+Use `gpt-5.4-mini` to rewrite selected prompts into a shorter DeepSWE-style
+form:
+
+```bash
+python3 scripts/rewrite_prompts.py --model gpt-5.4-mini --limit 10
+```
+
+This writes JSONL plus per-task markdown files under
+`swerebench-v2/rewritten-prompts/`. The repo includes the first inspected
+10-prompt sample; the directory is ignored for future large rewrite batches.
+
+To materialize Harbor tasks with rewritten prompts:
+
+```bash
+python3 scripts/generate_harbor_tasks.py --clean --limit 10 --instruction-style rewritten
+```
+
 ## Generate Pier/Harbor Tasks
 
 Generate one easy task for a smoke test:

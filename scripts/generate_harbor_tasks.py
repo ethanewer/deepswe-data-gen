@@ -23,6 +23,7 @@ DIFFICULTIES = ("easy", "medium", "hard")
 MIN_CONFIDENCE = 0.95
 TASKS_CSV = REPO_ROOT / "swerebench-v2" / "high_quality_conf_ge_0.95_tasks.csv"
 DEFAULT_OUTPUT_DIR = REPO_ROOT / "swerebench-v2" / "harbor-tasks"
+DEFAULT_REWRITES_JSONL = REPO_ROOT / "swerebench-v2" / "rewritten-prompts" / "rewrites.jsonl"
 
 
 def parse_args() -> argparse.Namespace:
@@ -42,9 +43,15 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--instruction-style",
-        choices=("deepswe", "swe_rebench"),
+        choices=("deepswe", "swe_rebench", "rewritten"),
         default="deepswe",
         help="Prompt style to write to instruction.md.",
+    )
+    parser.add_argument(
+        "--rewrites-file",
+        type=Path,
+        default=DEFAULT_REWRITES_JSONL,
+        help="JSONL file from scripts/rewrite_prompts.py.",
     )
     parser.add_argument(
         "--clean",
@@ -69,12 +76,18 @@ def is_high_quality(row: dict) -> bool:
     )
 
 
-def load_selected_ids(path: Path, args: argparse.Namespace) -> list[str]:
+def load_selected_ids(
+    path: Path,
+    args: argparse.Namespace,
+    rewritten_instance_ids: set[str] | None = None,
+) -> list[str]:
     selected = []
     requested = set(args.instance_id)
     with path.open(newline="", encoding="utf-8") as handle:
         for row in csv.DictReader(handle):
             if requested and row["instance_id"] not in requested:
+                continue
+            if rewritten_instance_ids is not None and row["instance_id"] not in rewritten_instance_ids:
                 continue
             if args.difficulty and row["difficulty"] != args.difficulty:
                 continue
@@ -112,7 +125,26 @@ def clean_issue_prompt(text: str, *, strip_urls: bool = False) -> str:
     return text.strip()
 
 
-def build_instruction(row: dict, style: str) -> str:
+def load_rewrites(path: Path) -> dict[str, str]:
+    if not path.exists():
+        return {}
+    rewrites = {}
+    with path.open(encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            record = json.loads(line)
+            rewrites[record["task"]["instance_id"]] = record["rewrite"]["rewritten_prompt"]
+    return rewrites
+
+
+def build_instruction(row: dict, style: str, rewrites: dict[str, str] | None = None) -> str:
+    if style == "rewritten":
+        rewritten_prompt = (rewrites or {}).get(row["instance_id"])
+        if not rewritten_prompt:
+            raise ValueError(f"missing rewritten prompt for {row['instance_id']}")
+        return f"{rewritten_prompt.strip()}\n"
+
     problem = clean_issue_prompt(
         row["problem_statement"] or "",
         strip_urls=style == "deepswe",
@@ -296,12 +328,17 @@ def write_text(path: Path, text: str, executable: bool = False) -> None:
         path.chmod(0o755)
 
 
-def materialize_task(row: dict, output_dir: Path, instruction_style: str) -> Path:
+def materialize_task(
+    row: dict,
+    output_dir: Path,
+    instruction_style: str,
+    rewrites: dict[str, str],
+) -> Path:
     task_dir = output_dir / task_slug(row["instance_id"])
     if task_dir.exists():
         shutil.rmtree(task_dir)
     write_text(task_dir / "task.toml", build_task_toml(row))
-    write_text(task_dir / "instruction.md", build_instruction(row, instruction_style))
+    write_text(task_dir / "instruction.md", build_instruction(row, instruction_style, rewrites))
     write_text(task_dir / "environment" / "Dockerfile", build_environment_dockerfile(row))
     write_text(task_dir / "tests" / "test.patch", row["test_patch"] or "")
     write_text(task_dir / "tests" / "test.sh", build_test_sh(row), executable=True)
@@ -320,7 +357,9 @@ def iter_rows_by_id(instance_ids: Iterable[str]) -> Iterable[dict]:
 
 def main() -> None:
     args = parse_args()
-    selected_ids = load_selected_ids(args.tasks_file, args)
+    rewrites = load_rewrites(args.rewrites_file)
+    rewritten_instance_ids = set(rewrites) if args.instruction_style == "rewritten" else None
+    selected_ids = load_selected_ids(args.tasks_file, args, rewritten_instance_ids)
     if not selected_ids:
         raise SystemExit("No tasks matched the requested filters")
 
@@ -330,7 +369,10 @@ def main() -> None:
 
     selected_id_order = {instance_id: index for index, instance_id in enumerate(selected_ids)}
     rows = sorted(iter_rows_by_id(selected_ids), key=lambda row: selected_id_order[row["instance_id"]])
-    task_dirs = [materialize_task(row, args.output_dir, args.instruction_style) for row in rows]
+    task_dirs = [
+        materialize_task(row, args.output_dir, args.instruction_style, rewrites)
+        for row in rows
+    ]
 
     manifest = {
         "source_dataset": DATASET_NAME,
