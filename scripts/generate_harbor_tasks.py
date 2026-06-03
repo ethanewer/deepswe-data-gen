@@ -58,6 +58,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Delete the output directory before writing tasks.",
     )
+    parser.add_argument(
+        "--allow-internet",
+        action="store_true",
+        help="Allow generated task environments to access the internet.",
+    )
     return parser.parse_args()
 
 
@@ -165,7 +170,7 @@ def build_instruction(row: dict, style: str, rewrites: dict[str, str] | None = N
     return f"{problem}\n"
 
 
-def build_task_toml(row: dict) -> str:
+def build_task_toml(row: dict, *, allow_internet: bool = False) -> str:
     metadata = row["meta"]["llm_metadata"]
     title = clean_issue_prompt(row["problem_statement"] or row["instance_id"]).splitlines()[0]
     title = title[:180]
@@ -212,7 +217,7 @@ def build_task_toml(row: dict) -> str:
         memory_mb = 8192
         storage_mb = 20480
         gpus = 0
-        allow_internet = false
+        allow_internet = {str(allow_internet).lower()}
         mcp_servers = []
         workdir = {toml_string(repo_workdir(row))}
 
@@ -342,11 +347,12 @@ def materialize_task(
     output_dir: Path,
     instruction_style: str,
     rewrites: dict[str, str],
+    allow_internet: bool,
 ) -> Path:
     task_dir = output_dir / task_slug(row["instance_id"])
     if task_dir.exists():
         shutil.rmtree(task_dir)
-    write_text(task_dir / "task.toml", build_task_toml(row))
+    write_text(task_dir / "task.toml", build_task_toml(row, allow_internet=allow_internet))
     write_text(task_dir / "instruction.md", build_instruction(row, instruction_style, rewrites))
     write_text(task_dir / "environment" / "Dockerfile", build_environment_dockerfile(row))
     write_text(task_dir / "tests" / "test.patch", row["test_patch"] or "")
@@ -379,7 +385,7 @@ def main() -> None:
     selected_id_order = {instance_id: index for index, instance_id in enumerate(selected_ids)}
     rows = sorted(iter_rows_by_id(selected_ids), key=lambda row: selected_id_order[row["instance_id"]])
     task_dirs = [
-        materialize_task(row, args.output_dir, args.instruction_style, rewrites)
+        materialize_task(row, args.output_dir, args.instruction_style, rewrites, args.allow_internet)
         for row in rows
     ]
 
@@ -387,6 +393,7 @@ def main() -> None:
         "source_dataset": DATASET_NAME,
         "split": SPLIT,
         "instruction_style": args.instruction_style,
+        "allow_internet": args.allow_internet,
         "total": len(task_dirs),
         "tasks": [path.name for path in task_dirs],
     }
