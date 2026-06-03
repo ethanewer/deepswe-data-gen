@@ -34,11 +34,6 @@ The public analyser helper `has_create_index(sql_statements, **kwargs)` must kee
 - The warning suppression should apply only when the table creation is present in the same migration transaction, not for unrelated prior or later migrations.
 - The contract around `**kwargs` is that they are accepted but currently unused; avoid changing call compatibility.
 
-## Quality Warnings
-
-- missing_edge_literal:shipments_shipmentmetadataalert
-- missing_edge_literal:metadata_id
-
 ## Original Prompt
 
 Linter fails on CREATE INDEX when creating a new table

@@ -61,10 +61,8 @@ After the pipeline changes:
 
 - The four previously problematic tasks were rerun and produced rewrites preserving the missing public API/compatibility contracts.
 - A final 15-task sample was rerun with the current pipeline.
-- 12 of 15 final sample rewrites had zero quality warnings.
-- The remaining warnings were reviewed as false positives:
-  - `3yourmind__django-migration-linter-222`: `forwards_func` is an example migration function name.
-  - `3yourmind__django-migration-linter-186`: `shipments_shipmentmetadataalert` and `metadata_id` are example SQL/schema literals, not required prompt behavior.
+- An additional warning-filter refinement ignored quoted literals inside fenced reproduction code blocks.
+- After recomputing quality warnings with the current checker, all 15 final sample rewrites had zero quality warnings.
 
 Local verification:
 

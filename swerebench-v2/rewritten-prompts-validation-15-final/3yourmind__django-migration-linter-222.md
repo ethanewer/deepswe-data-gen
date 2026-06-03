@@ -29,10 +29,6 @@ Keep the existing rule that importing models directly in data migrations is inco
 - The field name `many_to_may` may be a typo in the original example; preserve the behavior for the shown pattern without assuming a renamed API.
 - The linter’s broader detection rules for valid `through` model usage should remain intact while eliminating this false positive.
 
-## Quality Warnings
-
-- missing_edge_literal:forwards_func
-
 ## Original Prompt
 
 Linter failing when using django 'through'

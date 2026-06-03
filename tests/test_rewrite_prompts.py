@@ -113,6 +113,20 @@ Currently the function returns "stark" when it should return an empty string.
     assert rewrite_prompts.extract_edge_case_literals(text) == ["stark", ""]
 
 
+def test_extract_edge_case_literals_ignores_code_fence_literals():
+    text = '''\
+This should be accepted.
+
+```python
+model_name="prediction"
+```
+
+Currently the function returns "stark" when it should return an empty string.
+'''
+
+    assert rewrite_prompts.extract_edge_case_literals(text) == ["stark", ""]
+
+
 def test_user_prompt_lists_detected_public_symbols():
     row = {
         "repo": "example/repo",

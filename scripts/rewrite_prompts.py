@@ -175,9 +175,12 @@ def extract_edge_case_literals(text: str) -> list[str]:
     if not text:
         return []
 
+    fenced_ranges = markdown_fenced_ranges(text)
     literals = []
     quoted_literal_pattern = r'"([^"\n]{0,80})"|(?<!\w)\'([^\'\n]{0,80})\'(?!\w)'
     for match in re.finditer(quoted_literal_pattern, text):
+        if in_ranges(match.start(), fenced_ranges):
+            continue
         literal = match.group(1) if match.group(1) is not None else match.group(2)
         literal = literal.strip()
         if should_keep_literal(literal, text, match.start(), match.end()) and literal not in literals:
@@ -186,6 +189,27 @@ def extract_edge_case_literals(text: str) -> list[str]:
     if re.search(r"\bempty string\b", text, re.I) and "" not in literals:
         literals.append("")
     return literals
+
+
+def markdown_fenced_ranges(text: str) -> list[tuple[int, int]]:
+    ranges = []
+    fence_start = None
+    offset = 0
+    for line in text.splitlines(keepends=True):
+        if line.lstrip().startswith("```"):
+            if fence_start is None:
+                fence_start = offset
+            else:
+                ranges.append((fence_start, offset + len(line)))
+                fence_start = None
+        offset += len(line)
+    if fence_start is not None:
+        ranges.append((fence_start, len(text)))
+    return ranges
+
+
+def in_ranges(position: int, ranges: list[tuple[int, int]]) -> bool:
+    return any(start <= position < end for start, end in ranges)
 
 
 def should_keep_literal(literal: str, text: str, start: int, end: int) -> bool:
