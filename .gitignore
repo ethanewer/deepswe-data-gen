@@ -1,6 +1,17 @@
 runs/
 swerebench-v2/harbor-tasks/
 swerebench-v2/rewritten-prompts/
+
+# Python virtual environments
+.venv/
+.venv-*/
+venv/
+venv-*/
+env/
+env-*/
+ENV/
+virtualenv/
+
 __pycache__/
 *.pyc
 .DS_Store
