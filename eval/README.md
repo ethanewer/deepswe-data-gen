@@ -184,13 +184,16 @@ SWE-bench Multilingual supports three generation harness values:
   then runs `swebench.harness.run_evaluation`.
 - `openhands-swe`: invokes the OpenHands benchmark command
   `swebenchmultilingual-infer`, converts its `output.jsonl` to `preds.json`,
-  and then runs the same official evaluation command. This harness is
-  experimental and is not fully working yet.
+  fills missing failed instances with empty patches, and then runs the same
+  official evaluation command. This harness is experimental: it now runs end to
+  end in the local smoke setup, but agent quality is not validated and failures
+  may evaluate as empty patches.
 - `opencode`: checks out each selected repository at `base_commit`, runs
   `opencode run` in that worktree, collects the git diff, writes `preds.json`,
   and then runs the same official evaluation command. A command-template
   compatibility hook is still available for custom wrappers. This harness is
-  experimental and is not fully working yet.
+  experimental: it now runs end to end in the local smoke setup, but produced
+  an empty patch on the smoke task.
 
 Keep `mini-swe-agent` as the default harness for benchmark runs until
 `openhands-swe` and `opencode` are validated end to end.
@@ -210,7 +213,12 @@ OpenHands example:
 The OpenHands command comes from the `OpenHands/benchmarks` project. Install it
 so `swebenchmultilingual-infer` is on `PATH`, or pass
 `--openhands-infer-command`. If you run the command from a source checkout, set
-`--openhands-command-cwd` to that checkout path.
+`--openhands-command-cwd` to that checkout path. For source checkouts, the
+wrapper can patch the local checkout at runtime to forward CA/pager environment
+into Docker, omit Docker `--platform` on local images, and keep `datasets`
+compatible with the SWE-bench Multilingual cache. Those defaults can be disabled
+with `--no-openhands-forward-ca-bundle` and
+`--no-openhands-fix-datasets-dependency`.
 
 opencode example:
 
@@ -233,7 +241,8 @@ Unless `--opencode-config` is provided, the runner supplies
 `OPENCODE_CONFIG_CONTENT` with the selected model and provider. That generated
 config references API keys as `{env:...}` and does not write secrets to disk.
 Use `--opencode-workspace` to choose where per-instance worktrees, logs, and
-opencode state are stored.
+opencode state are stored. The native runner isolates `HOME` and XDG state per
+instance so user-level opencode config/plugins do not affect benchmark runs.
 
 opencode example with a local wrapper:
 

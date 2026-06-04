@@ -164,8 +164,14 @@ def remove_files_from_patch(git_patch: str, files: tuple[str, ...]) -> str:
     return "".join(kept_diffs)
 
 
-def convert_openhands_predictions(input_path: Path, output_path: Path, model_name: str) -> None:
+def convert_openhands_predictions(
+    input_path: Path,
+    output_path: Path,
+    model_name: str,
+    instance_ids: list[str] | None = None,
+) -> None:
     predictions = []
+    seen_instance_ids = set()
     with input_path.open() as f:
         for line_number, line in enumerate(f, start=1):
             if not line.strip():
@@ -178,6 +184,7 @@ def convert_openhands_predictions(input_path: Path, output_path: Path, model_nam
             git_patch = remove_files_from_patch(
                 test_result.get("git_patch", ""), OPENHANDS_SETUP_FILES_TO_REMOVE
             )
+            seen_instance_ids.add(instance_id)
             predictions.append(
                 {
                     "instance_id": instance_id,
@@ -185,6 +192,19 @@ def convert_openhands_predictions(input_path: Path, output_path: Path, model_nam
                     "model_name_or_path": model_name,
                 }
             )
+    if instance_ids:
+        for instance_id in instance_ids:
+            if instance_id in seen_instance_ids:
+                continue
+            predictions.append(
+                {
+                    "instance_id": instance_id,
+                    "model_patch": "",
+                    "model_name_or_path": model_name,
+                }
+            )
+        predictions_by_id = {prediction["instance_id"]: prediction for prediction in predictions}
+        predictions = [predictions_by_id[instance_id] for instance_id in instance_ids]
     if not predictions:
         raise RuntimeError(f"{input_path} did not contain any OpenHands predictions")
     output_path.write_text(json.dumps(predictions, indent=2) + "\n")
@@ -197,6 +217,248 @@ def latest_openhands_output(output_dir: Path) -> Path | None:
         reverse=True,
     )
     return candidates[0] if candidates else None
+
+
+def patch_openhands_checkout_for_docker_ca(
+    command_cwd: Path,
+    env: dict[str, str],
+    *,
+    forward_ca_bundle: bool = True,
+) -> bool:
+    ca_path = None
+    if forward_ca_bundle:
+        ca_bundle = env.get("REQUESTS_CA_BUNDLE") or env.get("SSL_CERT_FILE")
+        ca_path = Path(ca_bundle) if ca_bundle else None
+        if ca_path is not None and not ca_path.is_file():
+            ca_path = None
+
+    run_infer = command_cwd / "benchmarks" / "swebenchmultilingual" / "run_infer.py"
+    if not run_infer.is_file():
+        return False
+
+    text = run_infer.read_text()
+    ca_env_block = """                for env_name in (
+                    "SSL_CERT_FILE",
+                    "REQUESTS_CA_BUNDLE",
+                    "CURL_CA_BUNDLE",
+                ):
+                    if env_name in os.environ and env_name not in docker_forward_env:
+                        docker_forward_env.append(env_name)
+"""
+    ca_and_pager_env_block = """                for env_name in (
+                    "SSL_CERT_FILE",
+                    "REQUESTS_CA_BUNDLE",
+                    "CURL_CA_BUNDLE",
+                    "GIT_PAGER",
+                    "PAGER",
+                    "LESS",
+                ):
+                    if env_name in os.environ and env_name not in docker_forward_env:
+                        docker_forward_env.append(env_name)
+"""
+    pager_env_block = """            for env_name in ("GIT_PAGER", "PAGER", "LESS"):
+                if env_name in os.environ and env_name not in docker_forward_env:
+                    docker_forward_env.append(env_name)
+"""
+    ca_and_pager_env_replacement = ca_env_block + pager_env_block
+    if "OPENHANDS_DOCKER_CA_BUNDLE" in text:
+        original_text = text
+        text = text.replace(ca_and_pager_env_block, ca_and_pager_env_replacement)
+        if "GIT_PAGER" not in text and ca_env_block in text:
+            text = text.replace(ca_env_block, ca_and_pager_env_replacement)
+        if "OPENHANDS_DOCKER_PYTHONPATH" not in text:
+            text = text.replace(
+                """            workspace = DockerWorkspace(
+""",
+                """            docker_pythonpath = os.getenv("OPENHANDS_DOCKER_PYTHONPATH")
+            if docker_pythonpath:
+                docker_volumes.append(f"{docker_pythonpath}:{docker_pythonpath}:ro")
+                if "PYTHONPATH" not in docker_forward_env:
+                    docker_forward_env.append("PYTHONPATH")
+            workspace = DockerWorkspace(
+""",
+            )
+        if text != original_text:
+            run_infer.write_text(text)
+        if ca_path is not None:
+            env.setdefault("OPENHANDS_DOCKER_CA_BUNDLE", str(ca_path))
+        return True
+
+    old = """            workspace = DockerWorkspace(
+                server_image=agent_server_image,
+                working_dir="/workspace",
+                forward_env=forward_env or [],
+            )
+"""
+    new = """            docker_forward_env = list(forward_env or [])
+            docker_volumes = []
+            docker_ca_bundle = os.getenv("OPENHANDS_DOCKER_CA_BUNDLE")
+            if docker_ca_bundle:
+                docker_volumes.append(f"{docker_ca_bundle}:{docker_ca_bundle}:ro")
+                for env_name in (
+                    "SSL_CERT_FILE",
+                    "REQUESTS_CA_BUNDLE",
+                    "CURL_CA_BUNDLE",
+                ):
+                    if env_name in os.environ and env_name not in docker_forward_env:
+                        docker_forward_env.append(env_name)
+            for env_name in ("GIT_PAGER", "PAGER", "LESS"):
+                if env_name in os.environ and env_name not in docker_forward_env:
+                    docker_forward_env.append(env_name)
+            docker_pythonpath = os.getenv("OPENHANDS_DOCKER_PYTHONPATH")
+            if docker_pythonpath:
+                docker_volumes.append(f"{docker_pythonpath}:{docker_pythonpath}:ro")
+                if "PYTHONPATH" not in docker_forward_env:
+                    docker_forward_env.append("PYTHONPATH")
+            workspace = DockerWorkspace(
+                server_image=agent_server_image,
+                working_dir="/workspace",
+                forward_env=docker_forward_env,
+                volumes=docker_volumes,
+            )
+"""
+    if old not in text:
+        raise RuntimeError(
+            f"{run_infer} does not match the expected OpenHands multilingual "
+            "DockerWorkspace block; cannot patch CA forwarding"
+        )
+    run_infer.write_text(text.replace(old, new))
+    if ca_path is not None:
+        env.setdefault("OPENHANDS_DOCKER_CA_BUNDLE", str(ca_path))
+    return True
+
+
+def write_openhands_docker_sitecustomize(output_dir: Path, env: dict[str, str]) -> Path:
+    site_dir = output_dir / "openhands_docker_sitecustomize"
+    site_dir.mkdir(parents=True, exist_ok=True)
+    sitecustomize = site_dir / "sitecustomize.py"
+    sitecustomize.write_text(
+        "\n".join(
+            [
+                "import ssl",
+                "",
+                "_original_create_default_context = ssl.create_default_context",
+                "",
+                "",
+                "def create_default_context(*args, **kwargs):",
+                "    context = _original_create_default_context(*args, **kwargs)",
+                "    if hasattr(ssl, 'VERIFY_X509_STRICT'):",
+                "        context.verify_flags &= ~ssl.VERIFY_X509_STRICT",
+                "    return context",
+                "",
+                "",
+                "ssl.create_default_context = create_default_context",
+                "",
+            ]
+        )
+    )
+    existing_pythonpath = env.get("PYTHONPATH")
+    if existing_pythonpath:
+        env["PYTHONPATH"] = os.pathsep.join([str(site_dir), existing_pythonpath])
+    else:
+        env["PYTHONPATH"] = str(site_dir)
+    env["OPENHANDS_DOCKER_PYTHONPATH"] = str(site_dir)
+    return sitecustomize
+
+
+def is_openhands_source_checkout(command_cwd: Path) -> bool:
+    return (command_cwd / "benchmarks" / "swebenchmultilingual" / "run_infer.py").is_file()
+
+
+def openhands_venv_python(command_cwd: Path) -> Path | None:
+    candidates = [
+        command_cwd / ".venv" / "bin" / "python",
+        command_cwd / ".venv" / "Scripts" / "python.exe",
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def patch_openhands_checkout_for_docker_platform(command_cwd: Path) -> bool:
+    workspace_py = (
+        command_cwd
+        / "vendor"
+        / "software-agent-sdk"
+        / "openhands-workspace"
+        / "openhands"
+        / "workspace"
+        / "docker"
+        / "workspace.py"
+    )
+    if not workspace_py.is_file():
+        return False
+
+    text = workspace_py.read_text()
+    if "OPENHANDS_DOCKER_OMIT_PLATFORM" in text:
+        return True
+
+    old = """        run_cmd = [
+            "docker",
+            "run",
+            "-d",
+            "--platform",
+            self.platform,
+            "--rm",
+"""
+    new = """        platform_flags = []
+        if os.getenv("OPENHANDS_DOCKER_OMIT_PLATFORM") != "1":
+            platform_flags = ["--platform", self.platform]
+
+        run_cmd = [
+            "docker",
+            "run",
+            "-d",
+            *platform_flags,
+            "--rm",
+"""
+    if old not in text:
+        raise RuntimeError(
+            f"{workspace_py} does not match the expected Docker run block; "
+            "cannot patch platform omission"
+        )
+    workspace_py.write_text(text.replace(old, new))
+    return True
+
+
+def ensure_openhands_dataset_dependency(command_cwd: Path, env: dict[str, str]) -> bool:
+    if not is_openhands_source_checkout(command_cwd):
+        return False
+    python = openhands_venv_python(command_cwd)
+    if python is None:
+        return False
+
+    result = subprocess.run(
+        [
+            str(python),
+            "-c",
+            "import datasets; print(datasets.__version__)",
+        ],
+        cwd=command_cwd,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+    )
+    version = (result.stdout or "").strip().splitlines()[-1] if result.stdout else ""
+    try:
+        parts = tuple(int(part) for part in version.split(".")[:2])
+    except ValueError:
+        parts = ()
+    if parts >= (4, 5):
+        env.setdefault("UV_NO_SYNC", "1")
+        return False
+
+    run_in_dir(
+        ["uv", "pip", "install", "--python", str(python), "datasets>=4.5.0"],
+        env,
+        command_cwd,
+        timeout=600,
+    )
+    env.setdefault("UV_NO_SYNC", "1")
+    return True
 
 
 def render_template_command(template: str, values: dict[str, str]) -> list[str]:
@@ -324,9 +586,11 @@ def opencode_instance_env(
 ) -> dict[str, str]:
     env = base_env.copy()
     state_name = safe_instance_name(instance_id)
+    env["HOME"] = str(workspace_root / "home" / state_name)
     env["XDG_DATA_HOME"] = str(workspace_root / "xdg-data" / state_name)
     env["XDG_CONFIG_HOME"] = str(workspace_root / "xdg-config" / state_name)
     env["XDG_CACHE_HOME"] = str(workspace_root / "xdg-cache" / state_name)
+    env.setdefault("OPENCODE_DISABLE_UPDATE", "1")
     if opencode_config is not None:
         env["OPENCODE_CONFIG"] = str(opencode_config)
         env.pop("OPENCODE_CONFIG_CONTENT", None)
@@ -360,6 +624,7 @@ def run_opencode_instance(
     safe_name = safe_instance_name(instance_id)
     worktree = workspace_root / "worktrees" / safe_name
     log_path = workspace_root / "logs" / f"{safe_name}.log"
+    (workspace_root / "home" / safe_name).mkdir(parents=True, exist_ok=True)
     instance_env = opencode_instance_env(
         base_env,
         workspace_root,
@@ -495,6 +760,7 @@ def run_openhands_generation(
             write_openhands_llm_config(llm_config_path, model_config)
         else:
             generation_env = default_env()
+        generation_env.setdefault("OPENHANDS_SUPPRESS_BANNER", "1")
         try:
             generation_cmd = [
                 *shlex.split(args.openhands_infer_command),
@@ -525,6 +791,21 @@ def run_openhands_generation(
             for extra_arg in args.openhands_extra_arg:
                 generation_cmd.extend(shlex.split(extra_arg))
             command_cwd = args.openhands_command_cwd or REPO_ROOT
+            if getattr(args, "openhands_fix_datasets_dependency", True):
+                ensure_openhands_dataset_dependency(command_cwd, generation_env)
+            if args.openhands_workspace == "docker":
+                generation_env.setdefault("GIT_PAGER", "cat")
+                generation_env.setdefault("PAGER", "cat")
+                generation_env.setdefault("LESS", "-F -X")
+                write_openhands_docker_sitecustomize(output_dir, generation_env)
+            if args.openhands_workspace == "docker":
+                patch_openhands_checkout_for_docker_ca(
+                    command_cwd,
+                    generation_env,
+                    forward_ca_bundle=getattr(args, "openhands_forward_ca_bundle", True),
+                )
+                patch_openhands_checkout_for_docker_platform(command_cwd)
+                generation_env.setdefault("OPENHANDS_DOCKER_OMIT_PLATFORM", "1")
             payload = run_capture_json(generation_cmd, generation_env, cwd=command_cwd)
             if payload.get("output_json"):
                 output_json = Path(payload["output_json"])
@@ -538,7 +819,15 @@ def run_openhands_generation(
     if output_json is None:
         raise RuntimeError("OpenHands did not report output_json and no output.jsonl was found")
     predictions_path = output_dir / "preds.json"
-    convert_openhands_predictions(Path(output_json), predictions_path, model_config.slug)
+    selected_instance_ids = (
+        read_instance_ids(instance_ids_path) if instance_ids_path.exists() else None
+    )
+    convert_openhands_predictions(
+        Path(output_json),
+        predictions_path,
+        model_config.slug,
+        selected_instance_ids,
+    )
     return {"predictions_path": str(predictions_path), "env": generation_env}
 
 
@@ -679,6 +968,32 @@ def main() -> None:
         "--openhands-tool-preset",
         default=defaults.get("openhands_tool_preset", "default"),
         choices=["default", "gemini", "gpt5", "planning"],
+    )
+    parser.add_argument(
+        "--openhands-forward-ca-bundle",
+        dest="openhands_forward_ca_bundle",
+        action="store_true",
+        default=defaults.get("openhands_forward_ca_bundle", True),
+        help="Mount and forward the configured CA bundle into OpenHands Docker workspaces.",
+    )
+    parser.add_argument(
+        "--no-openhands-forward-ca-bundle",
+        dest="openhands_forward_ca_bundle",
+        action="store_false",
+        help="Disable OpenHands Docker CA bundle forwarding.",
+    )
+    parser.add_argument(
+        "--openhands-fix-datasets-dependency",
+        dest="openhands_fix_datasets_dependency",
+        action="store_true",
+        default=defaults.get("openhands_fix_datasets_dependency", True),
+        help="Upgrade OpenHands source-checkout datasets dependency when its lockfile is too old.",
+    )
+    parser.add_argument(
+        "--no-openhands-fix-datasets-dependency",
+        dest="openhands_fix_datasets_dependency",
+        action="store_false",
+        help="Do not modify the OpenHands source-checkout datasets dependency.",
     )
     parser.add_argument("--openhands-enable-delegation", action="store_true")
     parser.add_argument(

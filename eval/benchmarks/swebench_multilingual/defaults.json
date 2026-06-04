@@ -20,6 +20,8 @@
   "openhands_n_critic_runs": 1,
   "openhands_max_retries": 3,
   "openhands_tool_preset": "default",
+  "openhands_forward_ca_bundle": true,
+  "openhands_fix_datasets_dependency": true,
   "openhands_infer_command": "swebenchmultilingual-infer",
   "openhands_command_cwd": null,
   "opencode_command": "npx --yes opencode-ai",

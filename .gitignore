@@ -2,6 +2,7 @@ runs/
 logs/
 .cache/
 openai__*.json
+deepseek-*.json
 swerebench-v2/harbor-tasks/
 swerebench-v2/rewritten-prompts/
 eval/synthetic/swerebench_v2/harbor-tasks/

@@ -41,6 +41,27 @@ def test_convert_openhands_predictions(tmp_path: Path):
     ]
 
 
+def test_convert_openhands_predictions_fills_missing_selected_instances(tmp_path: Path):
+    input_path = tmp_path / "output.jsonl"
+    output_path = tmp_path / "preds.json"
+    input_path.write_text("")
+
+    run.convert_openhands_predictions(
+        input_path,
+        output_path,
+        "deepseek-v4-flash",
+        ["jqlang__jq-2750"],
+    )
+
+    assert json.loads(output_path.read_text()) == [
+        {
+            "instance_id": "jqlang__jq-2750",
+            "model_patch": "",
+            "model_name_or_path": "deepseek-v4-flash",
+        }
+    ]
+
+
 def test_remove_files_from_patch_ignores_embedded_diff_text():
     patch = (
         "diff --git a/docs/example.txt b/docs/example.txt\n"
@@ -214,6 +235,7 @@ def test_openhands_generated_llm_config_is_temporary_and_preserves_options(
             openhands_max_retries=3,
             openhands_n_critic_runs=1,
             openhands_output_json=None,
+            openhands_forward_ca_bundle=True,
             openhands_tool_preset="default",
             openhands_workspace="docker",
         ),
@@ -282,6 +304,7 @@ def test_openhands_infer_command_can_be_multi_word(tmp_path: Path, monkeypatch):
             openhands_max_retries=3,
             openhands_n_critic_runs=1,
             openhands_output_json=None,
+            openhands_forward_ca_bundle=True,
             openhands_tool_preset="default",
             openhands_workspace="docker",
         ),
@@ -360,6 +383,7 @@ def test_openhands_supplied_llm_config_does_not_require_model_credentials(
             openhands_max_retries=3,
             openhands_n_critic_runs=1,
             openhands_output_json=None,
+            openhands_forward_ca_bundle=True,
             openhands_tool_preset="default",
             openhands_workspace="docker",
         ),
@@ -369,6 +393,264 @@ def test_openhands_supplied_llm_config_does_not_require_model_credentials(
     )
 
     assert Path(result["predictions_path"]).exists()
+
+
+def test_openhands_checkout_patch_forwards_ca_bundle(tmp_path: Path):
+    run_infer = tmp_path / "benchmarks" / "swebenchmultilingual" / "run_infer.py"
+    run_infer.parent.mkdir(parents=True)
+    run_infer.write_text(
+        "import os\n"
+        "def prepare():\n"
+        "            workspace = DockerWorkspace(\n"
+        "                server_image=agent_server_image,\n"
+        "                working_dir=\"/workspace\",\n"
+        "                forward_env=forward_env or [],\n"
+        "            )\n"
+    )
+    ca_bundle = tmp_path / "ca.pem"
+    ca_bundle.write_text("-----BEGIN CERTIFICATE-----\n-----END CERTIFICATE-----\n")
+    env = {"REQUESTS_CA_BUNDLE": str(ca_bundle)}
+
+    assert run.patch_openhands_checkout_for_docker_ca(tmp_path, env) is True
+    patched = run_infer.read_text()
+
+    assert "OPENHANDS_DOCKER_CA_BUNDLE" in patched
+    assert "OPENHANDS_DOCKER_PYTHONPATH" in patched
+    assert 'for env_name in ("GIT_PAGER", "PAGER", "LESS")' in patched
+    assert '"CURL_CA_BUNDLE",\n                    "GIT_PAGER"' not in patched
+    assert "volumes=docker_volumes" in patched
+    assert env["OPENHANDS_DOCKER_CA_BUNDLE"] == str(ca_bundle)
+    assert run.patch_openhands_checkout_for_docker_ca(tmp_path, env) is True
+
+
+def test_openhands_checkout_patch_persists_pager_upgrade(tmp_path: Path):
+    run_infer = tmp_path / "benchmarks" / "swebenchmultilingual" / "run_infer.py"
+    run_infer.parent.mkdir(parents=True)
+    run_infer.write_text(
+        "docker_ca_bundle = os.getenv(\"OPENHANDS_DOCKER_CA_BUNDLE\")\n"
+        "docker_pythonpath = os.getenv(\"OPENHANDS_DOCKER_PYTHONPATH\")\n"
+        "                for env_name in (\n"
+        "                    \"SSL_CERT_FILE\",\n"
+        "                    \"REQUESTS_CA_BUNDLE\",\n"
+        "                    \"CURL_CA_BUNDLE\",\n"
+        "                ):\n"
+        "                    if env_name in os.environ and env_name not in docker_forward_env:\n"
+        "                        docker_forward_env.append(env_name)\n"
+    )
+    ca_bundle = tmp_path / "ca.pem"
+    ca_bundle.write_text("-----BEGIN CERTIFICATE-----\n-----END CERTIFICATE-----\n")
+
+    assert run.patch_openhands_checkout_for_docker_ca(
+        tmp_path, {"REQUESTS_CA_BUNDLE": str(ca_bundle)}
+    ) is True
+
+    patched = run_infer.read_text()
+    assert 'for env_name in ("GIT_PAGER", "PAGER", "LESS")' in patched
+    assert '"CURL_CA_BUNDLE",\n                    "GIT_PAGER"' not in patched
+
+
+def test_openhands_checkout_patch_repairs_pager_inside_ca_guard(tmp_path: Path):
+    run_infer = tmp_path / "benchmarks" / "swebenchmultilingual" / "run_infer.py"
+    run_infer.parent.mkdir(parents=True)
+    run_infer.write_text(
+        "docker_ca_bundle = os.getenv(\"OPENHANDS_DOCKER_CA_BUNDLE\")\n"
+        "if docker_ca_bundle:\n"
+        "    docker_volumes.append(f\"{docker_ca_bundle}:{docker_ca_bundle}:ro\")\n"
+        "                for env_name in (\n"
+        "                    \"SSL_CERT_FILE\",\n"
+        "                    \"REQUESTS_CA_BUNDLE\",\n"
+        "                    \"CURL_CA_BUNDLE\",\n"
+        "                    \"GIT_PAGER\",\n"
+        "                    \"PAGER\",\n"
+        "                    \"LESS\",\n"
+        "                ):\n"
+        "                    if env_name in os.environ and env_name not in docker_forward_env:\n"
+        "                        docker_forward_env.append(env_name)\n"
+        "docker_pythonpath = os.getenv(\"OPENHANDS_DOCKER_PYTHONPATH\")\n"
+    )
+
+    assert run.patch_openhands_checkout_for_docker_ca(tmp_path, {}) is True
+    patched = run_infer.read_text()
+
+    assert 'for env_name in ("GIT_PAGER", "PAGER", "LESS")' in patched
+    assert '"CURL_CA_BUNDLE",\n                    "GIT_PAGER"' not in patched
+
+
+def test_openhands_checkout_patch_skips_without_source_checkout(tmp_path: Path):
+    ca_bundle = tmp_path / "ca.pem"
+    ca_bundle.write_text("-----BEGIN CERTIFICATE-----\n-----END CERTIFICATE-----\n")
+
+    assert (
+        run.patch_openhands_checkout_for_docker_ca(
+            tmp_path, {"REQUESTS_CA_BUNDLE": str(ca_bundle)}
+        )
+        is False
+    )
+
+
+def test_openhands_checkout_patch_forwards_pager_without_ca_bundle(tmp_path: Path):
+    run_infer = tmp_path / "benchmarks" / "swebenchmultilingual" / "run_infer.py"
+    run_infer.parent.mkdir(parents=True)
+    run_infer.write_text(
+        "            workspace = DockerWorkspace(\n"
+        "                server_image=agent_server_image,\n"
+        "                working_dir=\"/workspace\",\n"
+        "                forward_env=forward_env or [],\n"
+        "            )\n"
+    )
+    env = {}
+
+    assert run.patch_openhands_checkout_for_docker_ca(tmp_path, env) is True
+    patched = run_infer.read_text()
+
+    assert 'for env_name in ("GIT_PAGER", "PAGER", "LESS")' in patched
+    assert '"CURL_CA_BUNDLE",\n                    "GIT_PAGER"' not in patched
+    assert "OPENHANDS_DOCKER_PYTHONPATH" in patched
+    assert "OPENHANDS_DOCKER_CA_BUNDLE" not in env
+
+
+def test_openhands_checkout_patch_can_disable_ca_forwarding_only(tmp_path: Path):
+    run_infer = tmp_path / "benchmarks" / "swebenchmultilingual" / "run_infer.py"
+    run_infer.parent.mkdir(parents=True)
+    run_infer.write_text(
+        "            workspace = DockerWorkspace(\n"
+        "                server_image=agent_server_image,\n"
+        "                working_dir=\"/workspace\",\n"
+        "                forward_env=forward_env or [],\n"
+        "            )\n"
+    )
+    ca_bundle = tmp_path / "ca.pem"
+    ca_bundle.write_text("-----BEGIN CERTIFICATE-----\n-----END CERTIFICATE-----\n")
+    env = {"REQUESTS_CA_BUNDLE": str(ca_bundle)}
+
+    assert (
+        run.patch_openhands_checkout_for_docker_ca(
+            tmp_path, env, forward_ca_bundle=False
+        )
+        is True
+    )
+    patched = run_infer.read_text()
+
+    assert "OPENHANDS_DOCKER_CA_BUNDLE" in patched
+    assert 'for env_name in ("GIT_PAGER", "PAGER", "LESS")' in patched
+    assert "OPENHANDS_DOCKER_CA_BUNDLE" not in env
+
+
+def test_openhands_docker_sitecustomize_sets_pythonpath(tmp_path: Path):
+    env = {"PYTHONPATH": "/existing/path"}
+
+    sitecustomize = run.write_openhands_docker_sitecustomize(tmp_path, env)
+
+    assert sitecustomize == tmp_path / "openhands_docker_sitecustomize" / "sitecustomize.py"
+    assert env["PYTHONPATH"] == f"{sitecustomize.parent}:/existing/path"
+    assert env["OPENHANDS_DOCKER_PYTHONPATH"] == str(sitecustomize.parent)
+    content = sitecustomize.read_text()
+    assert "VERIFY_X509_STRICT" in content
+    assert "ssl.create_default_context = create_default_context" in content
+
+
+def test_openhands_dataset_dependency_guard_upgrades_old_venv(
+    tmp_path: Path, monkeypatch
+):
+    run_infer = tmp_path / "benchmarks" / "swebenchmultilingual" / "run_infer.py"
+    run_infer.parent.mkdir(parents=True)
+    run_infer.write_text("")
+    venv_python = tmp_path / ".venv" / "bin" / "python"
+    venv_python.parent.mkdir(parents=True)
+    venv_python.write_text("")
+    calls = []
+
+    class Completed:
+        stdout = "3.0.1\n"
+
+    monkeypatch.setattr(run.subprocess, "run", lambda *args, **kwargs: Completed())
+
+    def fake_run_in_dir(command, env, cwd, **kwargs):
+        calls.append((command, env, cwd, kwargs))
+
+    monkeypatch.setattr(run, "run_in_dir", fake_run_in_dir)
+    env = {}
+
+    assert run.ensure_openhands_dataset_dependency(tmp_path, env) is True
+    assert calls[0][0] == [
+        "uv",
+        "pip",
+        "install",
+        "--python",
+        str(venv_python),
+        "datasets>=4.5.0",
+    ]
+    assert env["UV_NO_SYNC"] == "1"
+
+
+def test_openhands_checkout_patch_omits_docker_platform(tmp_path: Path):
+    workspace_py = (
+        tmp_path
+        / "vendor"
+        / "software-agent-sdk"
+        / "openhands-workspace"
+        / "openhands"
+        / "workspace"
+        / "docker"
+        / "workspace.py"
+    )
+    workspace_py.parent.mkdir(parents=True)
+    workspace_py.write_text(
+        "        run_cmd = [\n"
+        "            \"docker\",\n"
+        "            \"run\",\n"
+        "            \"-d\",\n"
+        "            \"--platform\",\n"
+        "            self.platform,\n"
+        "            \"--rm\",\n"
+    )
+
+    assert run.patch_openhands_checkout_for_docker_platform(tmp_path) is True
+    patched = workspace_py.read_text()
+
+    assert "OPENHANDS_DOCKER_OMIT_PLATFORM" in patched
+    assert "*platform_flags" in patched
+    assert run.patch_openhands_checkout_for_docker_platform(tmp_path) is True
+
+
+def test_openhands_dataset_dependency_guard_keeps_new_venv(
+    tmp_path: Path, monkeypatch
+):
+    run_infer = tmp_path / "benchmarks" / "swebenchmultilingual" / "run_infer.py"
+    run_infer.parent.mkdir(parents=True)
+    run_infer.write_text("")
+    venv_python = tmp_path / ".venv" / "bin" / "python"
+    venv_python.parent.mkdir(parents=True)
+    venv_python.write_text("")
+
+    class Completed:
+        stdout = "4.8.5\n"
+
+    monkeypatch.setattr(run.subprocess, "run", lambda *args, **kwargs: Completed())
+    monkeypatch.setattr(
+        run,
+        "run_in_dir",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("no install")),
+    )
+    env = {}
+
+    assert run.ensure_openhands_dataset_dependency(tmp_path, env) is False
+    assert env["UV_NO_SYNC"] == "1"
+
+
+def test_openhands_dataset_dependency_guard_skips_non_source_checkout(
+    tmp_path: Path, monkeypatch
+):
+    venv_python = tmp_path / ".venv" / "bin" / "python"
+    venv_python.parent.mkdir(parents=True)
+    venv_python.write_text("")
+    monkeypatch.setattr(
+        run.subprocess,
+        "run",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("no probe")),
+    )
+
+    assert run.ensure_openhands_dataset_dependency(tmp_path, {}) is False
 
 
 def test_opencode_rejects_stale_predictions(tmp_path: Path):
@@ -465,6 +747,27 @@ def test_opencode_generated_config_sets_builtin_provider_model_limit():
     }
 
 
+def test_opencode_instance_env_isolates_home_and_config(tmp_path: Path):
+    class ModelConfig:
+        api_base = None
+        api_key_env = "DEEPSEEK_API_KEY"
+        max_tokens = 4096
+
+    env = run.opencode_instance_env(
+        {"HOME": "/Users/example", "DEEPSEEK_API_KEY": "secret"},
+        tmp_path,
+        "repo__issue-1",
+        ModelConfig(),
+        "deepseek/deepseek-v4-flash",
+        None,
+    )
+
+    assert env["HOME"] == str(tmp_path / "home" / "repo__issue-1")
+    assert env["XDG_CONFIG_HOME"] == str(tmp_path / "xdg-config" / "repo__issue-1")
+    assert env["OPENCODE_DISABLE_UPDATE"] == "1"
+    assert "OPENCODE_CONFIG_CONTENT" in env
+
+
 def test_native_opencode_generation_writes_ordered_predictions(tmp_path: Path, monkeypatch):
     rows = [
         {"instance_id": "repo__b-2", "problem_statement": "fix b"},
@@ -533,6 +836,8 @@ def test_run_all_forwards_dash_prefixed_openhands_extra_args():
         {
             "harness": "openhands-swe",
             "openhands_command_cwd": "/tmp/openhands-benchmarks",
+            "openhands_forward_ca_bundle": False,
+            "openhands_fix_datasets_dependency": False,
             "openhands_extra_arg": ["--modal", "--note smoke"],
         },
     )
@@ -541,6 +846,8 @@ def test_run_all_forwards_dash_prefixed_openhands_extra_args():
     assert "/tmp/openhands-benchmarks" in args
     assert "--openhands-extra-arg=--modal" in args
     assert "--openhands-extra-arg=--note smoke" in args
+    assert "--no-openhands-forward-ca-bundle" in args
+    assert "--no-openhands-fix-datasets-dependency" in args
 
 
 def test_run_all_forwards_opencode_options():
