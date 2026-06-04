@@ -1,0 +1,19 @@
+{
+  "model_config": {
+    "name": "deepseek-v4-flash",
+    "api_base": "https://api.deepseek.com",
+    "api_key_env": "DEEPSEEK_API_KEY",
+    "temperature": 0,
+    "max_tokens": 4096,
+    "extra_body": {
+      "thinking": {
+        "type": "disabled"
+      }
+    }
+  },
+  "generation_workers": 8,
+  "eval_workers": 4,
+  "generation_step_limit": 250,
+  "evaluation_timeout_seconds": 1800,
+  "evaluation_cache_level": "instance"
+}

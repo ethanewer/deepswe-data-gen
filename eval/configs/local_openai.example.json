@@ -1,0 +1,32 @@
+{
+  "model": {
+    "name": "Qwen/Qwen3-8B",
+    "api_base": "http://172.17.0.1.nip.io:8000/v1",
+    "api_key_env": "OPENAI_API_KEY",
+    "temperature": 0,
+    "max_tokens": 4096,
+    "extra_body": {},
+    "require_api_key": false
+  },
+  "benchmarks": {
+    "deepswe": {
+      "enabled": true,
+      "limit": 5,
+      "n_attempts": 1,
+      "n_concurrent": 5
+    },
+    "swebench_multilingual": {
+      "enabled": true,
+      "generation_workers": 8,
+      "eval_workers": 4
+    },
+    "livecodebench_v6": {
+      "enabled": true,
+      "all_tasks": false,
+      "n": 3,
+      "generation_workers": 525,
+      "eval_workers": 64,
+      "timeout": 6
+    }
+  }
+}

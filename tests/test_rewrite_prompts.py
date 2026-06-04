@@ -1,4 +1,4 @@
-from scripts import rewrite_prompts
+from eval.synthetic.swerebench_v2 import rewrite_prompts
 
 
 def test_extract_public_symbols_from_interface_declarations():

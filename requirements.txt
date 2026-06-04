@@ -1,2 +1,11 @@
 datasets>=4.5.0
 datacurve-pier @ git+https://github.com/datacurve-ai/pier
+fastapi
+huggingface-hub
+httpx
+mini-swe-agent
+numpy
+openai
+pyarrow
+swebench
+uvicorn

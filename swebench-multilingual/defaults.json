@@ -1,9 +1,0 @@
-{
-  "model": "openai/deepseek-v4-flash",
-  "api_base": "https://api.deepseek.com",
-  "generation_workers": 8,
-  "eval_workers": 4,
-  "generation_step_limit": 250,
-  "evaluation_timeout_seconds": 1800,
-  "evaluation_cache_level": "instance"
-}
