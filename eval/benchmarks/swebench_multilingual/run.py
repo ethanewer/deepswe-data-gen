@@ -27,6 +27,20 @@ SUPPORTED_HARNESSES = ("mini-swe-agent", "openhands-swe", "opencode")
 OPENHANDS_SETUP_FILES_TO_REMOVE = ("pyproject.toml", "tox.ini", "setup.py")
 OPENCODE_DEFAULT_COMMAND = "npx --yes opencode-ai"
 OPENCODE_DEFAULT_CONTEXT_LIMIT = 128000
+OPENCODE_MIN_OUTPUT_LIMIT = 8192
+OPENCODE_BENCHMARK_AGENT = "swebench"
+OPENCODE_BENCHMARK_AGENT_PROMPT = (
+    "You are a benchmark repair agent. Work directly in the checked-out "
+    "repository, make the smallest correct source and test changes needed for "
+    "the issue, and do not commit. Search only enough to locate the relevant "
+    "code path, avoid delegation/subagents, and keep visible output concise. "
+    "After editing, inspect the diff and finish any referenced call sites, "
+    "symbols, generated files, and tests that your change requires. "
+    "Do not install language toolchains or debug local environment setup; "
+    "if a local check is unavailable, stop after diff review. "
+    "Before stopping, leave the worktree with a non-empty git diff unless the "
+    "task is impossible."
+)
 
 
 def load_defaults(path: Path) -> dict:
@@ -422,6 +436,54 @@ def patch_openhands_checkout_for_docker_platform(command_cwd: Path) -> bool:
     return True
 
 
+def patch_openhands_checkout_for_agent_server_platform(command_cwd: Path) -> bool:
+    build_py = (
+        command_cwd
+        / "vendor"
+        / "software-agent-sdk"
+        / "openhands-agent-server"
+        / "openhands"
+        / "agent_server"
+        / "docker"
+        / "build.py"
+    )
+    if not build_py.is_file():
+        return False
+
+    text = build_py.read_text()
+    if "OPENHANDS_AGENT_SERVER_PLATFORM" in text:
+        return True
+
+    old = """    if push:
+        args += ["--platform", ",".join(opts.platforms), "--push"]
+    else:
+        args += ["--load"]
+"""
+    new = """    local_platform = os.getenv("OPENHANDS_AGENT_SERVER_PLATFORM")
+    if push:
+        args += ["--platform", ",".join(opts.platforms), "--push"]
+    else:
+        if local_platform:
+            args += ["--platform", local_platform]
+        args += ["--load"]
+"""
+    if old not in text:
+        raise RuntimeError(
+            f"{build_py} does not match the expected buildx platform block; "
+            "cannot patch local agent-server platform"
+        )
+
+    text = text.replace(old, new)
+    old_log = """        f"for platforms='{opts.platforms if push else 'local-arch'}'"
+"""
+    new_log = """        f"for platforms='{opts.platforms if push else (local_platform or 'local-arch')}'"
+"""
+    if old_log in text:
+        text = text.replace(old_log, new_log)
+    build_py.write_text(text)
+    return True
+
+
 def ensure_openhands_dataset_dependency(command_cwd: Path, env: dict[str, str]) -> bool:
     if not is_openhands_source_checkout(command_cwd):
         return False
@@ -504,16 +566,36 @@ def derive_opencode_model(model_config) -> str:
 def build_opencode_config_content(model_config, opencode_model: str) -> str:
     provider_id, _, model_id = opencode_model.partition("/")
     model_entry: dict[str, Any] = {
+        "reasoning": False,
         "limit": {
             "context": OPENCODE_DEFAULT_CONTEXT_LIMIT,
-            "output": model_config.max_tokens,
+            "output": max(model_config.max_tokens, OPENCODE_MIN_OUTPUT_LIMIT),
         },
     }
     config: dict[str, Any] = {
         "$schema": "https://opencode.ai/config.json",
         "model": opencode_model,
+        "small_model": opencode_model,
+        "default_agent": OPENCODE_BENCHMARK_AGENT,
         "autoupdate": False,
         "share": "disabled",
+        "permission": {
+            "question": "deny",
+            "task": "deny",
+        },
+        "agent": {
+            OPENCODE_BENCHMARK_AGENT: {
+                "mode": "primary",
+                "model": opencode_model,
+                "temperature": model_config.temperature,
+                "description": "Solves SWE-bench tasks directly in the benchmark worktree.",
+                "prompt": OPENCODE_BENCHMARK_AGENT_PROMPT,
+                "permission": {
+                    "question": "deny",
+                    "task": "deny",
+                },
+            }
+        },
     }
     provider: dict[str, Any] = {}
     if provider_id == "deepswe":
@@ -547,6 +629,10 @@ def opencode_prompt(row: dict[str, Any]) -> str:
         "You are solving a SWE-bench Multilingual task.",
         "The repository is already checked out at the base commit.",
         "Modify files in this worktree to fix the issue. Do not commit changes.",
+        "Work directly with read/search/bash/edit/write tools; do not use subagents.",
+        "Keep exploration brief, then make the required code change.",
+        "After editing, inspect git diff and finish any incomplete references before stopping.",
+        "Do not install toolchains or debug local environment setup; the benchmark harness will run tests.",
         "When you are finished, stop; the benchmark harness will run tests.",
         "Keep your output concise and do not include lengthy analysis.",
         "",
@@ -585,11 +671,21 @@ def opencode_instance_env(
     opencode_config: Path | None,
 ) -> dict[str, str]:
     env = base_env.copy()
+    original_home = env.get("HOME")
     state_name = safe_instance_name(instance_id)
     env["HOME"] = str(workspace_root / "home" / state_name)
     env["XDG_DATA_HOME"] = str(workspace_root / "xdg-data" / state_name)
     env["XDG_CONFIG_HOME"] = str(workspace_root / "xdg-config" / state_name)
     env["XDG_CACHE_HOME"] = str(workspace_root / "xdg-cache" / state_name)
+    if original_home:
+        original_home_path = Path(original_home)
+        for env_name, dirname in (
+            ("CARGO_HOME", ".cargo"),
+            ("RUSTUP_HOME", ".rustup"),
+        ):
+            tool_home = original_home_path / dirname
+            if tool_home.exists():
+                env.setdefault(env_name, str(tool_home))
     env.setdefault("OPENCODE_DISABLE_UPDATE", "1")
     if opencode_config is not None:
         env["OPENCODE_CONFIG"] = str(opencode_config)
@@ -645,6 +741,8 @@ def run_opencode_instance(
     ]
     if args.opencode_agent:
         command.extend(["--agent", args.opencode_agent])
+    elif args.opencode_config is None:
+        command.extend(["--agent", OPENCODE_BENCHMARK_AGENT])
     if args.opencode_variant:
         command.extend(["--variant", args.opencode_variant])
     for extra_arg in args.opencode_extra_arg:
@@ -805,7 +903,8 @@ def run_openhands_generation(
                     forward_ca_bundle=getattr(args, "openhands_forward_ca_bundle", True),
                 )
                 patch_openhands_checkout_for_docker_platform(command_cwd)
-                generation_env.setdefault("OPENHANDS_DOCKER_OMIT_PLATFORM", "1")
+                patch_openhands_checkout_for_agent_server_platform(command_cwd)
+                generation_env.setdefault("OPENHANDS_AGENT_SERVER_PLATFORM", "linux/amd64")
             payload = run_capture_json(generation_cmd, generation_env, cwd=command_cwd)
             if payload.get("output_json"):
                 output_json = Path(payload["output_json"])

@@ -192,11 +192,11 @@ SWE-bench Multilingual supports three generation harness values:
   `opencode run` in that worktree, collects the git diff, writes `preds.json`,
   and then runs the same official evaluation command. A command-template
   compatibility hook is still available for custom wrappers. This harness is
-  experimental: it now runs end to end in the local smoke setup, but produced
-  an empty patch on the smoke task.
+  experimental: it now runs end to end in the local smoke setup, but agent
+  quality is not validated beyond that smoke coverage.
 
 Keep `mini-swe-agent` as the default harness for benchmark runs until
-`openhands-swe` and `opencode` are validated end to end.
+`openhands-swe` and `opencode` are validated beyond smoke coverage.
 
 OpenHands example:
 

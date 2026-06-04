@@ -204,6 +204,7 @@ def test_openhands_generated_llm_config_is_temporary_and_preserves_options(
         captured["config_path"] = config_path
         captured["config"] = json.loads(config_path.read_text())
         captured["cwd"] = cwd
+        captured["env"] = env
         captured["mode"] = config_path.stat().st_mode & 0o777
         return {"output_json": str(output_json)}
 
@@ -247,6 +248,8 @@ def test_openhands_generated_llm_config_is_temporary_and_preserves_options(
     assert Path(result["predictions_path"]).exists()
     assert not captured["config_path"].exists()
     assert captured["cwd"] == tmp_path / "openhands-checkout"
+    assert "OPENHANDS_DOCKER_OMIT_PLATFORM" not in captured["env"]
+    assert captured["env"]["OPENHANDS_AGENT_SERVER_PLATFORM"] == "linux/amd64"
     assert captured["mode"] == 0o600
     assert captured["config"] == {
         "model": "openai/deepseek-v4-flash",
@@ -613,6 +616,40 @@ def test_openhands_checkout_patch_omits_docker_platform(tmp_path: Path):
     assert run.patch_openhands_checkout_for_docker_platform(tmp_path) is True
 
 
+def test_openhands_checkout_patch_sets_local_agent_server_platform(
+    tmp_path: Path,
+):
+    build_py = (
+        tmp_path
+        / "vendor"
+        / "software-agent-sdk"
+        / "openhands-agent-server"
+        / "openhands"
+        / "agent_server"
+        / "docker"
+        / "build.py"
+    )
+    build_py.parent.mkdir(parents=True)
+    build_py.write_text(
+        "    if push:\n"
+        "        args += [\"--platform\", \",\".join(opts.platforms), \"--push\"]\n"
+        "    else:\n"
+        "        args += [\"--load\"]\n"
+        "\n"
+        "    logger.info(\n"
+        "        f\"for platforms='{opts.platforms if push else 'local-arch'}'\"\n"
+        "    )\n"
+    )
+
+    assert run.patch_openhands_checkout_for_agent_server_platform(tmp_path) is True
+    patched = build_py.read_text()
+
+    assert "OPENHANDS_AGENT_SERVER_PLATFORM" in patched
+    assert "args += [\"--platform\", local_platform]" in patched
+    assert "local_platform or 'local-arch'" in patched
+    assert run.patch_openhands_checkout_for_agent_server_platform(tmp_path) is True
+
+
 def test_openhands_dataset_dependency_guard_keeps_new_venv(
     tmp_path: Path, monkeypatch
 ):
@@ -714,10 +751,16 @@ def test_opencode_generated_config_uses_env_reference():
         api_base = "https://api.example.com/v1"
         api_key_env = "EXAMPLE_API_KEY"
         max_tokens = 8192
+        temperature = 0
 
     config = json.loads(run.build_opencode_config_content(ModelConfig(), "deepswe/model-x"))
 
     assert config["model"] == "deepswe/model-x"
+    assert config["small_model"] == "deepswe/model-x"
+    assert config["default_agent"] == run.OPENCODE_BENCHMARK_AGENT
+    assert config["permission"]["task"] == "deny"
+    assert config["agent"][run.OPENCODE_BENCHMARK_AGENT]["model"] == "deepswe/model-x"
+    assert config["agent"][run.OPENCODE_BENCHMARK_AGENT]["permission"]["task"] == "deny"
     assert config["provider"]["deepswe"]["options"] == {
         "baseURL": "https://api.example.com/v1",
         "apiKey": "{env:EXAMPLE_API_KEY}",
@@ -727,6 +770,7 @@ def test_opencode_generated_config_uses_env_reference():
         "context": run.OPENCODE_DEFAULT_CONTEXT_LIMIT,
         "output": 8192,
     }
+    assert config["provider"]["deepswe"]["models"]["model-x"]["reasoning"] is False
 
 
 def test_opencode_generated_config_sets_builtin_provider_model_limit():
@@ -734,6 +778,7 @@ def test_opencode_generated_config_sets_builtin_provider_model_limit():
         api_base = None
         api_key_env = "DEEPSEEK_API_KEY"
         max_tokens = 4096
+        temperature = 0
 
     config = json.loads(
         run.build_opencode_config_content(ModelConfig(), "deepseek/deepseek-v4-flash")
@@ -742,9 +787,14 @@ def test_opencode_generated_config_sets_builtin_provider_model_limit():
     assert config["provider"]["deepseek"]["options"] == {
         "apiKey": "{env:DEEPSEEK_API_KEY}",
     }
-    assert config["provider"]["deepseek"]["models"]["deepseek-v4-flash"] == {
-        "limit": {"context": run.OPENCODE_DEFAULT_CONTEXT_LIMIT, "output": 4096},
+    assert config["provider"]["deepseek"]["models"]["deepseek-v4-flash"]["limit"] == {
+        "context": run.OPENCODE_DEFAULT_CONTEXT_LIMIT,
+        "output": run.OPENCODE_MIN_OUTPUT_LIMIT,
     }
+    assert (
+        config["provider"]["deepseek"]["models"]["deepseek-v4-flash"]["reasoning"]
+        is False
+    )
 
 
 def test_opencode_instance_env_isolates_home_and_config(tmp_path: Path):
@@ -752,6 +802,7 @@ def test_opencode_instance_env_isolates_home_and_config(tmp_path: Path):
         api_base = None
         api_key_env = "DEEPSEEK_API_KEY"
         max_tokens = 4096
+        temperature = 0
 
     env = run.opencode_instance_env(
         {"HOME": "/Users/example", "DEEPSEEK_API_KEY": "secret"},
@@ -766,6 +817,142 @@ def test_opencode_instance_env_isolates_home_and_config(tmp_path: Path):
     assert env["XDG_CONFIG_HOME"] == str(tmp_path / "xdg-config" / "repo__issue-1")
     assert env["OPENCODE_DISABLE_UPDATE"] == "1"
     assert "OPENCODE_CONFIG_CONTENT" in env
+    generated_config = json.loads(env["OPENCODE_CONFIG_CONTENT"])
+    assert generated_config["default_agent"] == run.OPENCODE_BENCHMARK_AGENT
+
+
+def test_opencode_instance_env_forwards_rust_toolchain_homes(tmp_path: Path):
+    real_home = tmp_path / "real-home"
+    (real_home / ".cargo").mkdir(parents=True)
+    (real_home / ".rustup").mkdir()
+
+    class ModelConfig:
+        api_base = None
+        api_key_env = "DEEPSEEK_API_KEY"
+        max_tokens = 4096
+        temperature = 0
+
+    env = run.opencode_instance_env(
+        {"HOME": str(real_home), "DEEPSEEK_API_KEY": "secret"},
+        tmp_path / "workspace",
+        "repo__issue-1",
+        ModelConfig(),
+        "deepseek/deepseek-v4-flash",
+        None,
+    )
+
+    assert env["HOME"] == str(tmp_path / "workspace" / "home" / "repo__issue-1")
+    assert env["CARGO_HOME"] == str(real_home / ".cargo")
+    assert env["RUSTUP_HOME"] == str(real_home / ".rustup")
+
+
+def test_opencode_prompt_forbids_subagents():
+    prompt = run.opencode_prompt(
+        {
+            "problem_statement": "fix the parser",
+            "hints_text": "",
+        }
+    )
+
+    assert "do not use subagents" in prompt
+    assert "Keep exploration brief" in prompt
+    assert "inspect git diff" in prompt
+    assert "Do not install toolchains" in prompt
+
+
+def test_opencode_instance_uses_generated_benchmark_agent(tmp_path: Path, monkeypatch):
+    row = {
+        "instance_id": "repo__issue-1",
+        "problem_statement": "fix a bug",
+        "repo": "owner/repo",
+        "base_commit": "abc123",
+    }
+    captured = {}
+
+    monkeypatch.setattr(run, "prepare_opencode_worktree", lambda *args: None)
+    monkeypatch.setattr(run, "collect_git_patch", lambda *args: "diff --git a/x b/x\n")
+
+    def fake_run_in_dir(command, env, cwd, **kwargs):
+        captured["command"] = command
+        captured["env"] = env
+
+    monkeypatch.setattr(run, "run_in_dir", fake_run_in_dir)
+
+    class ModelConfig:
+        api_base = "https://api.deepseek.com"
+        api_key_env = "DEEPSEEK_API_KEY"
+        max_tokens = 4096
+        slug = "deepseek-v4-flash"
+        temperature = 0
+
+    prediction = run.run_opencode_instance(
+        row,
+        Namespace(
+            opencode_agent=None,
+            opencode_command="npx --yes opencode-ai",
+            opencode_config=None,
+            opencode_extra_arg=[],
+            opencode_timeout=60,
+            opencode_variant=None,
+        ),
+        ModelConfig(),
+        tmp_path,
+        {"DEEPSEEK_API_KEY": "secret"},
+        "deepseek/deepseek-v4-flash",
+    )
+
+    assert prediction["model_patch"] == "diff --git a/x b/x\n"
+    assert captured["command"][
+        captured["command"].index("--agent") + 1
+    ] == run.OPENCODE_BENCHMARK_AGENT
+    assert "OPENCODE_CONFIG_CONTENT" in captured["env"]
+
+
+def test_opencode_instance_respects_explicit_agent_and_config(
+    tmp_path: Path, monkeypatch
+):
+    row = {
+        "instance_id": "repo__issue-1",
+        "problem_statement": "fix a bug",
+        "repo": "owner/repo",
+        "base_commit": "abc123",
+    }
+    captured = {}
+
+    monkeypatch.setattr(run, "prepare_opencode_worktree", lambda *args: None)
+    monkeypatch.setattr(run, "collect_git_patch", lambda *args: "")
+    monkeypatch.setattr(
+        run,
+        "run_in_dir",
+        lambda command, env, cwd, **kwargs: captured.update(command=command, env=env),
+    )
+
+    class ModelConfig:
+        api_base = "https://api.deepseek.com"
+        api_key_env = "DEEPSEEK_API_KEY"
+        max_tokens = 4096
+        slug = "deepseek-v4-flash"
+        temperature = 0
+
+    run.run_opencode_instance(
+        row,
+        Namespace(
+            opencode_agent="custom",
+            opencode_command="npx --yes opencode-ai",
+            opencode_config=tmp_path / "opencode.json",
+            opencode_extra_arg=[],
+            opencode_timeout=60,
+            opencode_variant=None,
+        ),
+        ModelConfig(),
+        tmp_path,
+        {"DEEPSEEK_API_KEY": "secret"},
+        "deepseek/deepseek-v4-flash",
+    )
+
+    assert captured["command"][captured["command"].index("--agent") + 1] == "custom"
+    assert "OPENCODE_CONFIG" in captured["env"]
+    assert "OPENCODE_CONFIG_CONTENT" not in captured["env"]
 
 
 def test_native_opencode_generation_writes_ordered_predictions(tmp_path: Path, monkeypatch):
