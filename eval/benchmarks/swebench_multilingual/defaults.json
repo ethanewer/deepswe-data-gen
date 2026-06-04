@@ -11,9 +11,25 @@
       }
     }
   },
+  "harness": "mini-swe-agent",
   "generation_workers": 8,
   "eval_workers": 4,
   "generation_step_limit": 250,
+  "openhands_workspace": "docker",
+  "openhands_max_iterations": 250,
+  "openhands_n_critic_runs": 1,
+  "openhands_max_retries": 3,
+  "openhands_tool_preset": "default",
+  "openhands_infer_command": "swebenchmultilingual-infer",
+  "openhands_command_cwd": null,
+  "opencode_command": "npx --yes opencode-ai",
+  "opencode_model": null,
+  "opencode_config": null,
+  "opencode_workspace": null,
+  "opencode_timeout": 3600,
+  "opencode_agent": null,
+  "opencode_variant": null,
+  "opencode_command_template": null,
   "evaluation_timeout_seconds": 1800,
   "evaluation_cache_level": "instance"
 }

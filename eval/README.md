@@ -12,7 +12,8 @@ This module contains all benchmark and synthetic-data code in this repo.
 - `eval/synthetic/swerebench_v2/`: SWE-rebench V2 filtering, prompt rewriting, and Harbor task generation.
 
 Run outputs go under `runs/` and are gitignored. API keys are read from
-environment variables only.
+environment variables. The OpenHands adapter writes a temporary LLM config under
+the run output directory unless you pass `--openhands-llm-config`.
 
 ## Model Config
 
@@ -176,6 +177,80 @@ SWE-bench Multilingual predictive 30:
   --api-base https://api.deepseek.com \
   --api-key-env DEEPSEEK_API_KEY
 ```
+
+SWE-bench Multilingual supports three generation harness values:
+
+- `mini-swe-agent`: the existing default. It writes `preds.json` directly and
+  then runs `swebench.harness.run_evaluation`.
+- `openhands-swe`: invokes the OpenHands benchmark command
+  `swebenchmultilingual-infer`, converts its `output.jsonl` to `preds.json`,
+  and then runs the same official evaluation command. This harness is
+  experimental and is not fully working yet.
+- `opencode`: checks out each selected repository at `base_commit`, runs
+  `opencode run` in that worktree, collects the git diff, writes `preds.json`,
+  and then runs the same official evaluation command. A command-template
+  compatibility hook is still available for custom wrappers. This harness is
+  experimental and is not fully working yet.
+
+Keep `mini-swe-agent` as the default harness for benchmark runs until
+`openhands-swe` and `opencode` are validated end to end.
+
+OpenHands example:
+
+```bash
+.venv-swe-uv/bin/python -m eval.benchmarks.swebench_multilingual.run \
+  --harness openhands-swe \
+  --model deepseek-v4-flash \
+  --litellm-model openai/deepseek-v4-flash \
+  --api-base https://api.deepseek.com \
+  --api-key-env DEEPSEEK_API_KEY \
+  --openhands-workspace docker
+```
+
+The OpenHands command comes from the `OpenHands/benchmarks` project. Install it
+so `swebenchmultilingual-infer` is on `PATH`, or pass
+`--openhands-infer-command`. If you run the command from a source checkout, set
+`--openhands-command-cwd` to that checkout path.
+
+opencode example:
+
+```bash
+.venv-swe-uv/bin/python -m eval.benchmarks.swebench_multilingual.run \
+  --harness opencode \
+  --model deepseek-v4-flash \
+  --api-base https://api.deepseek.com \
+  --api-key-env DEEPSEEK_API_KEY \
+  --opencode-model deepseek/deepseek-v4-flash
+```
+
+The default opencode command is `npx --yes opencode-ai`. Override it with
+`--opencode-command` if `opencode` is installed another way. If
+`--opencode-model` is omitted, the runner infers `deepseek/<model>` for
+`DEEPSEEK_API_KEY`, `openai/<model>` for OpenAI defaults, and
+`deepswe/<model>` for other OpenAI-compatible `--api-base` values.
+
+Unless `--opencode-config` is provided, the runner supplies
+`OPENCODE_CONFIG_CONTENT` with the selected model and provider. That generated
+config references API keys as `{env:...}` and does not write secrets to disk.
+Use `--opencode-workspace` to choose where per-instance worktrees, logs, and
+opencode state are stored.
+
+opencode example with a local wrapper:
+
+```bash
+.venv-swe-uv/bin/python -m eval.benchmarks.swebench_multilingual.run \
+  --harness opencode \
+  --model deepseek-v4-flash \
+  --api-base https://api.deepseek.com \
+  --api-key-env DEEPSEEK_API_KEY \
+  --opencode-command-template 'python scripts/opencode_swebench.py --instances {instance_ids_path} --output {predictions_path} --model {model} --api-base {api_base}'
+```
+
+Available opencode template fields are `{instance_ids_path}`,
+`{predictions_path}`, `{output_dir}`, `{instance_ids}`, `{filter_regex}`,
+`{model}`, `{opencode_model}`, `{litellm_model}`, `{api_base}`,
+`{api_key_env}`, `{temperature}`, `{max_tokens}`, and `{workers}`. Use doubled
+braces for literal JSON braces in the template.
 
 LiveCodeBench v6 predictive 50:
 

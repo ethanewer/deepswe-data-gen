@@ -20,6 +20,8 @@
     },
     "swebench_multilingual": {
       "enabled": true,
+      "harness": "mini-swe-agent",
+      "openhands_command_cwd": null,
       "generation_workers": 8,
       "eval_workers": 4
     },

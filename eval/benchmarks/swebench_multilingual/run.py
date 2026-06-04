@@ -4,11 +4,16 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
+import os
 import re
+import shlex
+import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from eval.model.config import add_model_args, model_from_defaults
 from eval.paths import REPO_ROOT, configure_ca_bundle, python_executable
@@ -17,6 +22,11 @@ from eval.paths import REPO_ROOT, configure_ca_bundle, python_executable
 SUBSET_DIR = Path(__file__).resolve().parent
 DEFAULTS_PATH = SUBSET_DIR / "defaults.json"
 DEFAULT_INSTANCE_IDS_PATH = SUBSET_DIR / "predictive_30_instance_ids.txt"
+DATASET_NAME = "SWE-bench/SWE-bench_Multilingual"
+SUPPORTED_HARNESSES = ("mini-swe-agent", "openhands-swe", "opencode")
+OPENHANDS_SETUP_FILES_TO_REMOVE = ("pyproject.toml", "tox.ini", "setup.py")
+OPENCODE_DEFAULT_COMMAND = "npx --yes opencode-ai"
+OPENCODE_DEFAULT_CONTEXT_LIMIT = 128000
 
 
 def load_defaults(path: Path) -> dict:
@@ -25,6 +35,21 @@ def load_defaults(path: Path) -> dict:
 
 def read_instance_ids(path: Path) -> list[str]:
     return [line.strip() for line in path.read_text().splitlines() if line.strip()]
+
+
+def resolve_cli_paths(args: argparse.Namespace) -> None:
+    for attr in (
+        "instance_ids",
+        "output",
+        "openhands_llm_config",
+        "openhands_output_json",
+        "openhands_command_cwd",
+        "opencode_config",
+        "opencode_workspace",
+    ):
+        value = getattr(args, attr, None)
+        if value is not None:
+            setattr(args, attr, value.expanduser().resolve())
 
 
 def make_filter_regex(instance_ids: list[str]) -> str:
@@ -36,10 +61,559 @@ def run(cmd: list[str], env: dict[str, str]) -> None:
     subprocess.run(cmd, cwd=REPO_ROOT, env=env, check=True)
 
 
+def run_in_dir(
+    cmd: list[str],
+    env: dict[str, str],
+    cwd: Path,
+    *,
+    timeout: int | None = None,
+    log_path: Path | None = None,
+    check: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    print("+ " + " ".join(cmd), flush=True)
+    result = subprocess.run(
+        cmd,
+        cwd=cwd,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        timeout=timeout,
+        check=False,
+    )
+    if log_path:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text(result.stdout or "")
+    if result.stdout:
+        print(result.stdout, end="" if result.stdout.endswith("\n") else "\n", flush=True)
+    if check and result.returncode != 0:
+        raise subprocess.CalledProcessError(result.returncode, cmd, output=result.stdout)
+    return result
+
+
+def default_env() -> dict[str, str]:
+    env = os.environ.copy()
+    configure_ca_bundle(env)
+    return env
+
+
+def run_capture_json(cmd: list[str], env: dict[str, str], cwd: Path = REPO_ROOT) -> dict[str, Any]:
+    print("+ " + " ".join(cmd), flush=True)
+    result = subprocess.run(
+        cmd,
+        cwd=cwd,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+    )
+    if result.stdout:
+        print(result.stdout, end="" if result.stdout.endswith("\n") else "\n", flush=True)
+    if result.returncode != 0:
+        raise subprocess.CalledProcessError(result.returncode, cmd, output=result.stdout)
+    for line in reversed(result.stdout.splitlines()):
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            return payload
+    return {}
+
+
+def write_openhands_llm_config(path: Path, model_config) -> None:
+    payload = {
+        "model": model_config.litellm_name,
+        "api_key": model_config.api_key(),
+        "temperature": model_config.temperature,
+        "max_output_tokens": model_config.max_tokens,
+    }
+    if model_config.api_base:
+        payload["base_url"] = model_config.api_base
+    if model_config.extra_body:
+        payload["litellm_extra_body"] = model_config.extra_body
+    path.unlink(missing_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(json.dumps(payload, indent=2) + "\n")
+
+
+def remove_files_from_patch(git_patch: str, files: tuple[str, ...]) -> str:
+    if not git_patch:
+        return git_patch
+
+    diff_matches = list(re.finditer(r"^diff --git [^\n]*\n", git_patch, flags=re.MULTILINE))
+    if not diff_matches:
+        return git_patch
+
+    kept_diffs = []
+    for index, match in enumerate(diff_matches):
+        start = match.start()
+        end = diff_matches[index + 1].start() if index + 1 < len(diff_matches) else len(git_patch)
+        diff = git_patch[start:end]
+        header = diff.split("\n", 1)[0]
+        parsed = re.match(r"diff --git a/(.+) b/(.+)", header)
+        if parsed and (parsed.group(1) in files or parsed.group(2) in files):
+            continue
+        kept_diffs.append(diff)
+
+    return "".join(kept_diffs)
+
+
+def convert_openhands_predictions(input_path: Path, output_path: Path, model_name: str) -> None:
+    predictions = []
+    with input_path.open() as f:
+        for line_number, line in enumerate(f, start=1):
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            instance_id = row.get("instance_id")
+            if not instance_id:
+                raise RuntimeError(f"{input_path}:{line_number} is missing instance_id")
+            test_result = row.get("test_result") or {}
+            git_patch = remove_files_from_patch(
+                test_result.get("git_patch", ""), OPENHANDS_SETUP_FILES_TO_REMOVE
+            )
+            predictions.append(
+                {
+                    "instance_id": instance_id,
+                    "model_patch": git_patch,
+                    "model_name_or_path": model_name,
+                }
+            )
+    if not predictions:
+        raise RuntimeError(f"{input_path} did not contain any OpenHands predictions")
+    output_path.write_text(json.dumps(predictions, indent=2) + "\n")
+
+
+def latest_openhands_output(output_dir: Path) -> Path | None:
+    candidates = sorted(
+        output_dir.rglob("output.jsonl"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    return candidates[0] if candidates else None
+
+
+def render_template_command(template: str, values: dict[str, str]) -> list[str]:
+    rendered = template.format(**{key: shlex.quote(value) for key, value in values.items()})
+    return shlex.split(rendered)
+
+
+def safe_instance_name(instance_id: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_.-]+", "-", instance_id).strip("-")
+
+
+def load_swebench_instances(instance_ids: list[str]) -> list[dict[str, Any]]:
+    configure_ca_bundle(os.environ)
+    from datasets import load_dataset
+
+    wanted = set(instance_ids)
+    rows = [
+        dict(row)
+        for row in load_dataset(DATASET_NAME, split="test")
+        if row["instance_id"] in wanted
+    ]
+    found = {row["instance_id"] for row in rows}
+    missing = [instance_id for instance_id in instance_ids if instance_id not in found]
+    if missing:
+        raise RuntimeError(f"{DATASET_NAME} test split is missing instance ids: {missing}")
+    rows_by_id = {row["instance_id"]: row for row in rows}
+    return [rows_by_id[instance_id] for instance_id in instance_ids]
+
+
+def derive_opencode_model(model_config) -> str:
+    model_name = model_config.openai_model
+    if model_config.api_key_env == "DEEPSEEK_API_KEY":
+        if model_name.startswith("deepseek/"):
+            return model_name
+        return f"deepseek/{model_name}"
+    if model_config.api_base:
+        return f"deepswe/{model_name}"
+    if "/" in model_name:
+        return model_name
+    return f"openai/{model_name}"
+
+
+def build_opencode_config_content(model_config, opencode_model: str) -> str:
+    provider_id, _, model_id = opencode_model.partition("/")
+    model_entry: dict[str, Any] = {
+        "limit": {
+            "context": OPENCODE_DEFAULT_CONTEXT_LIMIT,
+            "output": model_config.max_tokens,
+        },
+    }
+    config: dict[str, Any] = {
+        "$schema": "https://opencode.ai/config.json",
+        "model": opencode_model,
+        "autoupdate": False,
+        "share": "disabled",
+    }
+    provider: dict[str, Any] = {}
+    if provider_id == "deepswe":
+        provider[provider_id] = {
+            "npm": "@ai-sdk/openai-compatible",
+            "name": "DeepSWE OpenAI-Compatible",
+            "options": {
+                "baseURL": model_config.api_base,
+                "apiKey": f"{{env:{model_config.api_key_env}}}",
+            },
+            "models": {
+                model_id: {
+                    "name": model_id,
+                    **model_entry,
+                }
+            },
+        }
+    else:
+        provider[provider_id] = {"models": {model_id: model_entry}}
+        if model_config.api_key_env != "OPENAI_API_KEY":
+            provider[provider_id]["options"] = {
+                "apiKey": f"{{env:{model_config.api_key_env}}}"
+            }
+    if provider:
+        config["provider"] = provider
+    return json.dumps(config, separators=(",", ":"))
+
+
+def opencode_prompt(row: dict[str, Any]) -> str:
+    prompt_parts = [
+        "You are solving a SWE-bench Multilingual task.",
+        "The repository is already checked out at the base commit.",
+        "Modify files in this worktree to fix the issue. Do not commit changes.",
+        "When you are finished, stop; the benchmark harness will run tests.",
+        "Keep your output concise and do not include lengthy analysis.",
+        "",
+        "Problem statement:",
+        row["problem_statement"],
+    ]
+    hints = (row.get("hints_text") or "").strip()
+    if hints:
+        prompt_parts.extend(["", "Hints:", hints])
+    return "\n".join(prompt_parts)
+
+
+def prepare_opencode_worktree(row: dict[str, Any], worktree: Path, env: dict[str, str]) -> None:
+    if worktree.exists():
+        shutil.rmtree(worktree)
+    worktree.parent.mkdir(parents=True, exist_ok=True)
+    repo_url = f"https://github.com/{row['repo']}.git"
+    run_in_dir(["git", "init", str(worktree)], env, REPO_ROOT)
+    run_in_dir(["git", "remote", "add", "origin", repo_url], env, worktree)
+    run_in_dir(
+        ["git", "fetch", "--depth", "1", "origin", row["base_commit"]],
+        env,
+        worktree,
+        timeout=1800,
+    )
+    run_in_dir(["git", "checkout", "--detach", row["base_commit"]], env, worktree)
+    run_in_dir(["git", "submodule", "update", "--init", "--recursive"], env, worktree, timeout=1800)
+
+
+def opencode_instance_env(
+    base_env: dict[str, str],
+    workspace_root: Path,
+    instance_id: str,
+    model_config,
+    opencode_model: str,
+    opencode_config: Path | None,
+) -> dict[str, str]:
+    env = base_env.copy()
+    state_name = safe_instance_name(instance_id)
+    env["XDG_DATA_HOME"] = str(workspace_root / "xdg-data" / state_name)
+    env["XDG_CONFIG_HOME"] = str(workspace_root / "xdg-config" / state_name)
+    env["XDG_CACHE_HOME"] = str(workspace_root / "xdg-cache" / state_name)
+    if opencode_config is not None:
+        env["OPENCODE_CONFIG"] = str(opencode_config)
+        env.pop("OPENCODE_CONFIG_CONTENT", None)
+    else:
+        env["OPENCODE_CONFIG_CONTENT"] = build_opencode_config_content(
+            model_config, opencode_model
+        )
+    return env
+
+
+def collect_git_patch(worktree: Path, env: dict[str, str]) -> str:
+    run_in_dir(["git", "add", "-A"], env, worktree)
+    result = run_in_dir(
+        ["git", "diff", "--cached", "--binary"],
+        env,
+        worktree,
+        check=True,
+    )
+    return result.stdout
+
+
+def run_opencode_instance(
+    row: dict[str, Any],
+    args: argparse.Namespace,
+    model_config,
+    workspace_root: Path,
+    base_env: dict[str, str],
+    opencode_model: str,
+) -> dict[str, str]:
+    instance_id = row["instance_id"]
+    safe_name = safe_instance_name(instance_id)
+    worktree = workspace_root / "worktrees" / safe_name
+    log_path = workspace_root / "logs" / f"{safe_name}.log"
+    instance_env = opencode_instance_env(
+        base_env,
+        workspace_root,
+        instance_id,
+        model_config,
+        opencode_model,
+        args.opencode_config,
+    )
+    prepare_opencode_worktree(row, worktree, instance_env)
+    command = [
+        *shlex.split(args.opencode_command),
+        "run",
+        "--model",
+        opencode_model,
+        "--dir",
+        str(worktree),
+        "--dangerously-skip-permissions",
+    ]
+    if args.opencode_agent:
+        command.extend(["--agent", args.opencode_agent])
+    if args.opencode_variant:
+        command.extend(["--variant", args.opencode_variant])
+    for extra_arg in args.opencode_extra_arg:
+        command.extend(shlex.split(extra_arg))
+    command.append(opencode_prompt(row))
+    run_in_dir(
+        command,
+        instance_env,
+        worktree,
+        timeout=args.opencode_timeout,
+        log_path=log_path,
+        check=True,
+    )
+    return {
+        "instance_id": instance_id,
+        "model_patch": collect_git_patch(worktree, instance_env),
+        "model_name_or_path": model_config.slug,
+    }
+
+
+def build_evaluation_command(
+    python: str,
+    predictions_path: Path,
+    instance_ids: list[str],
+    eval_workers: int,
+    run_id: str,
+    defaults: dict,
+) -> list[str]:
+    return [
+        python,
+        "-m",
+        "swebench.harness.run_evaluation",
+        "--dataset_name",
+        DATASET_NAME,
+        "--split",
+        "test",
+        "--instance_ids",
+        *instance_ids,
+        "--predictions_path",
+        str(predictions_path),
+        "--max_workers",
+        str(eval_workers),
+        "--run_id",
+        run_id,
+        "--cache_level",
+        defaults["evaluation_cache_level"],
+        "--clean",
+        "False",
+        "--timeout",
+        str(defaults["evaluation_timeout_seconds"]),
+    ]
+
+
+def run_minisweagent_generation(
+    args: argparse.Namespace,
+    defaults: dict,
+    model_config,
+    output_dir: Path,
+    filter_regex: str,
+    python: str,
+) -> dict[str, str]:
+    generation_env = model_config.generation_env()
+    extra_body = json.dumps(model_config.extra_body, separators=(",", ":"))
+    generation_cmd = [
+        python,
+        "-m",
+        "minisweagent.run.benchmarks.swebench",
+        "--subset",
+        "multilingual",
+        "--split",
+        "test",
+        "--filter",
+        filter_regex,
+        "--output",
+        str(output_dir),
+        "--workers",
+        str(args.generation_workers),
+        "--model",
+        model_config.litellm_name,
+        "--model-class",
+        "litellm",
+        "-c",
+        "swebench.yaml",
+        "-c",
+        f"model.model_kwargs.temperature={model_config.temperature}",
+        "-c",
+        f"model.model_kwargs.max_tokens={model_config.max_tokens}",
+        "-c",
+        "environment.pull_timeout=1800",
+        "-c",
+        f"agent.step_limit={defaults['generation_step_limit']}",
+    ]
+    if model_config.api_base:
+        generation_cmd.extend(["-c", f"model.model_kwargs.api_base={model_config.api_base}"])
+    if model_config.extra_body:
+        generation_cmd.extend(["-c", f"model.model_kwargs.extra_body={extra_body}"])
+    run(generation_cmd, generation_env)
+    return {"predictions_path": str(output_dir / "preds.json"), "env": generation_env}
+
+
+def run_openhands_generation(
+    args: argparse.Namespace,
+    model_config,
+    output_dir: Path,
+    instance_ids_path: Path,
+) -> dict[str, str]:
+    output_json = args.openhands_output_json
+    if output_json is None:
+        llm_config_path = args.openhands_llm_config or (output_dir / "openhands_llm_config.json")
+        generated_llm_config = args.openhands_llm_config is None
+        if generated_llm_config:
+            generation_env = model_config.generation_env()
+            write_openhands_llm_config(llm_config_path, model_config)
+        else:
+            generation_env = default_env()
+        try:
+            generation_cmd = [
+                *shlex.split(args.openhands_infer_command),
+                str(llm_config_path),
+                "--dataset",
+                DATASET_NAME,
+                "--split",
+                "test",
+                "--select",
+                str(instance_ids_path),
+                "--workspace",
+                args.openhands_workspace,
+                "--num-workers",
+                str(args.generation_workers),
+                "--max-iterations",
+                str(args.openhands_max_iterations),
+                "--output-dir",
+                str(output_dir / "openhands"),
+                "--n-critic-runs",
+                str(args.openhands_n_critic_runs),
+                "--max-retries",
+                str(args.openhands_max_retries),
+                "--tool-preset",
+                args.openhands_tool_preset,
+            ]
+            if args.openhands_enable_delegation:
+                generation_cmd.append("--enable-delegation")
+            for extra_arg in args.openhands_extra_arg:
+                generation_cmd.extend(shlex.split(extra_arg))
+            command_cwd = args.openhands_command_cwd or REPO_ROOT
+            payload = run_capture_json(generation_cmd, generation_env, cwd=command_cwd)
+            if payload.get("output_json"):
+                output_json = Path(payload["output_json"])
+            else:
+                output_json = latest_openhands_output(output_dir / "openhands")
+        finally:
+            if generated_llm_config:
+                llm_config_path.unlink(missing_ok=True)
+    else:
+        generation_env = default_env()
+    if output_json is None:
+        raise RuntimeError("OpenHands did not report output_json and no output.jsonl was found")
+    predictions_path = output_dir / "preds.json"
+    convert_openhands_predictions(Path(output_json), predictions_path, model_config.slug)
+    return {"predictions_path": str(predictions_path), "env": generation_env}
+
+
+def run_opencode_generation(
+    args: argparse.Namespace,
+    model_config,
+    output_dir: Path,
+    instance_ids_path: Path,
+    instance_ids: list[str],
+    filter_regex: str,
+) -> dict[str, str]:
+    generation_env = model_config.generation_env()
+    generation_env.setdefault(model_config.api_key_env, model_config.api_key())
+    predictions_path = output_dir / "preds.json"
+    predictions_path.unlink(missing_ok=True)
+    if args.opencode_command_template:
+        values = {
+            "api_base": model_config.api_base or "",
+            "api_key_env": model_config.api_key_env,
+            "filter_regex": filter_regex,
+            "instance_ids": ",".join(instance_ids),
+            "instance_ids_path": str(instance_ids_path),
+            "litellm_model": model_config.litellm_name,
+            "max_tokens": str(model_config.max_tokens),
+            "model": model_config.openai_model,
+            "opencode_model": args.opencode_model or derive_opencode_model(model_config),
+            "output_dir": str(output_dir),
+            "predictions_path": str(predictions_path),
+            "temperature": str(model_config.temperature),
+            "workers": str(args.generation_workers),
+        }
+        run(render_template_command(args.opencode_command_template, values), generation_env)
+        if not predictions_path.exists():
+            raise RuntimeError(
+                f"opencode command completed but did not create predictions at {predictions_path}"
+            )
+        return {"predictions_path": str(predictions_path), "env": generation_env}
+
+    rows = load_swebench_instances(instance_ids)
+    workspace_root = args.opencode_workspace or (output_dir / "opencode")
+    opencode_model = args.opencode_model or derive_opencode_model(model_config)
+    predictions: list[dict[str, str]] = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=args.generation_workers) as executor:
+        futures = [
+            executor.submit(
+                run_opencode_instance,
+                row,
+                args,
+                model_config,
+                workspace_root,
+                generation_env,
+                opencode_model,
+            )
+            for row in rows
+        ]
+        for future in concurrent.futures.as_completed(futures):
+            predictions.append(future.result())
+            predictions_path.write_text(json.dumps(predictions, indent=2) + "\n")
+
+    predictions_by_id = {prediction["instance_id"]: prediction for prediction in predictions}
+    ordered_predictions = [predictions_by_id[instance_id] for instance_id in instance_ids]
+    predictions_path.write_text(json.dumps(ordered_predictions, indent=2) + "\n")
+    return {"predictions_path": str(predictions_path), "env": generation_env}
+
+
 def main() -> None:
     defaults = load_defaults(DEFAULTS_PATH)
     parser = argparse.ArgumentParser(
         description="Run an OpenAI-compatible model on the 30-task predictive subset."
+    )
+    parser.add_argument(
+        "--harness",
+        choices=SUPPORTED_HARNESSES,
+        default=defaults.get("harness", "mini-swe-agent"),
+        help="Generation harness to use before official SWE-bench evaluation.",
     )
     parser.add_argument("--instance-ids", type=Path, default=DEFAULT_INSTANCE_IDS_PATH)
     parser.add_argument("--output", type=Path, default=None)
@@ -58,8 +632,117 @@ def main() -> None:
         default=defaults["eval_workers"],
         help="SWE-bench evaluation workers.",
     )
+    parser.add_argument(
+        "--openhands-infer-command",
+        default=defaults.get("openhands_infer_command", "swebenchmultilingual-infer"),
+        help="OpenHands SWE-bench Multilingual inference command.",
+    )
+    parser.add_argument(
+        "--openhands-command-cwd",
+        type=Path,
+        default=defaults.get("openhands_command_cwd"),
+        help="Working directory for the OpenHands inference command.",
+    )
+    parser.add_argument(
+        "--openhands-llm-config",
+        type=Path,
+        default=None,
+        help="Existing OpenHands LLM config JSON. Defaults to a generated file in output dir.",
+    )
+    parser.add_argument(
+        "--openhands-output-json",
+        type=Path,
+        default=None,
+        help="Existing OpenHands output.jsonl to convert instead of running inference.",
+    )
+    parser.add_argument(
+        "--openhands-workspace",
+        choices=["docker", "remote", "apptainer"],
+        default=defaults.get("openhands_workspace", "docker"),
+    )
+    parser.add_argument(
+        "--openhands-max-iterations",
+        type=int,
+        default=defaults.get("openhands_max_iterations", defaults["generation_step_limit"]),
+    )
+    parser.add_argument(
+        "--openhands-n-critic-runs",
+        type=int,
+        default=defaults.get("openhands_n_critic_runs", 1),
+    )
+    parser.add_argument(
+        "--openhands-max-retries",
+        type=int,
+        default=defaults.get("openhands_max_retries", 3),
+    )
+    parser.add_argument(
+        "--openhands-tool-preset",
+        default=defaults.get("openhands_tool_preset", "default"),
+        choices=["default", "gemini", "gpt5", "planning"],
+    )
+    parser.add_argument("--openhands-enable-delegation", action="store_true")
+    parser.add_argument(
+        "--openhands-extra-arg",
+        action="append",
+        default=[],
+        help="Additional argument(s) to pass to OpenHands inference.",
+    )
+    parser.add_argument(
+        "--opencode-command-template",
+        default=defaults.get("opencode_command_template"),
+        help=(
+            "Optional custom opencode generation command. It must write "
+            "SWE-bench predictions to {predictions_path}. If omitted, this "
+            "runner executes opencode natively for each instance."
+        ),
+    )
+    parser.add_argument(
+        "--opencode-command",
+        default=defaults.get("opencode_command", OPENCODE_DEFAULT_COMMAND),
+        help="opencode executable command used by the native opencode harness.",
+    )
+    parser.add_argument(
+        "--opencode-model",
+        default=defaults.get("opencode_model"),
+        help="opencode model id in provider/model format. Defaults are inferred from model config.",
+    )
+    parser.add_argument(
+        "--opencode-config",
+        type=Path,
+        default=defaults.get("opencode_config"),
+        help="Existing opencode config file. Defaults to generated OPENCODE_CONFIG_CONTENT.",
+    )
+    parser.add_argument(
+        "--opencode-workspace",
+        type=Path,
+        default=defaults.get("opencode_workspace"),
+        help="Directory for opencode worktrees, logs, and per-instance state.",
+    )
+    parser.add_argument(
+        "--opencode-timeout",
+        type=int,
+        default=defaults.get("opencode_timeout", 3600),
+        help="Per-instance opencode timeout in seconds.",
+    )
+    parser.add_argument(
+        "--opencode-agent",
+        default=defaults.get("opencode_agent"),
+        help="Optional opencode agent to use.",
+    )
+    parser.add_argument(
+        "--opencode-variant",
+        default=defaults.get("opencode_variant"),
+        help="Optional opencode model variant, such as high or minimal.",
+    )
+    parser.add_argument(
+        "--opencode-extra-arg",
+        action="append",
+        default=[],
+        help="Additional argument(s) to pass to opencode run.",
+    )
     add_model_args(parser)
     args = parser.parse_args()
+    resolve_cli_paths(args)
     model_config = model_from_defaults(defaults, args)
 
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -72,74 +755,32 @@ def main() -> None:
     python = python_executable()
 
     if not args.skip_generation:
-        generation_env = model_config.generation_env()
-        extra_body = json.dumps(model_config.extra_body, separators=(",", ":"))
-        generation_cmd = [
-            python,
-            "-m",
-            "minisweagent.run.benchmarks.swebench",
-            "--subset",
-            "multilingual",
-            "--split",
-            "test",
-            "--filter",
-            filter_regex,
-            "--output",
-            str(output_dir),
-            "--workers",
-            str(args.generation_workers),
-            "--model",
-            model_config.litellm_name,
-            "--model-class",
-            "litellm",
-            "-c",
-            "swebench.yaml",
-            "-c",
-            f"model.model_kwargs.temperature={model_config.temperature}",
-            "-c",
-            f"model.model_kwargs.max_tokens={model_config.max_tokens}",
-            "-c",
-            "environment.pull_timeout=1800",
-            "-c",
-            f"agent.step_limit={defaults['generation_step_limit']}",
-        ]
-        if model_config.api_base:
-            generation_cmd.extend(["-c", f"model.model_kwargs.api_base={model_config.api_base}"])
-        if model_config.extra_body:
-            generation_cmd.extend(["-c", f"model.model_kwargs.extra_body={extra_body}"])
-        run(generation_cmd, generation_env)
+        if args.harness == "mini-swe-agent":
+            generation_result = run_minisweagent_generation(
+                args, defaults, model_config, output_dir, filter_regex, python
+            )
+        elif args.harness == "openhands-swe":
+            generation_result = run_openhands_generation(
+                args, model_config, output_dir, args.instance_ids
+            )
+        elif args.harness == "opencode":
+            generation_result = run_opencode_generation(
+                args, model_config, output_dir, args.instance_ids, instance_ids, filter_regex
+            )
+        else:
+            raise ValueError(args.harness)
+        generation_env = generation_result["env"]
+        predictions_path = Path(generation_result["predictions_path"])
+    else:
+        predictions_path = output_dir / "preds.json"
 
     if not args.skip_evaluation:
         evaluation_env = dict(generation_env if not args.skip_generation else {})
         if not evaluation_env:
-            import os
-
-            evaluation_env = os.environ.copy()
-            configure_ca_bundle(evaluation_env)
-        predictions_path = output_dir / "preds.json"
-        evaluation_cmd = [
-            python,
-            "-m",
-            "swebench.harness.run_evaluation",
-            "--dataset_name",
-            "swe-bench/SWE-Bench_Multilingual",
-            "--split",
-            "test",
-            "--instance_ids",
-            *instance_ids,
-            "--predictions_path",
-            str(predictions_path),
-            "--max_workers",
-            str(args.eval_workers),
-            "--run_id",
-            run_id,
-            "--cache_level",
-            defaults["evaluation_cache_level"],
-            "--clean",
-            "False",
-            "--timeout",
-            str(defaults["evaluation_timeout_seconds"]),
-        ]
+            evaluation_env = default_env()
+        evaluation_cmd = build_evaluation_command(
+            python, predictions_path, instance_ids, args.eval_workers, run_id, defaults
+        )
         run(evaluation_cmd, evaluation_env)
 
 

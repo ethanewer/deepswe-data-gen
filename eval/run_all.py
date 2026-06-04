@@ -126,13 +126,36 @@ def benchmark_args(name: str, settings: dict[str, Any]) -> list[str]:
             args.append("--no-prepare-tasks")
     elif name == "swebench_multilingual":
         for key, flag in [
+            ("harness", "--harness"),
             ("instance_ids", "--instance-ids"),
             ("output", "--output"),
             ("run_id", "--run-id"),
             ("generation_workers", "--generation-workers"),
             ("eval_workers", "--eval-workers"),
+            ("openhands_infer_command", "--openhands-infer-command"),
+            ("openhands_command_cwd", "--openhands-command-cwd"),
+            ("openhands_llm_config", "--openhands-llm-config"),
+            ("openhands_output_json", "--openhands-output-json"),
+            ("openhands_workspace", "--openhands-workspace"),
+            ("openhands_max_iterations", "--openhands-max-iterations"),
+            ("openhands_n_critic_runs", "--openhands-n-critic-runs"),
+            ("openhands_max_retries", "--openhands-max-retries"),
+            ("openhands_tool_preset", "--openhands-tool-preset"),
+            ("opencode_command", "--opencode-command"),
+            ("opencode_model", "--opencode-model"),
+            ("opencode_config", "--opencode-config"),
+            ("opencode_workspace", "--opencode-workspace"),
+            ("opencode_timeout", "--opencode-timeout"),
+            ("opencode_agent", "--opencode-agent"),
+            ("opencode_variant", "--opencode-variant"),
+            ("opencode_command_template", "--opencode-command-template"),
         ]:
             append_flag(args, flag, settings.get(key))
+        for extra_arg in settings.get("openhands_extra_arg") or []:
+            args.append(f"--openhands-extra-arg={extra_arg}")
+        for extra_arg in settings.get("opencode_extra_arg") or []:
+            args.append(f"--opencode-extra-arg={extra_arg}")
+        append_flag(args, "--openhands-enable-delegation", settings.get("openhands_enable_delegation"))
         append_flag(args, "--skip-generation", settings.get("skip_generation"))
         append_flag(args, "--skip-evaluation", settings.get("skip_evaluation"))
     elif name == "livecodebench_v6":
