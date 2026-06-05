@@ -3,11 +3,9 @@ logs/
 .cache/
 openai__*.json
 deepseek-*.json
-swerebench-v2/harbor-tasks/
-swerebench-v2/rewritten-prompts/
-eval/synthetic/swerebench_v2/harbor-tasks/
-eval/synthetic/swerebench_v2/examples/rewritten-prompts/
-eval/synthetic/swerebench_v2/examples/rewritten-prompts-*/
+datagen/swerebench_v2/harbor-tasks/
+datagen/swerebench_v2/examples/rewritten-prompts/
+datagen/swerebench_v2/examples/rewritten-prompts-*/
 eval/benchmarks/swebench_multilingual/latest_*.txt
 eval/benchmarks/swebench_multilingual/*/images*.txt
 eval/benchmarks/swebench_multilingual/**/preds.json

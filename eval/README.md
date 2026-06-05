@@ -1,6 +1,6 @@
 # Eval Module
 
-This module contains all benchmark and synthetic-data code in this repo.
+This module contains benchmark code in this repo.
 
 ## Layout
 
@@ -9,7 +9,6 @@ This module contains all benchmark and synthetic-data code in this repo.
 - `eval/benchmarks/deepswe/`: DeepSWE easiest-5 subset benchmark through Pier/mini-swe-agent.
 - `eval/benchmarks/swebench_multilingual/`: 30-task predictive SWE-bench Multilingual subset.
 - `eval/benchmarks/livecodebench_v6/`: LiveCodeBench v6 50-task predictive subset and 175-task full slice.
-- `eval/synthetic/swerebench_v2/`: SWE-rebench V2 filtering, prompt rewriting, and Harbor task generation.
 
 Run outputs go under `runs/` and are gitignored. API keys are read from
 environment variables. The OpenHands adapter writes a temporary LLM config under
@@ -275,38 +274,3 @@ LiveCodeBench v6 full 175-task slice:
 ```bash
 .venv-swe-uv/bin/python -m eval.benchmarks.livecodebench_v6.run --all-tasks
 ```
-
-## Synthetic SWE-rebench V2 Data
-
-Regenerate the confidence-filtered SWE-rebench V2 subset:
-
-```bash
-.venv-swe-uv/bin/python -m eval.synthetic.swerebench_v2.run_data_generation
-```
-
-Analyze prompt style:
-
-```bash
-.venv-swe-uv/bin/python -m eval.synthetic.swerebench_v2.analyze_prompts
-```
-
-Rewrite prompts with an OpenAI-compatible API:
-
-```bash
-export OPENAI_API_KEY=...
-.venv-swe-uv/bin/python -m eval.synthetic.swerebench_v2.rewrite_prompts \
-  --model gpt-5.4-mini \
-  --limit 10
-```
-
-Generate Harbor task directories:
-
-```bash
-.venv-swe-uv/bin/python -m eval.synthetic.swerebench_v2.generate_harbor_tasks \
-  --clean \
-  --limit 10 \
-  --instruction-style deepswe
-```
-
-The generated Harbor tasks are written under `runs/swerebench-v2/harbor-tasks`
-by default.

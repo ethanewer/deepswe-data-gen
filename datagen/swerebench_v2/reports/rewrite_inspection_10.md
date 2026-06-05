@@ -5,13 +5,13 @@ Model: `gpt-5.4-mini`
 Command:
 
 ```bash
-python3 scripts/rewrite_prompts.py --model gpt-5.4-mini --limit 10
+python3 -m datagen.swerebench_v2.rewrite_prompts --model gpt-5.4-mini --limit 10
 ```
 
 Output directory:
 
 ```text
-swerebench-v2/rewritten-prompts/
+datagen/swerebench_v2/examples/rewritten-prompts/
 ```
 
 ## Verdict

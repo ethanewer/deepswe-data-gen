@@ -45,7 +45,7 @@ def main() -> None:
         [
             sys.executable,
             "-m",
-            "eval.synthetic.swerebench_v2.generate_high_quality_subset",
+            "datagen.swerebench_v2.generate_high_quality_subset",
             "--output-dir",
             str(args.swerebench_output_dir),
         ],
@@ -57,7 +57,7 @@ def main() -> None:
         harbor_cmd = [
             sys.executable,
             "-m",
-            "eval.synthetic.swerebench_v2.generate_harbor_tasks",
+            "datagen.swerebench_v2.generate_harbor_tasks",
             "--output-dir",
             str(args.harbor_output_dir),
             "--clean",

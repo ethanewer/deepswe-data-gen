@@ -20,9 +20,9 @@ After the 15-task validation and pipeline revision, a small unseen holdout sampl
 Command:
 
 ```bash
-python3 scripts/rewrite_prompts.py \
+python3 -m datagen.swerebench_v2.rewrite_prompts \
   --model gpt-5.4-mini \
-  --output-dir swerebench-v2/rewritten-prompts-validation-holdout-6 \
+  --output-dir datagen/swerebench_v2/examples/rewritten-prompts-validation-holdout-6 \
   --limit 6 \
   --instance-id 99designs__gqlgen-3276 \
   --instance-id 3yourmind__django-migration-linter-258 \

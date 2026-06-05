@@ -16,11 +16,11 @@ The rerun targeted the six medium rewritten-prompt tasks that failed or did not 
 Generated Harbor tasks used rewritten instructions and enabled task internet access:
 
 ```bash
-python3 scripts/generate_harbor_tasks.py \
+python3 -m datagen.swerebench_v2.generate_harbor_tasks \
   --clean \
-  --output-dir swerebench-v2/harbor-tasks \
+  --output-dir runs/swerebench-v2/harbor-tasks \
   --instruction-style rewritten \
-  --rewrites-file swerebench-v2/rewritten-prompts-medium-10/rewrites.jsonl \
+  --rewrites-file datagen/swerebench_v2/examples/rewritten-prompts-medium-10/rewrites.jsonl \
   --allow-internet \
   --instance-id 0xs34n__starknet.js-490 \
   --instance-id 0xs34n__starknet.js-508 \
@@ -34,7 +34,7 @@ The rerun command was:
 
 ```bash
 python3 scripts/run_deepswe.py \
-  --tasks-dir swerebench-v2/harbor-tasks \
+  --tasks-dir runs/swerebench-v2/harbor-tasks \
   --model openai/gpt-5.5 \
   --limit 6 \
   --n-concurrent 5 \

@@ -15,9 +15,9 @@ The validation sample used 5 easy, 5 medium, and 5 hard tasks, with each difficu
 Initial rewrite command:
 
 ```bash
-python3 scripts/rewrite_prompts.py \
+python3 -m datagen.swerebench_v2.rewrite_prompts \
   --model gpt-5.4-mini \
-  --output-dir swerebench-v2/rewritten-prompts-validation-15 \
+  --output-dir datagen/swerebench_v2/examples/rewritten-prompts-validation-15 \
   --limit 15 \
   --instance-id ...
 ```
@@ -25,7 +25,7 @@ python3 scripts/rewrite_prompts.py \
 The final current-pipeline sample is saved in:
 
 ```text
-swerebench-v2/rewritten-prompts-validation-15-final
+datagen/swerebench_v2/examples/rewritten-prompts-validation-15-final
 ```
 
 ## Subagent Review
@@ -68,7 +68,7 @@ Local verification:
 
 ```bash
 python3 -m pytest -q
-python3 -m py_compile scripts/*.py swerebench-v2/*.py
+python3 -m py_compile datagen/swerebench_v2/*.py
 ```
 
 Result: 8 tests passed; compile checks passed.

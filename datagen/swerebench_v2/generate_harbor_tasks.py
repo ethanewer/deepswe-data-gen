@@ -14,9 +14,10 @@ from typing import Iterable
 
 from datasets import load_dataset
 
+from eval.paths import REPO_ROOT
+
 
 MODULE_DIR = Path(__file__).resolve().parent
-REPO_ROOT = MODULE_DIR.parents[2]
 DATASET_NAME = "nebius/SWE-rebench-V2"
 SPLIT = "train"
 LANGUAGES = ("python", "ts", "go")
@@ -52,7 +53,7 @@ def parse_args() -> argparse.Namespace:
         "--rewrites-file",
         type=Path,
         default=DEFAULT_REWRITES_JSONL,
-        help="JSONL file from eval.synthetic.swerebench_v2.rewrite_prompts.",
+        help="JSONL file from datagen.swerebench_v2.rewrite_prompts.",
     )
     parser.add_argument(
         "--clean",

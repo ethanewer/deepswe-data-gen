@@ -3,13 +3,13 @@
 Generated task set:
 
 ```bash
-python3 scripts/generate_harbor_tasks.py --clean --limit 10 --difficulty easy --instruction-style rewritten
+python3 -m datagen.swerebench_v2.generate_harbor_tasks --clean --limit 10 --difficulty easy --instruction-style rewritten
 ```
 
 Verifier run:
 
 ```bash
-pier run -p swerebench-v2/harbor-tasks \
+pier run -p runs/swerebench-v2/harbor-tasks \
   --agent oracle \
   --jobs-dir runs/pier-oracle-rewritten-easy-serial-10 \
   --n-tasks 10 \

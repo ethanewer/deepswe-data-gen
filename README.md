@@ -1,13 +1,13 @@
-# DeepSWE Eval Utilities
+# DeepSWE Utilities
 
-This repository is organized around the `eval/` module.
+This repository is organized around benchmark evaluation and data generation.
 
 It contains:
 
 - DeepSWE subset benchmark
 - SWE-bench Multilingual predictive subset benchmark
 - LiveCodeBench v6 predictive/full-slice benchmark
-- SWE-rebench V2 synthetic data and Harbor task generation utilities
+- SWE-rebench V2 data generation and Harbor task utilities
 
 All benchmark runners use OpenAI-compatible model configuration, so the same
 setup works for hosted APIs such as DeepSeek/OpenRouter and local vLLM/SGLang
@@ -20,4 +20,5 @@ Start with:
 ```
 
 Detailed setup, model configuration, and per-benchmark commands are documented
-in [eval/README.md](eval/README.md).
+in [eval/README.md](eval/README.md). Data generation commands are documented in
+[datagen/README.md](datagen/README.md).

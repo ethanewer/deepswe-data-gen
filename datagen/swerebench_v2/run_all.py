@@ -40,7 +40,7 @@ def main() -> None:
     args = parse_args()
 
     subprocess.run(
-        [sys.executable, "-m", "eval.synthetic.swerebench_v2.run_data_generation"],
+        [sys.executable, "-m", "datagen.swerebench_v2.run_data_generation"],
         cwd=REPO_ROOT,
         check=True,
     )
@@ -48,7 +48,7 @@ def main() -> None:
     harbor_cmd = [
         sys.executable,
         "-m",
-        "eval.synthetic.swerebench_v2.generate_harbor_tasks",
+        "datagen.swerebench_v2.generate_harbor_tasks",
         "--output-dir",
         str(HARBOR_TASKS_DIR),
         "--clean",

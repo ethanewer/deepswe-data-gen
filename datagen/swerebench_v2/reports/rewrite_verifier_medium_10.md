@@ -9,9 +9,9 @@ Generated 10 medium task rewrites with a mixed language sample:
 Rewrite command:
 
 ```bash
-python3 scripts/rewrite_prompts.py \
+python3 -m datagen.swerebench_v2.rewrite_prompts \
   --model gpt-5.4-mini \
-  --output-dir swerebench-v2/rewritten-prompts-medium-10 \
+  --output-dir datagen/swerebench_v2/examples/rewritten-prompts-medium-10 \
   --limit 10 \
   --instance-id 0xpolygonhermez__zkevm-node-1044 \
   --instance-id 0xpolygonhermez__zkevm-node-1321 \
@@ -28,17 +28,17 @@ python3 scripts/rewrite_prompts.py \
 Generated task set:
 
 ```bash
-python3 scripts/generate_harbor_tasks.py \
+python3 -m datagen.swerebench_v2.generate_harbor_tasks \
   --clean \
   --instruction-style rewritten \
-  --rewrites-file swerebench-v2/rewritten-prompts-medium-10/rewrites.jsonl \
+  --rewrites-file datagen/swerebench_v2/examples/rewritten-prompts-medium-10/rewrites.jsonl \
   --limit 10
 ```
 
 Verifier run:
 
 ```bash
-pier run -p swerebench-v2/harbor-tasks \
+pier run -p runs/swerebench-v2/harbor-tasks \
   --agent oracle \
   --jobs-dir runs/pier-oracle-rewritten-medium-conc5 \
   --n-tasks 10 \
