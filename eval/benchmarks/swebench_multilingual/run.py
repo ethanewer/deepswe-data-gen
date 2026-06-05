@@ -29,6 +29,18 @@ OPENCODE_DEFAULT_COMMAND = "npx --yes opencode-ai"
 OPENCODE_DEFAULT_CONTEXT_LIMIT = 128000
 OPENCODE_MIN_OUTPUT_LIMIT = 8192
 OPENCODE_BENCHMARK_AGENT = "swebench"
+OPENCODE_OPTIONAL_SUBMODULES_TO_SKIP = {
+    "sharkdp/bat": {
+        # These syntax bundle repositories are unavailable at older bat base
+        # commits, but are not required for source repair in this benchmark.
+        "assets/syntaxes/TypeScript": (
+            "https://github.com/Microsoft/TypeScript-Sublime-Plugin"
+        ),
+        "assets/syntaxes/02_Extra/LiveScript": (
+            "https://github.com/paulmillr/LiveScript.tmbundle"
+        ),
+    },
+}
 OPENCODE_BENCHMARK_AGENT_PROMPT = (
     "You are a benchmark repair agent. Work directly in the checked-out "
     "repository, make the smallest correct source and test changes needed for "
@@ -342,6 +354,38 @@ def patch_openhands_checkout_for_docker_ca(
     return True
 
 
+def patch_openhands_checkout_for_testbed_copy(command_cwd: Path) -> bool:
+    run_infer = command_cwd / "benchmarks" / "swebenchmultilingual" / "run_infer.py"
+    if not run_infer.is_file():
+        return False
+
+    text = run_infer.read_text()
+    if "OPENHANDS_TESTBED_COPY_LOCK_CLEANUP" in text:
+        return True
+
+    old = """        cp_testebed_repo = workspace.execute_command(
+            (f"mkdir -p {repo_path} ; cp -r /testbed/. {repo_path}")
+        )
+"""
+    new = """        # OPENHANDS_TESTBED_COPY_LOCK_CLEANUP: Rust builds can leave unreadable
+        # Cargo incremental lock files that make plain `cp -r /testbed/.` fail.
+        cp_testebed_repo = workspace.execute_command(
+            (
+                "sudo find /testbed -path '*/target/*/incremental/*.lock' -delete "
+                "2>/dev/null || true; "
+                f"mkdir -p {repo_path} ; cp -r /testbed/. {repo_path}"
+            )
+        )
+"""
+    if old not in text:
+        raise RuntimeError(
+            f"{run_infer} does not match the expected OpenHands testbed copy block; "
+            "cannot patch Cargo lock cleanup"
+        )
+    run_infer.write_text(text.replace(old, new))
+    return True
+
+
 def write_openhands_docker_sitecustomize(output_dir: Path, env: dict[str, str]) -> Path:
     site_dir = output_dir / "openhands_docker_sitecustomize"
     site_dir.mkdir(parents=True, exist_ok=True)
@@ -645,7 +689,9 @@ def opencode_prompt(row: dict[str, Any]) -> str:
     return "\n".join(prompt_parts)
 
 
-def prepare_opencode_worktree(row: dict[str, Any], worktree: Path, env: dict[str, str]) -> None:
+def prepare_opencode_worktree(
+    row: dict[str, Any], worktree: Path, env: dict[str, str]
+) -> None:
     if worktree.exists():
         shutil.rmtree(worktree)
     worktree.parent.mkdir(parents=True, exist_ok=True)
@@ -659,7 +705,49 @@ def prepare_opencode_worktree(row: dict[str, Any], worktree: Path, env: dict[str
         timeout=1800,
     )
     run_in_dir(["git", "checkout", "--detach", row["base_commit"]], env, worktree)
-    run_in_dir(["git", "submodule", "update", "--init", "--recursive"], env, worktree, timeout=1800)
+    skip_optional_opencode_submodules(row, worktree, env)
+    run_in_dir(
+        ["git", "submodule", "update", "--init", "--recursive"],
+        env,
+        worktree,
+        timeout=1800,
+    )
+
+
+def skip_optional_opencode_submodules(
+    row: dict[str, Any], worktree: Path, env: dict[str, str]
+) -> None:
+    optional_submodules = OPENCODE_OPTIONAL_SUBMODULES_TO_SKIP.get(row["repo"], {})
+    if not optional_submodules or not (worktree / ".gitmodules").is_file():
+        return
+
+    for submodule_name, expected_url in optional_submodules.items():
+        result = run_in_dir(
+            [
+                "git",
+                "config",
+                "--file",
+                ".gitmodules",
+                "--get",
+                f"submodule.{submodule_name}.url",
+            ],
+            env,
+            worktree,
+            check=False,
+        )
+        actual_url = (result.stdout or "").strip().rstrip("/")
+        if result.returncode != 0 or actual_url.lower() != expected_url.lower():
+            continue
+        run_in_dir(
+            ["git", "config", f"submodule.{submodule_name}.update", "none"],
+            env,
+            worktree,
+        )
+        print(
+            "warning: skipping optional unavailable submodule "
+            f"{submodule_name} for {row['instance_id']}",
+            flush=True,
+        )
 
 
 def opencode_instance_env(
@@ -902,6 +990,7 @@ def run_openhands_generation(
                     generation_env,
                     forward_ca_bundle=getattr(args, "openhands_forward_ca_bundle", True),
                 )
+                patch_openhands_checkout_for_testbed_copy(command_cwd)
                 patch_openhands_checkout_for_docker_platform(command_cwd)
                 patch_openhands_checkout_for_agent_server_platform(command_cwd)
                 generation_env.setdefault("OPENHANDS_AGENT_SERVER_PLATFORM", "linux/amd64")

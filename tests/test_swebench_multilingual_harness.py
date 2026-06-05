@@ -1,4 +1,5 @@
 import json
+import subprocess
 from argparse import Namespace
 from pathlib import Path
 
@@ -181,6 +182,27 @@ def test_openhands_existing_output_does_not_require_api_key(tmp_path: Path):
     )
 
     assert Path(result["predictions_path"]).exists()
+
+
+def test_patch_openhands_checkout_for_testbed_copy_removes_cargo_locks(tmp_path: Path):
+    run_infer = tmp_path / "benchmarks" / "swebenchmultilingual" / "run_infer.py"
+    run_infer.parent.mkdir(parents=True)
+    run_infer.write_text(
+        """
+        cp_testebed_repo = workspace.execute_command(
+            (f"mkdir -p {repo_path} ; cp -r /testbed/. {repo_path}")
+        )
+"""
+    )
+
+    assert run.patch_openhands_checkout_for_testbed_copy(tmp_path)
+    patched = run_infer.read_text()
+
+    assert "OPENHANDS_TESTBED_COPY_LOCK_CLEANUP" in patched
+    assert "sudo find /testbed -path '*/target/*/incremental/*.lock' -delete" in patched
+    assert "cp -r /testbed/. {repo_path}" in patched
+    assert run.patch_openhands_checkout_for_testbed_copy(tmp_path)
+    assert run_infer.read_text() == patched
 
 
 def test_openhands_generated_llm_config_is_temporary_and_preserves_options(
@@ -858,6 +880,73 @@ def test_opencode_prompt_forbids_subagents():
     assert "Keep exploration brief" in prompt
     assert "inspect git diff" in prompt
     assert "Do not install toolchains" in prompt
+
+
+def test_prepare_opencode_worktree_skips_known_unavailable_bat_submodules(
+    tmp_path: Path, monkeypatch
+):
+    row = {
+        "instance_id": "sharkdp__bat-3108",
+        "repo": "sharkdp/bat",
+        "base_commit": "abc123",
+    }
+    calls = []
+    submodule_urls = {
+        "submodule.assets/syntaxes/TypeScript.url": (
+            "https://github.com/Microsoft/TypeScript-Sublime-Plugin"
+        ),
+        "submodule.assets/syntaxes/02_Extra/LiveScript.url": (
+            "https://github.com/paulmillr/LiveScript.tmbundle"
+        ),
+    }
+
+    def fake_run_in_dir(command, env, cwd, **kwargs):
+        calls.append((command, kwargs))
+        if command[:2] == ["git", "init"]:
+            Path(command[-1]).mkdir(parents=True)
+        if command[:2] == ["git", "checkout"]:
+            (cwd / ".gitmodules").write_text(
+                """
+[submodule "assets/syntaxes/TypeScript"]
+\tpath = assets/syntaxes/02_Extra/TypeScript
+\turl = https://github.com/Microsoft/TypeScript-Sublime-Plugin
+[submodule "assets/syntaxes/02_Extra/LiveScript"]
+\tpath = assets/syntaxes/02_Extra/LiveScript
+\turl = https://github.com/paulmillr/LiveScript.tmbundle
+"""
+            )
+        if command[:4] == ["git", "config", "--file", ".gitmodules"]:
+            return subprocess.CompletedProcess(
+                command, 0, stdout=submodule_urls[command[-1]]
+            )
+        return subprocess.CompletedProcess(command, 0, stdout="")
+
+    monkeypatch.setattr(run, "run_in_dir", fake_run_in_dir)
+
+    run.prepare_opencode_worktree(row, tmp_path / "worktree", {})
+
+    git_config_commands = [
+        command
+        for command, _ in calls
+        if command[:2] == ["git", "config"] and "--file" not in command
+    ]
+    assert git_config_commands == [
+        ["git", "config", "submodule.assets/syntaxes/TypeScript.update", "none"],
+        [
+            "git",
+            "config",
+            "submodule.assets/syntaxes/02_Extra/LiveScript.update",
+            "none",
+        ],
+    ]
+    submodule_update = [
+        (command, kwargs)
+        for command, kwargs in calls
+        if command[:2] == ["git", "submodule"]
+    ]
+    assert submodule_update == [
+        (["git", "submodule", "update", "--init", "--recursive"], {"timeout": 1800})
+    ]
 
 
 def test_opencode_instance_uses_generated_benchmark_agent(tmp_path: Path, monkeypatch):
