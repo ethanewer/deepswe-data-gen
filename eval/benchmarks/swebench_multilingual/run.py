@@ -11,6 +11,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -23,7 +24,7 @@ SUBSET_DIR = Path(__file__).resolve().parent
 DEFAULTS_PATH = SUBSET_DIR / "defaults.json"
 DEFAULT_INSTANCE_IDS_PATH = SUBSET_DIR / "predictive_30_instance_ids.txt"
 DATASET_NAME = "SWE-bench/SWE-bench_Multilingual"
-SUPPORTED_HARNESSES = ("mini-swe-agent", "openhands-swe", "opencode")
+SUPPORTED_HARNESSES = ("mini-swe-agent", "openhands-swe", "opencode", "terminus-2")
 OPENHANDS_SETUP_FILES_TO_REMOVE = ("pyproject.toml", "tox.ini", "setup.py")
 OPENCODE_DEFAULT_COMMAND = "npx --yes opencode-ai"
 OPENCODE_DEFAULT_CONTEXT_LIMIT = 128000
@@ -38,6 +39,12 @@ OPENCODE_OPTIONAL_SUBMODULES_TO_SKIP = {
         ),
         "assets/syntaxes/02_Extra/LiveScript": (
             "https://github.com/paulmillr/LiveScript.tmbundle"
+        ),
+        "assets/syntaxes/02_Extra/Nginx": (
+            "https://github.com/brandonwamboldt/sublime-nginx"
+        ),
+        "assets/syntaxes/hosts": (
+            "https://github.com/brandonwamboldt/sublime-hosts"
         ),
     },
 }
@@ -72,6 +79,7 @@ def resolve_cli_paths(args: argparse.Namespace) -> None:
         "openhands_command_cwd",
         "opencode_config",
         "opencode_workspace",
+        "terminus_workspace",
     ):
         value = getattr(args, attr, None)
         if value is not None:
@@ -574,6 +582,132 @@ def render_template_command(template: str, values: dict[str, str]) -> list[str]:
 
 def safe_instance_name(instance_id: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "-", instance_id).strip("-")
+
+
+class LocalTmuxSession:
+    def __init__(
+        self,
+        session_name: str,
+        cwd: Path,
+        env: dict[str, str],
+        log_path: Path,
+    ) -> None:
+        self._session_name = session_name
+        self._cwd = cwd
+        self._env = env
+        self._log_path = log_path
+        self._socket_name = re.sub(r"[^A-Za-z0-9_.-]+", "-", session_name)[:80]
+        self._previous_buffer: str | None = None
+        self._started_at = time.time()
+
+    def _run_tmux(
+        self, command: list[str], *, check: bool = True
+    ) -> subprocess.CompletedProcess[str]:
+        result = subprocess.run(
+            ["tmux", "-L", self._socket_name, *command],
+            env=self._env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        if check and result.returncode != 0:
+            raise subprocess.CalledProcessError(
+                result.returncode, ["tmux", *command], output=result.stdout
+            )
+        return result
+
+    def start(self) -> None:
+        self._log_path.parent.mkdir(parents=True, exist_ok=True)
+        self._run_tmux(
+            [
+                "new-session",
+                "-x",
+                "160",
+                "-y",
+                "40",
+                "-d",
+                "-s",
+                self._session_name,
+                "-c",
+                str(self._cwd),
+                ";",
+                "set-option",
+                "-t",
+                self._session_name,
+                "history-limit",
+                "50000",
+                ";",
+                "pipe-pane",
+                "-t",
+                self._session_name,
+                f"cat > {shlex.quote(str(self._log_path))}",
+            ]
+        )
+
+    def stop(self) -> None:
+        self._run_tmux(["kill-session", "-t", self._session_name], check=False)
+        self._run_tmux(["kill-server"], check=False)
+
+    def is_session_alive(self) -> bool:
+        result = self._run_tmux(["has-session", "-t", self._session_name], check=False)
+        return result.returncode == 0
+
+    def send_keys(
+        self,
+        keys: str | list[str],
+        block: bool = False,
+        min_timeout_sec: float = 0.0,
+        max_timeout_sec: float = 180.0,
+    ) -> None:
+        if isinstance(keys, str):
+            keys = [keys]
+        start_time = time.time()
+        self._run_tmux(["send-keys", "-t", self._session_name, *keys])
+        elapsed = time.time() - start_time
+        if elapsed < min_timeout_sec:
+            time.sleep(min_timeout_sec - elapsed)
+
+    def capture_pane(self, capture_entire: bool = False) -> str:
+        extra_args = ["-S", "-"] if capture_entire else []
+        result = self._run_tmux(
+            ["capture-pane", "-p", *extra_args, "-t", self._session_name],
+            check=False,
+        )
+        if result.returncode != 0:
+            return self._previous_buffer or ""
+        return result.stdout
+
+    def get_incremental_output(self) -> str:
+        current_buffer = self.capture_pane(capture_entire=True)
+        if self._previous_buffer is None:
+            self._previous_buffer = current_buffer
+            return f"Current Terminal Screen:\n{self._get_visible_screen()}"
+
+        new_content = self._find_new_content(current_buffer)
+        self._previous_buffer = current_buffer
+
+        if new_content is not None:
+            if new_content.strip():
+                return f"New Terminal Output:\n{new_content}"
+            return f"Current Terminal Screen:\n{self._get_visible_screen()}"
+        return f"Current Terminal Screen:\n{self._get_visible_screen()}"
+
+    def _find_new_content(self, current_buffer: str) -> str | None:
+        if self._previous_buffer is None:
+            return None
+
+        previous_buffer = self._previous_buffer.strip()
+        if previous_buffer in current_buffer:
+            index = current_buffer.index(previous_buffer)
+            return current_buffer[index + len(previous_buffer) :]
+        return None
+
+    def _get_visible_screen(self) -> str:
+        return self.capture_pane(capture_entire=False)
+
+    def get_asciinema_timestamp(self) -> float:
+        return time.time() - self._started_at
 
 
 def load_swebench_instances(instance_ids: list[str]) -> list[dict[str, Any]]:
@@ -1081,6 +1215,170 @@ def run_opencode_generation(
     return {"predictions_path": str(predictions_path), "env": generation_env}
 
 
+def terminus_instruction(row: dict[str, Any]) -> str:
+    prompt_parts = [
+        "You are solving a SWE-bench Multilingual task.",
+        "The repository is already checked out at the base commit in the current directory.",
+        "Modify files in this worktree to fix the issue. Do not commit changes.",
+        "Keep exploration brief, then make the required code change.",
+        "After editing, inspect git diff and finish any incomplete references before marking the task complete.",
+        "The benchmark harness will run tests after you stop.",
+        "",
+        "Problem statement:",
+        row["problem_statement"],
+    ]
+    hints = (row.get("hints_text") or "").strip()
+    if hints:
+        prompt_parts.extend(["", "Hints:", hints])
+    return "\n".join(prompt_parts)
+
+
+def is_sensitive_env_name(env_name: str) -> bool:
+    normalized = env_name.upper()
+    sensitive_fragments = ("API_KEY", "ACCESS_KEY", "SECRET", "TOKEN", "PASSWORD")
+    return any(fragment in normalized for fragment in sensitive_fragments)
+
+
+def terminus_terminal_env(
+    base_env: dict[str, str], workspace_root: Path, instance_id: str
+) -> dict[str, str]:
+    state_name = safe_instance_name(instance_id)
+    home = workspace_root / "home" / state_name
+    xdg_data = workspace_root / "xdg-data" / state_name
+    xdg_config = workspace_root / "xdg-config" / state_name
+    xdg_cache = workspace_root / "xdg-cache" / state_name
+    tmp = workspace_root / "tmp" / state_name
+    for path in (home, xdg_data, xdg_config, xdg_cache, tmp):
+        path.mkdir(parents=True, exist_ok=True)
+
+    allowlisted_env = {
+        "CURL_CA_BUNDLE",
+        "GIT_SSL_CAINFO",
+        "LANG",
+        "LC_ALL",
+        "LC_CTYPE",
+        "NODE_EXTRA_CA_CERTS",
+        "PATH",
+        "REQUESTS_CA_BUNDLE",
+        "SSL_CERT_FILE",
+    }
+    env = {
+        env_name: value
+        for env_name, value in base_env.items()
+        if env_name in allowlisted_env and not is_sensitive_env_name(env_name)
+    }
+    env["HOME"] = str(home)
+    env["XDG_DATA_HOME"] = str(xdg_data)
+    env["XDG_CONFIG_HOME"] = str(xdg_config)
+    env["XDG_CACHE_HOME"] = str(xdg_cache)
+    env["TMPDIR"] = str(tmp)
+    env.setdefault("TERM", "screen-256color")
+    return env
+
+
+def terminus_api_key(args: argparse.Namespace, model_config) -> str:
+    api_key_env = args.terminus_api_key_env or model_config.api_key_env
+    if api_key_env == model_config.api_key_env:
+        return model_config.api_key()
+    value = os.environ.get(api_key_env)
+    if not value:
+        raise RuntimeError(f"{api_key_env} must be set for --terminus-api-key-env")
+    return value
+
+
+def terminus_model_label(args: argparse.Namespace, model_config) -> str:
+    if args.terminus_model:
+        return safe_instance_name(args.terminus_model).lower()
+    return model_config.slug
+
+
+def run_terminus_instance(
+    row: dict[str, Any],
+    args: argparse.Namespace,
+    model_config,
+    workspace_root: Path,
+    base_env: dict[str, str],
+) -> dict[str, str]:
+    from terminal_bench.agents.terminus_2.terminus_2 import Terminus2
+
+    instance_id = row["instance_id"]
+    safe_name = safe_instance_name(instance_id)
+    worktree = workspace_root / "worktrees" / safe_name
+    log_root = workspace_root / "logs" / safe_name
+    terminal_log = log_root / "terminal.log"
+    prepare_opencode_worktree(row, worktree, base_env)
+
+    session_name = (
+        f"deepswe-terminus-{safe_name[:40]}-{os.getpid()}-{int(time.time() * 1000)}"
+    )
+    session = LocalTmuxSession(
+        session_name=session_name,
+        cwd=worktree,
+        env=terminus_terminal_env(base_env, workspace_root, instance_id),
+        log_path=terminal_log,
+    )
+    agent = Terminus2(
+        model_name=args.terminus_model or model_config.litellm_name,
+        max_episodes=args.terminus_max_episodes,
+        parser_name=args.terminus_parser,
+        api_base=args.terminus_api_base or model_config.api_base,
+        api_key=terminus_api_key(args, model_config),
+        temperature=model_config.temperature,
+        max_tokens=model_config.max_tokens,
+        extra_body=model_config.extra_body,
+        request_timeout=args.terminus_request_timeout,
+    )
+    session.start()
+    try:
+        agent.perform_task(
+            terminus_instruction(row),
+            session,
+            logging_dir=log_root / "episodes",
+        )
+    finally:
+        session.stop()
+
+    return {
+        "instance_id": instance_id,
+        "model_patch": collect_git_patch(worktree, base_env),
+        "model_name_or_path": terminus_model_label(args, model_config),
+    }
+
+
+def run_terminus_generation(
+    args: argparse.Namespace,
+    model_config,
+    output_dir: Path,
+    instance_ids: list[str],
+) -> dict[str, str]:
+    generation_env = model_config.generation_env()
+    predictions_path = output_dir / "preds.json"
+    predictions_path.unlink(missing_ok=True)
+    rows = load_swebench_instances(instance_ids)
+    workspace_root = args.terminus_workspace or (output_dir / "terminus-2")
+    predictions: list[dict[str, str]] = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=args.generation_workers) as executor:
+        futures = [
+            executor.submit(
+                run_terminus_instance,
+                row,
+                args,
+                model_config,
+                workspace_root,
+                generation_env,
+            )
+            for row in rows
+        ]
+        for future in concurrent.futures.as_completed(futures):
+            predictions.append(future.result())
+            predictions_path.write_text(json.dumps(predictions, indent=2) + "\n")
+
+    predictions_by_id = {prediction["instance_id"]: prediction for prediction in predictions}
+    ordered_predictions = [predictions_by_id[instance_id] for instance_id in instance_ids]
+    predictions_path.write_text(json.dumps(ordered_predictions, indent=2) + "\n")
+    return {"predictions_path": str(predictions_path), "env": generation_env}
+
+
 def main() -> None:
     defaults = load_defaults(DEFAULTS_PATH)
     parser = argparse.ArgumentParser(
@@ -1243,6 +1541,45 @@ def main() -> None:
         default=[],
         help="Additional argument(s) to pass to opencode run.",
     )
+    parser.add_argument(
+        "--terminus-model",
+        default=defaults.get("terminus_model"),
+        help="LiteLLM model name for Terminus 2. Defaults to the benchmark model config.",
+    )
+    parser.add_argument(
+        "--terminus-api-base",
+        default=defaults.get("terminus_api_base"),
+        help="Optional API base URL for --terminus-model. Defaults to the benchmark model config.",
+    )
+    parser.add_argument(
+        "--terminus-api-key-env",
+        default=defaults.get("terminus_api_key_env"),
+        help="Optional API key environment variable for --terminus-model. Defaults to the benchmark model config.",
+    )
+    parser.add_argument(
+        "--terminus-parser",
+        choices=["json", "xml"],
+        default=defaults.get("terminus_parser", "json"),
+        help="Terminus 2 response parser format.",
+    )
+    parser.add_argument(
+        "--terminus-max-episodes",
+        type=int,
+        default=defaults.get("terminus_max_episodes", defaults["generation_step_limit"]),
+        help="Maximum Terminus 2 episodes per instance.",
+    )
+    parser.add_argument(
+        "--terminus-request-timeout",
+        type=float,
+        default=defaults.get("terminus_request_timeout"),
+        help="Optional LiteLLM request timeout in seconds for Terminus 2.",
+    )
+    parser.add_argument(
+        "--terminus-workspace",
+        type=Path,
+        default=defaults.get("terminus_workspace"),
+        help="Directory for Terminus 2 worktrees, logs, and per-instance state.",
+    )
     add_model_args(parser)
     args = parser.parse_args()
     resolve_cli_paths(args)
@@ -1269,6 +1606,10 @@ def main() -> None:
         elif args.harness == "opencode":
             generation_result = run_opencode_generation(
                 args, model_config, output_dir, args.instance_ids, instance_ids, filter_regex
+            )
+        elif args.harness == "terminus-2":
+            generation_result = run_terminus_generation(
+                args, model_config, output_dir, instance_ids
             )
         else:
             raise ValueError(args.harness)

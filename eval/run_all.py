@@ -151,6 +151,13 @@ def benchmark_args(name: str, settings: dict[str, Any]) -> list[str]:
             ("opencode_agent", "--opencode-agent"),
             ("opencode_variant", "--opencode-variant"),
             ("opencode_command_template", "--opencode-command-template"),
+            ("terminus_model", "--terminus-model"),
+            ("terminus_api_base", "--terminus-api-base"),
+            ("terminus_api_key_env", "--terminus-api-key-env"),
+            ("terminus_parser", "--terminus-parser"),
+            ("terminus_max_episodes", "--terminus-max-episodes"),
+            ("terminus_request_timeout", "--terminus-request-timeout"),
+            ("terminus_workspace", "--terminus-workspace"),
         ]:
             append_flag(args, flag, settings.get(key))
         for extra_arg in settings.get("openhands_extra_arg") or []:

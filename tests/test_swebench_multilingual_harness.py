@@ -3,8 +3,15 @@ import subprocess
 from argparse import Namespace
 from pathlib import Path
 
+import pytest
+
 from eval import run_all
 from eval.benchmarks.swebench_multilingual import run
+
+
+def require_terminus_optional_deps() -> None:
+    for module in ("litellm", "pydantic", "tenacity"):
+        pytest.importorskip(module)
 
 
 def test_convert_openhands_predictions(tmp_path: Path):
@@ -140,6 +147,7 @@ def test_resolve_cli_paths_anchors_relative_paths_to_invocation_cwd(
         openhands_output_json=Path("openhands/output.jsonl"),
         opencode_config=Path("opencode.json"),
         opencode_workspace=Path("opencode-workspace"),
+        terminus_workspace=Path("terminus-workspace"),
     )
 
     run.resolve_cli_paths(args)
@@ -151,6 +159,7 @@ def test_resolve_cli_paths_anchors_relative_paths_to_invocation_cwd(
     assert args.openhands_output_json == tmp_path / "openhands" / "output.jsonl"
     assert args.opencode_config == tmp_path / "opencode.json"
     assert args.opencode_workspace == tmp_path / "opencode-workspace"
+    assert args.terminus_workspace == tmp_path / "terminus-workspace"
 
 
 def test_openhands_existing_output_does_not_require_api_key(tmp_path: Path):
@@ -898,6 +907,12 @@ def test_prepare_opencode_worktree_skips_known_unavailable_bat_submodules(
         "submodule.assets/syntaxes/02_Extra/LiveScript.url": (
             "https://github.com/paulmillr/LiveScript.tmbundle"
         ),
+        "submodule.assets/syntaxes/02_Extra/Nginx.url": (
+            "https://github.com/brandonwamboldt/sublime-nginx"
+        ),
+        "submodule.assets/syntaxes/hosts.url": (
+            "https://github.com/brandonwamboldt/sublime-hosts"
+        ),
     }
 
     def fake_run_in_dir(command, env, cwd, **kwargs):
@@ -913,6 +928,12 @@ def test_prepare_opencode_worktree_skips_known_unavailable_bat_submodules(
 [submodule "assets/syntaxes/02_Extra/LiveScript"]
 \tpath = assets/syntaxes/02_Extra/LiveScript
 \turl = https://github.com/paulmillr/LiveScript.tmbundle
+[submodule "assets/syntaxes/02_Extra/Nginx"]
+\tpath = assets/syntaxes/02_Extra/Nginx
+\turl = https://github.com/brandonwamboldt/sublime-nginx
+[submodule "assets/syntaxes/hosts"]
+\tpath = assets/syntaxes/02_Extra/hosts
+\turl = https://github.com/brandonwamboldt/sublime-hosts
 """
             )
         if command[:4] == ["git", "config", "--file", ".gitmodules"]:
@@ -936,6 +957,18 @@ def test_prepare_opencode_worktree_skips_known_unavailable_bat_submodules(
             "git",
             "config",
             "submodule.assets/syntaxes/02_Extra/LiveScript.update",
+            "none",
+        ],
+        [
+            "git",
+            "config",
+            "submodule.assets/syntaxes/02_Extra/Nginx.update",
+            "none",
+        ],
+        [
+            "git",
+            "config",
+            "submodule.assets/syntaxes/hosts.update",
             "none",
         ],
     ]
@@ -1106,6 +1139,239 @@ def test_native_opencode_generation_writes_ordered_predictions(tmp_path: Path, m
     ]
 
 
+def test_terminus_instruction_uses_current_directory_and_diff():
+    prompt = run.terminus_instruction(
+        {
+            "problem_statement": "fix the parser",
+            "hints_text": "look at parse.rs",
+        }
+    )
+
+    assert "current directory" in prompt
+    assert "git diff" in prompt
+    assert "fix the parser" in prompt
+    assert "look at parse.rs" in prompt
+
+
+def test_terminus_terminal_env_strips_llm_credentials(tmp_path: Path):
+    env = run.terminus_terminal_env(
+        {
+            "OPENAI_API_KEY": "openai-secret",
+            "OPENAI_BASE_URL": "https://api.deepseek.com",
+            "OPENAI_API_BASE": "https://api.deepseek.com",
+            "DEEPSEEK_API_KEY": "deepseek-secret",
+            "AWS_SECRET_ACCESS_KEY": "aws-secret",
+            "GITHUB_TOKEN": "github-token",
+            "GOOGLE_APPLICATION_CREDENTIALS": "/tmp/google.json",
+            "PATH": "/bin",
+            "SSH_AUTH_SOCK": "/tmp/ssh-agent",
+        },
+        tmp_path,
+        "repo__issue-1",
+    )
+
+    assert "OPENAI_API_KEY" not in env
+    assert "OPENAI_BASE_URL" not in env
+    assert "OPENAI_API_BASE" not in env
+    assert "DEEPSEEK_API_KEY" not in env
+    assert "AWS_SECRET_ACCESS_KEY" not in env
+    assert "GITHUB_TOKEN" not in env
+    assert "GOOGLE_APPLICATION_CREDENTIALS" not in env
+    assert "SSH_AUTH_SOCK" not in env
+    assert env["PATH"] == "/bin"
+    assert env["HOME"] == str(tmp_path / "home" / "repo__issue-1")
+    assert env["XDG_CONFIG_HOME"] == str(tmp_path / "xdg-config" / "repo__issue-1")
+
+
+def test_local_tmux_session_incremental_output_excludes_previous_buffer(tmp_path: Path):
+    session = run.LocalTmuxSession(
+        "test-session",
+        tmp_path,
+        {},
+        tmp_path / "terminal.log",
+    )
+    session._previous_buffer = "line1\nline2"
+
+    assert session._find_new_content("line1\nline2\nline3") == "\nline3"
+
+
+def test_local_tmux_session_uses_isolated_socket(tmp_path: Path, monkeypatch):
+    commands = []
+
+    def fake_subprocess_run(command, **kwargs):
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, "")
+
+    monkeypatch.setattr(subprocess, "run", fake_subprocess_run)
+
+    session = run.LocalTmuxSession(
+        "test session",
+        tmp_path,
+        {"PATH": "/bin"},
+        tmp_path / "terminal.log",
+    )
+
+    session.start()
+
+    assert commands[0][:3] == ["tmux", "-L", "test-session"]
+    assert commands[0][3] == "new-session"
+
+
+def test_litellm_logger_redacts_nested_api_keys():
+    require_terminus_optional_deps()
+
+    from terminal_bench.llms.lite_llm import LiteLLM
+
+    llm = LiteLLM.__new__(LiteLLM)
+    payload = llm._redact_secret_values(
+        {
+            "api_key": "root-secret",
+            "nested": {"x-api-key": "nested-secret"},
+            "items": [{"authorization": "Bearer token"}],
+            "apiKey": "camel-secret",
+            "bearer_token": "bearer-secret",
+            "x-goog-api-key": "google-secret",
+            "proxy_authorization": "proxy-secret",
+            "password": "password-secret",
+            "access_key": "access-secret",
+        }
+    )
+
+    assert "api_key" not in payload
+    assert payload["api_key_sha256"]
+    assert "x-api-key" not in payload["nested"]
+    assert payload["nested"]["x-api-key_sha256"]
+    assert "authorization" not in payload["items"][0]
+    assert payload["items"][0]["authorization_sha256"]
+    assert "apiKey" not in payload
+    assert payload["apiKey_sha256"]
+    assert "bearer_token" not in payload
+    assert payload["bearer_token_sha256"]
+    assert "x-goog-api-key" not in payload
+    assert payload["x-goog-api-key_sha256"]
+    assert "proxy_authorization" not in payload
+    assert payload["proxy_authorization_sha256"]
+    assert "password" not in payload
+    assert payload["password_sha256"]
+    assert "access_key" not in payload
+    assert payload["access_key_sha256"]
+
+
+def test_terminus_litellm_forwards_model_limits_and_extra_body(monkeypatch):
+    require_terminus_optional_deps()
+
+    from terminal_bench.agents.terminus_2.terminus_2 import Terminus2
+    from terminal_bench.llms import lite_llm
+
+    captured = {}
+
+    def fake_completion(**kwargs):
+        captured.update(kwargs)
+        return {
+            "choices": [
+                {
+                    "finish_reason": "stop",
+                    "message": {"content": "ok"},
+                }
+            ]
+        }
+
+    monkeypatch.setattr(lite_llm, "get_supported_openai_params", lambda _: [])
+    monkeypatch.setattr(lite_llm.litellm, "completion", fake_completion)
+    monkeypatch.setattr(lite_llm, "add_anthropic_caching", lambda messages, _: messages)
+
+    agent = Terminus2(
+        model_name="openai/deepseek-v4-flash",
+        temperature=0,
+        api_base="https://api.deepseek.com",
+        api_key="secret",
+        max_tokens=4096,
+        extra_body={"thinking": {"type": "disabled"}},
+    )
+
+    assert agent._llm.call("hello", timeout=120) == "ok"
+    assert captured["max_tokens"] == 4096
+    assert captured["extra_body"] == {"thinking": {"type": "disabled"}}
+    assert captured["timeout"] == 120
+    assert captured["api_base"] == "https://api.deepseek.com"
+    assert captured["api_key"] == "secret"
+
+
+def test_terminus_provider_override_uses_selected_key_and_label(monkeypatch):
+    class ModelConfig:
+        api_key_env = "DEEPSEEK_API_KEY"
+        slug = "deepseek-v4-flash"
+
+        def api_key(self):
+            return "deepseek-secret"
+
+    args = Namespace(
+        terminus_model="openrouter/qwen/qwen3.5-9b",
+        terminus_api_key_env="OPENROUTER_API_KEY",
+    )
+    monkeypatch.setenv("OPENROUTER_API_KEY", "openrouter-secret")
+
+    assert run.terminus_api_key(args, ModelConfig()) == "openrouter-secret"
+    assert (
+        run.terminus_model_label(args, ModelConfig())
+        == "openrouter-qwen-qwen3.5-9b"
+    )
+
+
+def test_native_terminus_generation_writes_ordered_predictions(tmp_path: Path, monkeypatch):
+    rows = [
+        {"instance_id": "repo__b-2", "problem_statement": "fix b"},
+        {"instance_id": "repo__a-1", "problem_statement": "fix a"},
+    ]
+
+    monkeypatch.setattr(run, "load_swebench_instances", lambda instance_ids: rows)
+
+    def fake_run_terminus_instance(row, args, model_config, workspace_root, base_env):
+        return {
+            "instance_id": row["instance_id"],
+            "model_patch": f"diff --git a/{row['instance_id']} b/{row['instance_id']}\n",
+            "model_name_or_path": model_config.slug,
+        }
+
+    monkeypatch.setattr(run, "run_terminus_instance", fake_run_terminus_instance)
+
+    class ModelConfig:
+        api_base = "https://api.deepseek.com"
+        api_key_env = "DEEPSEEK_API_KEY"
+        litellm_name = "openai/deepseek-v4-flash"
+        slug = "deepseek-v4-flash"
+        temperature = 0
+
+        def api_key(self):
+            return "secret"
+
+        def generation_env(self):
+            return {"DEEPSEEK_API_KEY": "secret", "OPENAI_API_KEY": "secret"}
+
+    result = run.run_terminus_generation(
+        Namespace(
+            generation_workers=2,
+            terminus_max_episodes=2,
+            terminus_model=None,
+            terminus_api_base=None,
+            terminus_api_key_env=None,
+            terminus_parser="json",
+            terminus_request_timeout=120,
+            terminus_workspace=tmp_path / "workspace",
+        ),
+        ModelConfig(),
+        tmp_path,
+        ["repo__b-2", "repo__a-1"],
+    )
+
+    assert Path(result["predictions_path"]) == tmp_path / "preds.json"
+    predictions = json.loads((tmp_path / "preds.json").read_text())
+    assert [prediction["instance_id"] for prediction in predictions] == [
+        "repo__b-2",
+        "repo__a-1",
+    ]
+
+
 def test_run_all_forwards_dash_prefixed_openhands_extra_args():
     args = run_all.benchmark_args(
         "swebench_multilingual",
@@ -1149,3 +1415,36 @@ def test_run_all_forwards_opencode_options():
     assert "/tmp/opencode-workspace" in args
     assert "--opencode-extra-arg=--print-logs" in args
     assert "--opencode-extra-arg=--log-level DEBUG" in args
+
+
+def test_run_all_forwards_terminus_options():
+    args = run_all.benchmark_args(
+        "swebench_multilingual",
+        {
+            "harness": "terminus-2",
+            "terminus_model": "openai/deepseek-v4-flash",
+            "terminus_api_base": "https://api.deepseek.com",
+            "terminus_api_key_env": "DEEPSEEK_API_KEY",
+            "terminus_parser": "xml",
+            "terminus_max_episodes": 12,
+            "terminus_request_timeout": 120,
+            "terminus_workspace": "/tmp/terminus-workspace",
+        },
+    )
+
+    assert "--harness" in args
+    assert "terminus-2" in args
+    assert "--terminus-model" in args
+    assert "openai/deepseek-v4-flash" in args
+    assert "--terminus-api-base" in args
+    assert "https://api.deepseek.com" in args
+    assert "--terminus-api-key-env" in args
+    assert "DEEPSEEK_API_KEY" in args
+    assert "--terminus-parser" in args
+    assert "xml" in args
+    assert "--terminus-max-episodes" in args
+    assert "12" in args
+    assert "--terminus-request-timeout" in args
+    assert "120" in args
+    assert "--terminus-workspace" in args
+    assert "/tmp/terminus-workspace" in args
