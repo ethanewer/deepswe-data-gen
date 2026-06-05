@@ -1,0 +1,40 @@
+{
+  "model": "allenai/Olmo-3-7B-Think",
+  "description": "Recorded OLMo 3 7B Think serving/tool-call experiments. This model was substantially weaker than Qwen on SWE-bench, but this config captures the usable tool-call template setup.",
+  "serve": {
+    "gpus": [0],
+    "backend_ports": [8200],
+    "backend_host": "0.0.0.0",
+    "backend_base_url_host": "127.0.0.1",
+    "proxy_host": "0.0.0.0",
+    "proxy_port": 8000,
+    "served_model_name": "allenai/Olmo-3-7B-Think",
+    "tensor_parallel_size": 1,
+    "max_model_len": 32768,
+    "gpu_memory_utilization": 0.9,
+    "trust_remote_code": true,
+    "chat_template": "eval/chat_templates/olmo3_openai_tools_no_think.jinja",
+    "chat_template_content_format": "string",
+    "vllm_args": [
+      "--enable-auto-tool-choice",
+      "--tool-call-parser",
+      "olmo3"
+    ]
+  },
+  "generation_profiles": {
+    "swebench_smoke_required_tool_choice": {
+      "temperature": 0,
+      "max_tokens": 1024,
+      "api_base": "http://127.0.0.1:8200/v1",
+      "tool_choice": "required",
+      "parallel_tool_calls": false,
+      "reference_run": "runs/olmo3-7b-think-swebench-multilingual-smoke-3-1gpu-required-20260605T0902Z"
+    },
+    "livecodebench_predictive_50": {
+      "temperature": 0,
+      "max_tokens": 4096,
+      "api_base": "http://127.0.0.1:8000/v1",
+      "successful_run": "runs/olmo3-7b-think-livecodebench-v6-8gpu-20260605T044048Z"
+    }
+  }
+}

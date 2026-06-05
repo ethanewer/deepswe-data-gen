@@ -1,0 +1,43 @@
+{% set tools_json = tools | tojson if tools is defined and tools else '' %}
+{% set runtime_note = 'The shell starts in /testbed, which is already the repository root. Start by listing files with ls -la or find . -maxdepth 2 -type f; avoid a bare pwd as the first command. Use grep, find, sed, awk, or cat to inspect real files. Do not install file-search tools; if a command is unavailable, fall back to POSIX shell tools. Do not invent owner/repo subdirectories under /testbed, do not use placeholder paths like path/to/file, and do not create patch.txt until after changing source files.' %}
+{% macro function_instructions() -%}
+{%- if tools_json -%}
+You have access to functions. When you need to interact with the environment, emit exactly one function call using Python keyword syntax, for example: bash(command="pwd"). <functions>{{ tools_json }}</functions>
+{%- else -%}
+You do not currently have access to any functions. <functions></functions>
+{%- endif -%}
+{%- endmacro %}
+{% set has_system = messages | selectattr('role', 'equalto', 'system') | list | length > 0 %}
+{% if not has_system %}{{ '<|im_start|>system\nYou are OLMo, a helpful function-calling AI assistant built by Ai2. ' + function_instructions() + '<|im_end|>\n' }}{% endif %}
+{% for message in messages %}
+{% if message['role'] == 'system' %}
+{{ '<|im_start|>system\n' + function_instructions() + ' ' + message['content'] + '<|im_end|>\n' }}
+{% elif message['role'] == 'user' %}
+{{ '<|im_start|>user\n' }}{% if tools_json %}{{ runtime_note + '\n\n' }}{% endif %}{{ message['content'] + '<|im_end|>\n' }}
+{% elif message['role'] == 'assistant' %}
+{{ '<|im_start|>assistant\n' }}
+{% if message.get('content', none) is not none %}{{ message['content'] }}{% endif %}
+{% if message.get('tool_calls', none) is not none %}
+{{ '\n<function_calls>' }}
+{% for tool_call in message['tool_calls'] %}
+{% set args = tool_call['function']['arguments'] %}
+{% if args is mapping and args.get('command', none) is not none %}
+{{ tool_call['function']['name'] + '(command=' + (args.get('command') | tojson) + ')\n' }}
+{% elif args is string and args.startswith('{"command": ') %}
+{{ tool_call['function']['name'] + '(command=' + args[12:-1] + ')\n' }}
+{% elif args is string and args.startswith('{"command":') %}
+{{ tool_call['function']['name'] + '(command=' + args[11:-1] + ')\n' }}
+{% else %}
+{{ tool_call['function']['name'] + '(arguments=' + (args | tojson) + ')\n' }}
+{% endif %}
+{% endfor %}
+{{ '</function_calls>' }}
+{% endif %}
+{% if not loop.last %}{{ '<|im_end|>\n' }}{% else %}{{ eos_token }}{% endif %}
+{% elif message['role'] == 'tool' %}
+{{ '<|im_start|>environment\n' + message['content'] + '<|im_end|>\n' }}
+{% elif message['role'] == 'environment' %}
+{{ '<|im_start|>environment\n' + message['content'] + '<|im_end|>\n' }}
+{% endif %}
+{% if loop.last and add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}
+{% endfor %}

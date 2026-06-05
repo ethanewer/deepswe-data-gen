@@ -157,6 +157,7 @@ async def generate_one(
     model_config: ModelConfig,
     semaphore: asyncio.Semaphore,
     retries: int,
+    request_timeout: float,
 ) -> GenerationResult:
     started = time.perf_counter()
     async with semaphore:
@@ -167,7 +168,7 @@ async def generate_one(
                     messages=prompt_messages(problem),
                     temperature=model_config.temperature,
                     max_tokens=model_config.max_tokens,
-                    timeout=300,
+                    timeout=request_timeout,
                     extra_body=model_config.extra_body or None,
                 )
                 raw_output = response.choices[0].message.content or ""
@@ -206,6 +207,7 @@ async def generate_all(
     workers: int,
     retries: int,
     n: int,
+    request_timeout: float,
 ) -> list[list[GenerationResult]]:
     cached = existing_generations(output_path)
     expected = [
@@ -237,7 +239,7 @@ async def generate_all(
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     tasks = [
-        asyncio.create_task(generate_one(client, problem, sample_index, model_config, semaphore, retries))
+        asyncio.create_task(generate_one(client, problem, sample_index, model_config, semaphore, retries, request_timeout))
         for problem, sample_index in pending
     ]
     with output_path.open("a") as f:
@@ -304,6 +306,7 @@ def main() -> None:
     parser.add_argument("--generation-workers", type=int, default=None)
     parser.add_argument("--eval-workers", type=int, default=None)
     parser.add_argument("--timeout", type=int, default=6)
+    parser.add_argument("--request-timeout", type=float, default=300.0)
     parser.add_argument("--retries", type=int, default=5)
     parser.add_argument("--n", type=int, default=None)
     parser.add_argument("--output-dir", type=Path, default=None)
@@ -356,7 +359,7 @@ def main() -> None:
         ]
     else:
         generations = asyncio.run(
-            generate_all(problems, model_config, raw_path, generation_workers, args.retries, n)
+            generate_all(problems, model_config, raw_path, generation_workers, args.retries, n, args.request_timeout)
         )
     generation_s = time.perf_counter() - start_generation
     write_custom_outputs(custom_outputs_path, generations)
@@ -390,6 +393,7 @@ def main() -> None:
         "generation_workers": generation_workers,
         "evaluation_workers": eval_workers,
         "timeout": args.timeout,
+        "request_timeout": args.request_timeout,
         "generation_s": generation_s,
         "evaluation_s": evaluation_s,
         "total_s": total_s,
