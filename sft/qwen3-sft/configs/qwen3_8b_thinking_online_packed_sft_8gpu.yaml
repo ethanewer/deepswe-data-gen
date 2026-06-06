@@ -1,0 +1,136 @@
+# Full-parameter BF16 SFT for the text tower of Qwen/Qwen3-VL-8B-Thinking.
+#
+# The local runner builds data/qwen3_vl_8b_text_checkpoint as a filtered
+# safetensors view containing only model.language_model.* and lm_head.*.  The
+# Automodel registry maps Qwen3VLForConditionalGeneration to a text-only causal
+# LM wrapper, so the vision encoder is neither constructed nor loaded.
+
+recipe: TrainFinetuneRecipeForNextTokenPrediction
+
+step_scheduler:
+  # Global/local batch sizes are counts of packed sequences, not tokens.
+  # With 8 GPUs and 2 grad accum steps: 16 * 65,536 = 1,048,576 tokens/global update.
+  global_batch_size: 16
+  local_batch_size: 1
+  ckpt_every_steps: 1000
+  val_every_steps: 1000
+  max_steps: 1000
+
+dist_env:
+  backend: nccl
+  timeout_minutes: 60
+
+rng:
+  _target_: nemo_automodel.components.training.rng.StatefulRNG
+  seed: 33333
+  ranked: true
+
+model:
+  _target_: nemo_automodel.NeMoAutoModelForCausalLM.from_pretrained
+  pretrained_model_name_or_path: data/qwen3_vl_8b_text_checkpoint
+  attn_implementation: flash_attention_3
+  torch_dtype: bf16
+  output_hidden_states: true
+
+compile:
+  enabled: false
+  mode: default
+  fullgraph: false
+  dynamic: true
+  backend: null
+
+fp8:
+  enabled: false
+
+checkpoint:
+  enabled: false
+  checkpoint_dir: checkpoints/qwen3_8b_thinking_online_packed_sft/
+  model_save_format: torch_save
+  save_consolidated: false
+
+distributed:
+  strategy: fsdp2
+  dp_size: none
+  tp_size: 1
+  cp_size: 1
+  pp_size: 1
+  ep_size: 1
+  sequence_parallel: false
+  activation_checkpointing: true
+  enable_compile: true
+  enable_fsdp2_prefetch: true
+  fsdp2_backward_prefetch_depth: 2
+  fsdp2_forward_prefetch_depth: 1
+
+clip_grad_norm:
+  enabled: true
+  max_norm: 1.0
+
+loss_fn:
+  _target_: nemo_automodel.components.loss.linear_ce.FusedLinearCrossEntropy
+
+dataset:
+  _target_: qwen_agentic_sft.online_packed_dataset.OnlinePackedChatDataset
+  raw_root: /wbl-fast/usrs/ee/code-swe-data/data/code-swe-terminal-agentic-sft
+  chat_template_path: /wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/eval/chat_templates/qwen3_thinking_acc.jinja2
+  sequence_length: 65536
+  max_rows_per_file: 0
+  max_examples: 0
+  parquet_batch_size: 128
+  overlength_strategy: split
+  min_label_tokens: 1
+  shuffle_files: true
+  seed: 33333
+  repeat: true
+  log_every_packs: 100
+
+dataloader:
+  _target_: torchdata.stateful_dataloader.StatefulDataLoader
+  collate_fn:
+    _target_: nemo_automodel.components.datasets.utils.packed_sequence_thd_collater
+  batch_size: 1
+  shuffle: false
+  num_workers: 2
+  multiprocessing_context: fork
+  pin_memory: true
+  persistent_workers: false
+  prefetch_factor: 2
+
+validation_dataset:
+  _target_: qwen_agentic_sft.online_packed_dataset.OnlinePackedChatDataset
+  raw_root: data/smoke_raw
+  chat_template_path: /wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/eval/chat_templates/qwen3_thinking_acc.jinja2
+  sequence_length: 65536
+  max_rows_per_file: 0
+  max_examples: 128
+  parquet_batch_size: 128
+  overlength_strategy: split
+  min_label_tokens: 1
+  shuffle_files: false
+  seed: 33333
+  repeat: false
+  log_every_packs: 0
+
+validation_dataloader:
+  _target_: torchdata.stateful_dataloader.StatefulDataLoader
+  collate_fn:
+    _target_: nemo_automodel.components.datasets.utils.packed_sequence_thd_collater
+  batch_size: 1
+  shuffle: false
+  num_workers: 1
+  multiprocessing_context: fork
+  pin_memory: true
+  persistent_workers: false
+  prefetch_factor: 2
+
+optimizer:
+  _target_: torch.optim.AdamW
+  betas: [0.9, 0.95]
+  eps: 1.0e-8
+  lr: 1.0e-5
+  weight_decay: 0.01
+  fused: true
+
+lr_scheduler:
+  lr_decay_style: cosine
+  min_lr: 1.0e-6
