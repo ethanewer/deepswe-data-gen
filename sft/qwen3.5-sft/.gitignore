@@ -1,0 +1,20 @@
+# Local Qwen SFT outputs
+logs/
+runs/
+work/
+results/
+checkpoints/
+
+# Created by setup_nemo_automodel_env.sh
+.venv/
+third_party/
+
+# Training and benchmark artifacts
+*.log
+logs_*.txt
+*_mem.csv
+*.pt
+*.pth
+*.bin
+*.safetensors
+*.ckpt
