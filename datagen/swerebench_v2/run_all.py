@@ -25,7 +25,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--language",
-        choices=("python", "ts", "go"),
+        choices=("c", "cpp", "go", "java", "js", "php", "python", "ruby", "rust", "ts"),
         help="Optional language to materialize and smoke-test.",
     )
     parser.add_argument(

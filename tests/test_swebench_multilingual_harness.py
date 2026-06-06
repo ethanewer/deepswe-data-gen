@@ -1220,7 +1220,7 @@ def test_local_tmux_session_uses_isolated_socket(tmp_path: Path, monkeypatch):
 def test_litellm_logger_redacts_nested_api_keys():
     require_terminus_optional_deps()
 
-    from terminal_bench.llms.lite_llm import LiteLLM
+    from eval.terminal_bench.llms.lite_llm import LiteLLM
 
     llm = LiteLLM.__new__(LiteLLM)
     payload = llm._redact_secret_values(
@@ -1260,8 +1260,8 @@ def test_litellm_logger_redacts_nested_api_keys():
 def test_terminus_litellm_forwards_model_limits_and_extra_body(monkeypatch):
     require_terminus_optional_deps()
 
-    from terminal_bench.agents.terminus_2.terminus_2 import Terminus2
-    from terminal_bench.llms import lite_llm
+    from eval.terminal_bench.agents.terminus_2.terminus_2 import Terminus2
+    from eval.terminal_bench.llms import lite_llm
 
     captured = {}
 

@@ -7,22 +7,22 @@ from typing import Any
 from litellm.utils import get_max_tokens
 from tenacity import retry, stop_after_attempt
 
-from terminal_bench.agents.base_agent import AgentResult, BaseAgent
-from terminal_bench.agents.failure_mode import FailureMode
-from terminal_bench.agents.terminus_2.terminus_json_plain_parser import (
+from eval.terminal_bench.agents.base_agent import AgentResult, BaseAgent
+from eval.terminal_bench.agents.failure_mode import FailureMode
+from eval.terminal_bench.agents.terminus_2.terminus_json_plain_parser import (
     TerminusJSONPlainParser,
 )
-from terminal_bench.agents.terminus_2.terminus_xml_plain_parser import (
+from eval.terminal_bench.agents.terminus_2.terminus_xml_plain_parser import (
     TerminusXMLPlainParser,
 )
-from terminal_bench.llms.base_llm import (
+from eval.terminal_bench.llms.base_llm import (
     ContextLengthExceededError,
     OutputLengthExceededError,
 )
-from terminal_bench.llms.chat import Chat
-from terminal_bench.llms.lite_llm import LiteLLM
-from terminal_bench.terminal.tmux_session import TmuxSession
-from terminal_bench.utils.logger import logger
+from eval.terminal_bench.llms.chat import Chat
+from eval.terminal_bench.llms.lite_llm import LiteLLM
+from eval.terminal_bench.terminal.tmux_session import TmuxSession
+from eval.terminal_bench.utils.logger import logger
 
 
 @dataclass

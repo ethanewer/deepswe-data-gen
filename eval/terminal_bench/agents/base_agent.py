@@ -5,9 +5,9 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from terminal_bench.agents.failure_mode import FailureMode
-from terminal_bench.terminal.tmux_session import TmuxSession
-from terminal_bench.utils.template_utils import render_prompt_template
+from eval.terminal_bench.agents.failure_mode import FailureMode
+from eval.terminal_bench.terminal.tmux_session import TmuxSession
+from eval.terminal_bench.utils.template_utils import render_prompt_template
 
 
 class AgentResult(BaseModel):

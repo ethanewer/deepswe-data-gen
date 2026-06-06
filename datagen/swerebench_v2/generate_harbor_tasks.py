@@ -20,7 +20,7 @@ from eval.paths import REPO_ROOT
 MODULE_DIR = Path(__file__).resolve().parent
 DATASET_NAME = "nebius/SWE-rebench-V2"
 SPLIT = "train"
-LANGUAGES = ("python", "ts", "go")
+LANGUAGES = ("c", "cpp", "go", "java", "js", "php", "python", "ruby", "rust", "ts")
 DIFFICULTIES = ("easy", "medium", "hard")
 MIN_CONFIDENCE = 0.95
 TASKS_CSV = MODULE_DIR / "data" / "high_quality_conf_ge_0.95_tasks.csv"
@@ -107,7 +107,7 @@ def load_selected_ids(
 
 
 def normalize_language(language: str) -> str:
-    return {"ts": "typescript"}.get(language, language)
+    return {"cpp": "c++", "js": "javascript", "ts": "typescript"}.get(language, language)
 
 
 def repo_workdir(row: dict) -> str:

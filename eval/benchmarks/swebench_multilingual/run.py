@@ -1299,7 +1299,7 @@ def run_terminus_instance(
     workspace_root: Path,
     base_env: dict[str, str],
 ) -> dict[str, str]:
-    from terminal_bench.agents.terminus_2.terminus_2 import Terminus2
+    from eval.terminal_bench.agents.terminus_2.terminus_2 import Terminus2
 
     instance_id = row["instance_id"]
     safe_name = safe_instance_name(instance_id)

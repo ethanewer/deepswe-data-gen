@@ -35,7 +35,10 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--harbor-limit", type=int, help="Maximum Harbor tasks to write.")
     parser.add_argument("--difficulty", choices=("easy", "medium", "hard"))
-    parser.add_argument("--language", choices=("python", "ts", "go"))
+    parser.add_argument(
+        "--language",
+        choices=("c", "cpp", "go", "java", "js", "php", "python", "ruby", "rust", "ts"),
+    )
     return parser.parse_args()
 
 

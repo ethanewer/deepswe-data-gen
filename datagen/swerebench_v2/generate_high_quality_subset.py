@@ -2,7 +2,8 @@
 """Generate the high-quality SWE-rebench V2 task subset.
 
 Filters:
-- language is python, ts, or go
+- language is in the union of the SWE-bench Multilingual predictive 30-task
+  subset languages and the DeepSWE easiest 5-task subset languages
 - difficulty is easy, medium, or hard
 - annotation code is A
 - intent completeness is complete
@@ -22,7 +23,7 @@ from pathlib import Path
 from datasets import load_dataset
 
 
-LANGUAGES = ("python", "ts", "go")
+LANGUAGES = ("c", "cpp", "go", "java", "js", "php", "python", "ruby", "rust", "ts")
 DIFFICULTIES = ("easy", "medium", "hard")
 MIN_CONFIDENCE = 0.95
 DATASET_NAME = "nebius/SWE-rebench-V2"

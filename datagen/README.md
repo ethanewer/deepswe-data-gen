@@ -12,7 +12,20 @@ Generated outputs should go under `runs/` unless they are committed source data.
 
 ## SWE-rebench V2
 
-Regenerate the confidence-filtered SWE-rebench V2 subset:
+The default generated SWE-rebench V2 subset is confidence-filtered and limited
+to languages represented in either the SWE-bench Multilingual predictive
+30-task subset or the DeepSWE easiest 5-task subset:
+
+```text
+c, cpp, go, java, js, php, python, ruby, rust, ts
+```
+
+With the current `nebius/SWE-rebench-V2` train split and `confidence >= 0.95`,
+that default produces 15,296 tasks: 5,518 easy, 9,443 medium, and 335 hard.
+Ruby is included in the default split, but currently contributes zero matching
+SWE-rebench V2 rows after the other quality filters.
+
+Regenerate the default subset:
 
 ```bash
 .venv-swe-uv/bin/python -m datagen.swerebench_v2.run_data_generation

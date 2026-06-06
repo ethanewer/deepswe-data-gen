@@ -18,6 +18,7 @@ SPLIT = "train"
 TASKS_CSV = MODULE_DIR / "data" / "high_quality_conf_ge_0.95_tasks.csv"
 DEFAULT_CSV = MODULE_DIR / "data" / "prompt_analysis.csv"
 DEFAULT_MD = MODULE_DIR / "data" / "prompt_style_analysis.md"
+LANGUAGES = ("c", "cpp", "go", "java", "js", "php", "python", "ruby", "rust", "ts")
 
 
 FIELDS = [
@@ -162,7 +163,7 @@ def write_markdown(path: Path, rows: list[dict[str, str | int | bool]]) -> None:
         lines.append(f"- {difficulty}: {by_difficulty[difficulty]:,}")
 
     lines.extend(["", "## Needs Change By Language", ""])
-    for language in ("python", "ts", "go"):
+    for language in LANGUAGES:
         lines.append(f"- {language}: {by_language[language]:,}")
 
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")

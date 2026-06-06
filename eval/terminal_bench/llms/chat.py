@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from terminal_bench.llms.base_llm import BaseLLM
+from eval.terminal_bench.llms.base_llm import BaseLLM
 
 
 class Chat:

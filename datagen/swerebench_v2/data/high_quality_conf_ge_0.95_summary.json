@@ -1,12 +1,18 @@
 {
   "by_difficulty": {
-    "easy": 3495,
-    "hard": 183,
-    "medium": 5731
+    "easy": 5518,
+    "hard": 335,
+    "medium": 9443
   },
   "by_language": {
+    "c": 88,
+    "cpp": 96,
     "go": 3001,
+    "java": 812,
+    "js": 2196,
+    "php": 780,
     "python": 4144,
+    "rust": 1915,
     "ts": 2264
   },
   "files": [
@@ -23,9 +29,16 @@
       "hard"
     ],
     "language": [
+      "c",
+      "cpp",
+      "go",
+      "java",
+      "js",
+      "php",
       "python",
-      "ts",
-      "go"
+      "ruby",
+      "rust",
+      "ts"
     ],
     "meta.llm_metadata.code": "A",
     "meta.llm_metadata.confidence": ">= 0.95",
@@ -34,15 +47,50 @@
     "meta.llm_metadata.test_alignment_issues": "empty"
   },
   "matrix": {
+    "c": {
+      "easy": 29,
+      "hard": 2,
+      "medium": 57
+    },
+    "cpp": {
+      "easy": 35,
+      "hard": 3,
+      "medium": 58
+    },
     "go": {
       "easy": 973,
       "hard": 62,
       "medium": 1966
     },
+    "java": {
+      "easy": 271,
+      "hard": 22,
+      "medium": 519
+    },
+    "js": {
+      "easy": 943,
+      "hard": 17,
+      "medium": 1236
+    },
+    "php": {
+      "easy": 297,
+      "hard": 19,
+      "medium": 464
+    },
     "python": {
       "easy": 1694,
       "hard": 83,
       "medium": 2367
+    },
+    "ruby": {
+      "easy": 0,
+      "hard": 0,
+      "medium": 0
+    },
+    "rust": {
+      "easy": 448,
+      "hard": 89,
+      "medium": 1378
     },
     "ts": {
       "easy": 828,
@@ -52,5 +100,5 @@
   },
   "source_dataset": "nebius/SWE-rebench-V2",
   "split": "train",
-  "total": 9409
+  "total": 15296
 }

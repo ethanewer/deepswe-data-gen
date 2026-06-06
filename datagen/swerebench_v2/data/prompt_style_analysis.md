@@ -7,7 +7,7 @@ external links, implementation hints, or generated interface blocks.
 
 ## Conclusion
 
-Yes. 9,003 of 9,409 high-quality confidence-filtered SWE-rebench prompts contain at least one signal that should be changed or reviewed before treating them as DeepSWE-style prompts.
+Yes. 14,584 of 15,296 high-quality confidence-filtered SWE-rebench prompts contain at least one signal that should be changed or reviewed before treating them as DeepSWE-style prompts.
 
 The generated Harbor tasks therefore default to `instruction-style=deepswe`,
 which removes the generated interface section and keeps only a cleaned,
@@ -17,28 +17,35 @@ verifiers.
 
 ## Prompt Length
 
-- p50: 973 characters
-- p90: 3,179 characters
-- p95: 4,659 characters
+- p50: 950 characters
+- p90: 3,007 characters
+- p95: 4,369 characters
 
 ## Change Signals
 
-- interface_dump: 6,116
-- signature_blocks: 6,116
-- code_fences: 5,712
-- external_urls: 4,729
-- file_path_hints: 3,139
-- long_prompt: 1,423
-- issue_template_boilerplate: 974
+- code_fences: 9,601
+- interface_dump: 9,198
+- signature_blocks: 9,198
+- external_urls: 7,732
+- file_path_hints: 4,083
+- long_prompt: 2,122
+- issue_template_boilerplate: 1,306
 
 ## Needs Change By Difficulty
 
-- easy: 3,289
-- medium: 5,534
-- hard: 180
+- easy: 5,177
+- medium: 9,082
+- hard: 325
 
 ## Needs Change By Language
 
-- python: 4,008
-- ts: 2,175
+- c: 80
+- cpp: 87
 - go: 2,820
+- java: 756
+- js: 2,086
+- php: 752
+- python: 4,008
+- ruby: 0
+- rust: 1,820
+- ts: 2,175

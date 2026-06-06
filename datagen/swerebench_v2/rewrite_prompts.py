@@ -25,7 +25,7 @@ TASKS_CSV = MODULE_DIR / "data" / "high_quality_conf_ge_0.95_tasks.csv"
 PROMPT_ANALYSIS_CSV = MODULE_DIR / "data" / "prompt_analysis.csv"
 DEFAULT_OUTPUT_DIR = MODULE_DIR / "examples" / "rewritten-prompts"
 DEFAULT_MODEL = "gpt-5.4-mini"
-LANGUAGES = ("python", "ts", "go")
+LANGUAGES = ("c", "cpp", "go", "java", "js", "php", "python", "ruby", "rust", "ts")
 DIFFICULTIES = ("easy", "medium", "hard")
 
 

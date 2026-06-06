@@ -25,13 +25,13 @@ from tenacity import (
     wait_exponential,
 )
 
-from terminal_bench.llms.base_llm import (
+from eval.terminal_bench.llms.base_llm import (
     BaseLLM,
     ContextLengthExceededError,
     OutputLengthExceededError,
 )
-from terminal_bench.utils.anthropic_caching import add_anthropic_caching
-from terminal_bench.utils.logger import logger
+from eval.terminal_bench.utils.anthropic_caching import add_anthropic_caching
+from eval.terminal_bench.utils.logger import logger
 
 
 class LiteLLM(BaseLLM):
