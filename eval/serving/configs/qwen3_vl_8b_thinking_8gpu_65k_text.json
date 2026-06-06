@@ -1,0 +1,64 @@
+{
+  "model": "Qwen/Qwen3-VL-8B-Thinking",
+  "description": "Local text-only benchmark serving setup for Qwen3-VL 8B Thinking on LiveCodeBench v6 175 and SWE-bench Multilingual predictive-30.",
+  "sources": [
+    "https://huggingface.co/Qwen/Qwen3-VL-8B-Thinking",
+    "https://docs.vllm.ai/en/stable/features/reasoning_outputs/",
+    "https://docs.vllm.ai/en/v0.22.0/features/tool_calling/",
+    "https://github.com/open-thoughts/OpenThoughts-Agent/blob/main/chat_templates/qwen3_thinking_acc.jinja2"
+  ],
+  "serve": {
+    "gpus": [0, 1, 2, 3, 4, 5, 6, 7],
+    "backend_ports": [8100, 8101, 8102, 8103, 8104, 8105, 8106, 8107],
+    "backend_host": "0.0.0.0",
+    "backend_base_url_host": "127.0.0.1",
+    "proxy_host": "0.0.0.0",
+    "proxy_port": 8000,
+    "served_model_name": "Qwen/Qwen3-VL-8B-Thinking",
+    "tensor_parallel_size": 1,
+    "max_model_len": 65536,
+    "gpu_memory_utilization": 0.9,
+    "trust_remote_code": true,
+    "chat_template": "eval/chat_templates/qwen3_thinking_acc.jinja2",
+    "chat_template_content_format": "string",
+    "vllm_args": [
+      "--reasoning-parser",
+      "qwen3",
+      "--enable-auto-tool-choice",
+      "--tool-call-parser",
+      "hermes"
+    ]
+  },
+  "generation": {
+    "temperature": 0.6,
+    "max_tokens": 60000,
+    "request_timeout": 14400,
+    "extra_body": {
+      "top_p": 0.95,
+      "top_k": 20,
+      "min_p": 0,
+      "presence_penalty": 0
+    }
+  },
+  "benchmarks": {
+    "livecodebench_v6_175": {
+      "all_tasks": true,
+      "n": 3,
+      "generation_workers": 525,
+      "evaluation_workers": 64,
+      "timeout": 6
+    },
+    "swebench_multilingual_predictive_30": {
+      "harness": "mini-swe-agent",
+      "generation_workers": 8,
+      "eval_workers": 4,
+      "max_tokens": 4096,
+      "temperature": 0.6
+    }
+  },
+  "notes": [
+    "The installed vLLM 0.19.1 package registers qwen3 and deepseek_r1 reasoning parsers. qwen3 is selected because it explicitly handles Qwen3/Qwen3.5 chat templates where <think> may be in the prompt.",
+    "The installed vLLM package registers hermes, qwen3_coder, and qwen3_xml tool parsers. hermes is selected because Qwen3-VL is not a Qwen3-Coder checkpoint and vLLM documents Hermes as the generic Qwen tool-call parser.",
+    "This vLLM build did not expose a language-model-only/text-only flag in the installed source tree; benchmark prompts are text-only and use the Qwen3 text chat template."
+  ]
+}
