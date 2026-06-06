@@ -1,0 +1,108 @@
+# Reference only: this is the correct style for NeMo FP8 *training*,
+# but it is expected to OOM on one H200 for full-parameter 27B SFT.
+#
+# Note the BF16 base checkpoint. NeMo FP8 training dynamically casts
+# trainable BF16 weights for FP8 GEMMs. The HF -FP8 repo is an
+# inference-quantized checkpoint and is not a substitute for full
+# trainable optimizer state.
+
+recipe: TrainFinetuneRecipeForNextTokenPrediction
+
+step_scheduler:
+  global_batch_size: 1
+  local_batch_size: 1
+  ckpt_every_steps: 50
+  val_every_steps: 50
+  max_steps: 1
+
+dist_env:
+  backend: nccl
+  timeout_minutes: 30
+
+rng:
+  _target_: nemo_automodel.components.training.rng.StatefulRNG
+  seed: 1111
+  ranked: true
+
+model:
+  _target_: nemo_automodel.NeMoAutoModelForCausalLM.from_pretrained
+  pretrained_model_name_or_path: Qwen/Qwen3.6-27B
+  attn_implementation: sdpa
+  torch_dtype: bf16
+  output_hidden_states: true
+
+compile:
+  enabled: true
+  mode: default
+  fullgraph: false
+  dynamic: false
+  backend: null
+
+fp8:
+  enabled: true
+  recipe_name: tensorwise
+  enable_fsdp_float8_all_gather: true
+  precompute_float8_dynamic_scale_for_fsdp: true
+  force_recompute_fp8_weight_in_bwd: true
+  filter_fqns: ["lm_head"]
+  emulate: false
+
+checkpoint:
+  enabled: false
+  checkpoint_dir: checkpoints/qwen36_27b_full_fp8_attempt/
+  model_save_format: torch_save
+  save_consolidated: false
+
+distributed:
+  strategy: fsdp2
+  dp_size: none
+  tp_size: 1
+  cp_size: 1
+  pp_size: 1
+  ep_size: 1
+  sequence_parallel: false
+  activation_checkpointing: true
+
+loss_fn:
+  _target_: nemo_automodel.components.loss.linear_ce.FusedLinearCrossEntropy
+
+dataset:
+  _target_: nemo_automodel.components.datasets.llm.chat_dataset.ChatDataset
+  path_or_dataset_id: data/smoke_train.jsonl
+  seq_length: 1024
+  truncation: true
+  skip_invalid_samples: true
+
+packed_sequence:
+  packed_sequence_size: 1024
+  packing_strategy: thd
+
+dataloader:
+  _target_: torchdata.stateful_dataloader.StatefulDataLoader
+  collate_fn:
+    _target_: nemo_automodel.components.datasets.utils.default_collater
+    pad_seq_len_divisible: 16
+  shuffle: false
+  num_workers: 0
+
+validation_dataset:
+  _target_: nemo_automodel.components.datasets.llm.chat_dataset.ChatDataset
+  path_or_dataset_id: data/smoke_val.jsonl
+  seq_length: 1024
+  truncation: true
+  skip_invalid_samples: true
+
+validation_dataloader:
+  _target_: torchdata.stateful_dataloader.StatefulDataLoader
+  collate_fn:
+    _target_: nemo_automodel.components.datasets.utils.default_collater
+    pad_seq_len_divisible: 16
+  num_workers: 0
+
+optimizer:
+  _target_: torch.optim.AdamW
+  betas: [0.9, 0.95]
+  eps: 1.0e-8
+  lr: 1.0e-5
+  weight_decay: 0.01
+  fused: true

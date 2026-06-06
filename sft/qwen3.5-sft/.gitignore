@@ -6,7 +6,9 @@ results/
 checkpoints/
 
 # Created by setup_nemo_automodel_env.sh
+.venv
 .venv/
+third_party
 third_party/
 
 # Training and benchmark artifacts
