@@ -1,0 +1,17 @@
+# Local OLMo SFT outputs
+logs/
+runs/
+work/
+results/
+checkpoints/
+
+# Tokenization and training scratch artifacts
+*.log
+*.jsonl
+*.npy
+*.npz
+*.pt
+*.pth
+*.bin
+*.safetensors
+*.ckpt

@@ -1,0 +1,43 @@
+# Training artifacts
+logs/
+runs/
+work/
+results/
+checkpoints/
+wandb/
+mlruns/
+lightning_logs/
+tensorboard/
+tb/
+
+# Local environments and dependencies
+.venv
+.venv/
+.venv-*/
+venv/
+venv-*/
+env/
+env-*/
+third_party
+third_party/
+
+# Caches and generated Python files
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Generated data and model artifacts
+*.log
+*_mem.csv
+*.npy
+*.npz
+*.pt
+*.pth
+*.bin
+*.safetensors
+*.ckpt
+*.jsonl.tmp
