@@ -1,6 +1,38 @@
 # SWE-rebench V2 High-Quality Datagen Progress
 
-Last updated: 2026-06-07 00:12 UTC
+Last updated: 2026-06-07 00:36 UTC
+
+## 2026-06-07 00:36 UTC
+
+Checkpoint:
+
+- Committed and pushed the Pyxis/mini-swe-agent datagen harness changes: `2ecc6eb Add Pyxis SWE-rebench datagen harness`.
+- Current active `swere*` jobs are all on CPU-only `m7i-cpu2`; no `swere*` jobs are on H200/GPU partitions.
+
+Audit findings:
+
+- Harness alignment is good for new Pyxis jobs: they run mini-swe-agent v2 through the committed Pyxis driver, use the Harbor task verifier, preserve trajectories and patches, and write `result.json` even for container/startup failures.
+- Task filtering is still the intended high-quality SWE-rebench V2 subset (`confidence >= 0.95` plus existing metadata filters).
+- Main weakness in generated data is duplicate concentration: `martinthoma__flake8-simplify-124` dominates completed results. This is high reward but lower diversity.
+- Second weakness is the JS/TS easy scale wave: it added diversity but had much lower reward than flake8. Latest audit showed `datagen-20260607-pyxis-local-diverse-scale1` at 416/1,124 reward-pass when scanned.
+- Strongest new quality signal is medium serverless with Kimi/MiMo. The initial 20-rollout serverless medium smoke passed 18/20; in the larger scale audit, Kimi original was 44/45, Kimi DeepSWE 50/60, and MiMo original 26/27. MiMo DeepSWE was weaker at 19/40, so it is no longer being scaled.
+- SWC medium is slow and has not shown reward yet; it is still smoke-only and is not being scaled.
+
+Actions taken after the audit:
+
+- Submitted `datagen-20260607-pyxis-local-medium-serverless-scale1`: 450 medium JS rollouts on `serverless__serverless-6545`, weighted toward Kimi and MiMo original.
+- Submitted `datagen-20260607-pyxis-local-hard-smoke1`: 20 hard Kimi rollouts on `swc-project__swc-3163` and `getmoto__moto-6391`, original and DeepSWE.
+- Submitted `datagen-20260607-pyxis-local-medium-serverless-6417-smoke`: 20 medium JS smoke rollouts on a second serverless medium task.
+- Submitted `datagen-20260607-pyxis-local-hard-swc2598-smoke`: 10 hard Kimi rollouts on a second SWC hard task.
+- Submitted `datagen-20260607-pyxis-local-medium-serverless-scale2`: 500 additional medium JS rollouts using only the strong slices: Kimi original, Kimi DeepSWE, and MiMo original.
+
+Current active queue at 00:36 UTC:
+
+- Medium serverless scale1/scale2: 594 running rows plus a few pending, all `m7i-cpu2`.
+- Hard smokes: 30 running rows, all `m7i-cpu2`.
+- New serverless 6417 medium smoke: 20 running rows, all `m7i-cpu2`.
+- Remaining SWC medium smoke: 19 running rows, all `m7i-cpu2`.
+
 
 Smoke run root: `/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/runs/swerebench-v2/datagen-20260606-smoke`
 
