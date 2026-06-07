@@ -883,3 +883,36 @@ Queue snapshot:
  226821_[0-99%100]  m7i-cpu2               swere-dsr2-och    PENDING       0:00 (BeginTime)
  226822_[0-99%100]  m7i-cpu2               swere-dsr2-oew    PENDING       0:00 (BeginTime)
 ```
+
+## 2026-06-07 06:04 UTC
+
+DeepSeek Docker-reset monitor update:
+
+- Scheduled DeepSeek-only unique-container trials: `1200` across waves 1-4.
+- Scheduled by wave: `{'wave1': 300, 'wave2': 300, 'wave3': 300, 'wave4': 300}`.
+- Scheduled by model: `{'deepseek-v4-flash': 696, 'deepseek-v4-pro': 504}`.
+- Scheduled by difficulty: `{'easy': 271, 'hard': 78, 'medium': 851}`.
+- Scheduled prompt styles: `{'deepswe': 600, 'original': 600}`.
+- Completed result records so far: `0`; reward-pass: `0`; saved trajectories: `0`; Pyxis start failures: `0`.
+- Results by model: total `{}`, reward `{}`.
+- Results by difficulty: total `{}`, reward `{}`.
+- Results by style: `{}`.
+- Probe success state: `{}`.
+- Release state: `{}`.
+
+Queue snapshot:
+
+```
+226823_[0-99%100]  m7i-cpu2               swere-dsr3-ewe    PENDING       0:00 (BeginTime)
+ 226824_[0-99%100]  m7i-cpu2               swere-dsr3-och    PENDING       0:00 (BeginTime)
+ 226825_[0-99%100]  m7i-cpu2               swere-dsr3-oew    PENDING       0:00 (BeginTime)
+ 226826_[0-99%100]  m7i-cpu2               swere-dsr4-ewe    PENDING       0:00 (BeginTime)
+ 226827_[0-99%100]  m7i-cpu2               swere-dsr4-och    PENDING       0:00 (BeginTime)
+ 226828_[0-99%100]  m7i-cpu2               swere-dsr4-oew    PENDING       0:00 (BeginTime)
+ 226804_[0-99%100]  m7i-cpu2               swere-dsr1-ewe    PENDING       0:00 (BeginTime)
+ 226805_[0-99%100]  m7i-cpu2               swere-dsr1-och    PENDING       0:00 (BeginTime)
+ 226806_[0-99%100]  m7i-cpu2               swere-dsr1-oew    PENDING       0:00 (BeginTime)
+ 226820_[0-99%100]  m7i-cpu2               swere-dsr2-ewe    PENDING       0:00 (BeginTime)
+ 226821_[0-99%100]  m7i-cpu2               swere-dsr2-och    PENDING       0:00 (BeginTime)
+ 226822_[0-99%100]  m7i-cpu2               swere-dsr2-oew    PENDING       0:00 (BeginTime)
+```
