@@ -842,6 +842,22 @@ Final strict unique-container DeepSeek wave:
 - Cross-wave validation: waves 1-5 now contain `1,273` rows, `1,273` unique tasks, and `1,273` unique Docker images.
 - Active foreground hourly loop is running with `timeout 3660 sleep 3600` between checks; detached backup monitor now also includes wave 5 in queue/result accounting.
 
+## 2026-06-07 07:16 UTC
+
+First-reset capacity fill:
+
+- Corrected the remaining-task policy to match the latest instruction: new work must be unique by task/container image, but does not need to be unique by repo.
+- Available high-quality unique-container tasks after waves 1-5: `9,294`.
+- Selected and submitted `datagen-20260607-pyxis-deepseek-afterreset6`: `527` rows, sized to fill the first reset window after wave 5 (`175/176/176` rows across the three Docker credentials).
+- Wave 6 split: `hard=80`, `medium=320`, `easy=127`; `deepseek-v4-pro=240`, `deepseek-v4-flash=287`; `original=264`, `deepswe=263`.
+- Language split: `c=50`, `cpp=52`, `go=61`, `java=60`, `js=60`, `php=61`, `python=61`, `rust=61`, `ts=61`.
+- Submitted as CPU-only `m7i-cpu2` arrays for `2026-06-07T11:32:20Z`:
+  - `227504` / `swere-dsr6-ewe`: `175` rows.
+  - `227505` / `swere-dsr6-och`: `176` rows.
+  - `227506` / `swere-dsr6-oew`: `176` rows.
+- Cross-wave validation: waves 1-6 now contain `1,800` rows, `1,800` unique tasks, and `1,800` unique Docker images.
+- The foreground hourly loop remains active and sleeping one hour at a time; the backup monitor now includes waves 1-6.
+
 ## 2026-06-07 05:59 UTC
 
 DeepSeek Docker-reset monitor update:
