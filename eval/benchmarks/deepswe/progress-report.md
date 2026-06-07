@@ -818,6 +818,17 @@ Queue snapshot:
  226822_[0-99%100]  m7i-cpu2               swere-dsr2-oew    PENDING       0:00 (BeginTime)
 ```
 
+## 2026-06-07 06:07 UTC
+
+DeepSeek monitor correction / early launch:
+
+- The 12-hour monitor is running under `/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/runs/swerebench-v2/monitor-deepseek-20260607`.
+- Registry probes initially used the wrong repository path and then were corrected. The corrected probe saw authenticated Docker responses for all three credentials and released waves 1-2 at `2026-06-07 06:05:13 UTC`.
+- Important caveat: the Docker remaining headers were low, not fully reset: `ethanewer=28/200`, `ethanoch=24/200`, `ethanoewer=17/200`. This means waves 1-2 may produce many Pyxis start-failure records before the full reset window.
+- I tightened the monitor after that release: future early releases now require at least `120` remaining pulls per credential. Waves 3-4 remain scheduled for `2026-06-07T17:32:20Z` unless a substantial reset-sized budget appears earlier.
+- Queue status shortly after release: `CONFIGURING=582`, `RUNNING=13`, `PENDING=6` among the DeepSeek `swere-dsr*` arrays.
+- Result records at this check: `5` completed, `0` reward-pass, all `5` are `PyxisContainerStartError` records. These are saved under the wave run roots.
+
 ## 2026-06-07 05:59 UTC
 
 DeepSeek Docker-reset monitor update:
