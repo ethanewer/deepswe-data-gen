@@ -1,6 +1,23 @@
 # SWE-rebench V2 High-Quality Datagen Progress
 
-Last updated: 2026-06-07 03:28 UTC
+Last updated: 2026-06-07 03:30 UTC
+
+## 2026-06-07 03:30 UTC
+
+Additional throughput increase using only allowed non-Kimi models:
+
+- Submitted `225319` / `swere-mnk-mix1` under `datagen-20260607-pyxis-local-medium-nonkimi-scale1`.
+- Manifest has 780 medium trials using local `.sqsh` images only, so there are no Docker pulls in this batch.
+- Model mix: 480 `deepseek-v4-flash`, 120 `deepseek-v4-pro`, and 180 `xiaomi/mimo-v2.5-pro`.
+- Prompt style mix: 390 original and 390 DeepSWE.
+- Task/language mix: 220 JS trials on `serverless__serverless-6545`, 280 JS trials on `serverless__serverless-6417`, and 280 Rust trials on `swc-project__swc-4250`.
+- This does not add any new duplicate easy-task submissions; it uses cached medium images to keep throughput high while uncached image imports are blocked.
+
+Startup check:
+
+- `583 swere-mnk-mix1 RUNNING`, `17 CONFIGURING`, and `1 PENDING` at first queue check.
+- Sampled stderr files were empty, so local-image startup is clean so far.
+- Active datagen remains CPU-only on `m7i-cpu2`; no Kimi jobs are active.
 
 ## 2026-06-07 03:28 UTC
 
