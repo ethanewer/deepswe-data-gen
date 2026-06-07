@@ -1783,3 +1783,23 @@ Queue snapshot:
 ```
 No scheduled DeepSeek datagen jobs currently visible in squeue.
 ```
+
+## 2026-06-07 20:47 UTC
+
+DeepSeek high-quality coverage expansion status:
+
+- Run root: `/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/runs/swerebench-v2/datagen-20260607-pyxis-deepseek-coverage1`.
+- First-pass unique coverage is fully submitted: `14408` high-quality tasks, split `{'medium': 9175, 'easy': 4938, 'hard': 295}`.
+- Total scheduled rows are now `14879` across `26` arrays because I added `471` `r01` retries for no-trajectory dependency failures after repairing the shared LiteLLM runtime overlay.
+- Scheduled rows by difficulty: `{'medium': 9375, 'easy': 5197, 'hard': 307}`.
+- Scheduled rows by model: `{'deepseek-v4-pro': 9682, 'deepseek-v4-flash': 5197}`.
+- Scheduled rows by difficulty/model: `{('medium', 'deepseek-v4-pro'): 9375, ('easy', 'deepseek-v4-flash'): 5197, ('hard', 'deepseek-v4-pro'): 307}`.
+- Current result records: `{'medium': 3088, 'hard': 102, 'easy': 2658}`.
+- Host-side mini-swe-agent trajectories saved: `{'medium': 1100, 'hard': 37, 'easy': 731}`.
+- Reward passes among host-side trajectories: `{'medium': 190, 'hard': 3, 'easy': 242}`.
+- Model trajectory pass rates: DeepSeek v4 Pro `193/1137 = 17.0%`; DeepSeek v4 Flash `242/731 = 33.1%`.
+- Approximate high-quality trajectory coverage including previously saved trajectories and this run's host trajectories: easy `1311/5518 = 23.8%`, medium `1368/9443 = 14.5%`, hard `77/335 = 23.0%`. Medium remains the lowest-coverage difficulty as the queued first-pass jobs finish.
+- Current exception mix: `{('medium', 'PyxisContainerStartError'): 1741, ('easy', 'PyxisContainerStartError'): 1587, ('medium', ''): 1100, ('easy', ''): 731, ('easy', 'ValueError'): 340, ('medium', 'ValueError'): 246, ('hard', 'PyxisContainerStartError'): 46, ('hard', ''): 37, ('hard', 'ValueError'): 19, ('medium', 'FileNotFoundError'): 1}`.
+- Language trajectory counts: `{'js': 665, 'go': 496, 'python': 232, 'php': 162, 'ts': 96, 'java': 89, 'cpp': 48, 'c': 41, 'rust': 39}`.
+- Runtime fix: `pydantic` and `anyio` were repaired in `/wbl-fast/usrs/ee/code-swe-data/runtime/pydeps-overlay`; `litellm` import now succeeds for future DeepSeek starts.
+- Queue state: `m7i-cpu2` only, with `1104` running array tasks and `23` queued array records at the time of this report. No coverage datagen was submitted to GPU partitions.
