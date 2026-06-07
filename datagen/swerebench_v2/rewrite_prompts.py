@@ -75,7 +75,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--api-base", help="OpenAI-compatible API base URL.")
     parser.add_argument("--api-key-env", default="OPENAI_API_KEY")
+    parser.add_argument(
+        "--api-mode",
+        choices=("responses", "chat"),
+        default="responses",
+        help="Use the OpenAI Responses API or chat-completions API.",
+    )
     parser.add_argument("--max-output-tokens", type=int, default=1200)
+    parser.add_argument("--temperature", type=float, default=0.0)
+    parser.add_argument("--extra-body-json", help="JSON object passed as provider-specific extra_body.")
+    parser.add_argument(
+        "--response-format-json",
+        action="store_true",
+        help="Request chat-completions JSON mode with response_format={type: json_object}.",
+    )
     parser.add_argument("--tasks-file", type=Path, default=TASKS_CSV)
     parser.add_argument("--prompt-analysis-file", type=Path, default=PROMPT_ANALYSIS_CSV)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
@@ -90,6 +103,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--instance-id", action="append", default=[])
     parser.add_argument("--sleep-seconds", type=float, default=0.0)
+    parser.add_argument("--max-retries", type=int, default=3)
     parser.add_argument(
         "--fail-on-quality-warnings",
         action="store_true",
@@ -121,7 +135,7 @@ def selected_instance_ids(args: argparse.Namespace) -> list[str]:
             if analysis_row and analysis_row["needs_deepswe_prompt_change"] != "True":
                 continue
         selected.append(instance_id)
-        if len(selected) >= args.limit:
+        if not requested and len(selected) >= args.limit:
             break
     return selected
 
@@ -348,7 +362,13 @@ def parse_json_response(text: str) -> dict:
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?\s*", "", text)
         text = re.sub(r"\s*```$", "", text)
-    data = json.loads(text)
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", text, re.S)
+        if not match:
+            raise
+        data = json.loads(match.group(0))
     if not isinstance(data.get("rewritten_prompt"), str) or not data["rewritten_prompt"].strip():
         raise ValueError("missing rewritten_prompt")
     for key in ("preserved_requirements", "removed_noise", "risk_notes"):
@@ -358,14 +378,40 @@ def parse_json_response(text: str) -> dict:
     return data
 
 
-def rewrite_prompt(client: OpenAI, model: str, row: dict, max_output_tokens: int) -> tuple[dict, str]:
-    response = client.responses.create(
-        model=model,
-        instructions=SYSTEM_PROMPT,
-        input=user_prompt(row),
-        max_output_tokens=max_output_tokens,
-    )
-    output_text = response.output_text
+def rewrite_prompt(
+    client: OpenAI,
+    model: str,
+    row: dict,
+    max_output_tokens: int,
+    api_mode: str,
+    temperature: float,
+    extra_body: dict | None = None,
+    response_format_json: bool = False,
+) -> tuple[dict, str]:
+    if api_mode == "chat":
+        request_kwargs = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt(row)},
+            ],
+            "max_tokens": max_output_tokens,
+            "temperature": temperature,
+        }
+        if extra_body:
+            request_kwargs["extra_body"] = extra_body
+        if response_format_json:
+            request_kwargs["response_format"] = {"type": "json_object"}
+        response = client.chat.completions.create(**request_kwargs)
+        output_text = response.choices[0].message.content or ""
+    else:
+        response = client.responses.create(
+            model=model,
+            instructions=SYSTEM_PROMPT,
+            input=user_prompt(row),
+            max_output_tokens=max_output_tokens,
+        )
+        output_text = response.output_text
     return parse_json_response(output_text), output_text
 
 
@@ -422,6 +468,7 @@ def main() -> None:
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     jsonl_path = args.output_dir / "rewrites.jsonl"
+    extra_body = json.loads(args.extra_body_json) if args.extra_body_json else None
     client_kwargs = {"api_key": api_key}
     if args.api_base:
         client_kwargs["base_url"] = args.api_base
@@ -429,7 +476,28 @@ def main() -> None:
 
     with jsonl_path.open("w", encoding="utf-8") as handle:
         for row in rows:
-            rewrite, raw_output = rewrite_prompt(client, args.model, row, args.max_output_tokens)
+            for attempt in range(1, args.max_retries + 1):
+                try:
+                    rewrite, raw_output = rewrite_prompt(
+                        client,
+                        args.model,
+                        row,
+                        args.max_output_tokens,
+                        args.api_mode,
+                        args.temperature,
+                        extra_body,
+                        args.response_format_json,
+                    )
+                    break
+                except Exception as exc:
+                    if attempt == args.max_retries:
+                        raise
+                    print(
+                        f"retry {row['instance_id']} attempt {attempt + 1}/{args.max_retries}: "
+                        f"{type(exc).__name__}: {str(exc)[:300]}",
+                        flush=True,
+                    )
+                    time.sleep(max(args.sleep_seconds, 1.0) * attempt)
             quality_warnings = validate_rewrite_quality(row, rewrite)
             task_meta = compact[row["instance_id"]]
             record = {

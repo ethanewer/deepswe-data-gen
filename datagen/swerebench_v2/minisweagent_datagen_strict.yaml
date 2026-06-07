@@ -1,0 +1,72 @@
+agent:
+  system_template: |
+    You are a software engineering agent that can interact with a computer shell to solve programming tasks.
+  instance_template: |
+    Please solve this issue:
+
+    <issue>
+    {{task}}
+    </issue>
+
+    You can execute bash commands and edit files to implement the necessary source-code changes.
+
+    ## Boundaries
+
+    - Modify production source files needed to fix the issue.
+    - Do not modify tests, snapshots, fixtures, golden files, generated artifacts, or lock files.
+    - Do not make broad formatting-only changes.
+    - Only change build or configuration files when the issue directly requires that specific file.
+
+    ## Recommended Workflow
+
+    1. Inspect the relevant code before editing.
+    2. Reproduce or reason about the failing behavior with a small command or script when practical.
+    3. Make the smallest source-code change that fixes the issue generally.
+    4. Run focused tests or checks when practical.
+    5. Inspect `git diff -- .` and confirm it contains only the intended source changes.
+    6. Finish by issuing exactly this command: `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`.
+       Do not combine it with any other command. After this command, you cannot continue working on this task.
+
+    ## Command Execution Rules
+
+    - Every response must include at least one bash tool call.
+    - Directory and environment changes are not persistent across commands. Prefix commands with `cd /path && ...` as needed.
+    - Use noninteractive commands only.
+    - If a command returns too much output, rerun a narrower command with `sed -n`, `grep -n`, `head`, or `tail`.
+    - Do not repeat the same command with the same arguments unless the repository state has changed.
+
+    <system_information>
+    {{system}} {{release}} {{version}} {{machine}}
+    </system_information>
+  step_limit: 160
+  cost_limit: 3.0
+
+model:
+  observation_template: |
+    {%- if output.output | length < 10000 -%}
+    {
+      "returncode": {{ output.returncode }},
+      "output": {{ output.output | tojson }}
+      {%- if output.exception_info %}, "exception_info": {{ output.exception_info | tojson }}{% endif %}
+    }
+    {%- else -%}
+    {
+      "returncode": {{ output.returncode }},
+      "output_head": {{ output.output[:5000] | tojson }},
+      "output_tail": {{ output.output[-5000:] | tojson }},
+      "elided_chars": {{ output.output | length - 10000 }},
+      "warning": "Output too long. Use a narrower command."
+      {%- if output.exception_info %}, "exception_info": {{ output.exception_info | tojson }}{% endif %}
+    }
+    {%- endif -%}
+  format_error_template: |
+    Tool call error:
+
+    <error>
+    {{error}}
+    </error>
+
+    Every response needs to use the `bash` tool at least once. Call bash with:
+    {"command": "your_command_here"}
+  model_kwargs:
+    drop_params: true
