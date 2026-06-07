@@ -1157,3 +1157,30 @@ Queue snapshot:
         227504_142  m7i-cpu2               swere-dsr6-ewe    RUNNING      40:34 m7i-cpu2-dy-m7i-cpu-cr-0-300
          227506_63  m7i-cpu2               swere-dsr6-oew    RUNNING      40:34 m7i-cpu2-dy-m7i-cpu-cr-0-239
 ```
+
+## 2026-06-07 13:03 UTC
+
+DeepSeek Docker-reset monitor update:
+
+- Scheduled DeepSeek-only unique-container trials: `1800` across waves 1-6.
+- Scheduled by wave: `{'wave1': 300, 'wave2': 300, 'wave3': 300, 'wave4': 300, 'wave5': 73, 'wave6': 527}`.
+- Scheduled by model: `{'deepseek-v4-flash': 1019, 'deepseek-v4-pro': 781}`.
+- Scheduled by difficulty: `{'easy': 398, 'hard': 158, 'medium': 1244}`.
+- Scheduled prompt styles: `{'deepswe': 899, 'original': 901}`.
+- Completed result records so far: `1200`; reward-pass: `17`; saved trajectories: `108`; Pyxis start failures: `1092`.
+- Results by model: total `{'deepseek-v4-flash': 706, 'deepseek-v4-pro': 494}`, reward `{'deepseek-v4-flash': 12, 'deepseek-v4-pro': 5}`.
+- Results by difficulty: total `{'easy': 343, 'hard': 129, 'medium': 728}`, reward `{'easy': 6, 'hard': 3, 'medium': 8}`.
+- Results by style: `{'deepswe': 599, 'original': 601}`.
+- Probe success state: `{'window1:ewe': True, 'window1:och': True, 'window1:oew': True, 'window1b:ewe': True, 'window1b:och': True, 'window1b:oew': False, 'window2:ewe': True, 'window2:och': True, 'window2:oew': False}`.
+- Release state: `{'window1': '2026-06-07 06:05:13 UTC', 'window1b': 'scheduled-start 2026-06-07 11:35:19 UTC'}`.
+
+Queue snapshot:
+
+```
+226823_[0-99%100]  m7i-cpu2               swere-dsr3-ewe    PENDING       0:00 (BeginTime)
+ 226824_[0-99%100]  m7i-cpu2               swere-dsr3-och    PENDING       0:00 (BeginTime)
+ 226825_[0-99%100]  m7i-cpu2               swere-dsr3-oew    PENDING       0:00 (BeginTime)
+ 226826_[0-99%100]  m7i-cpu2               swere-dsr4-ewe    PENDING       0:00 (BeginTime)
+ 226827_[0-99%100]  m7i-cpu2               swere-dsr4-och    PENDING       0:00 (BeginTime)
+ 226828_[0-99%100]  m7i-cpu2               swere-dsr4-oew    PENDING       0:00 (BeginTime)
+```

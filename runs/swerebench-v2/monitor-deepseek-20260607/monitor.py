@@ -407,7 +407,7 @@ def append_report(state: dict) -> None:
         "",
         "DeepSeek Docker-reset monitor update:",
         "",
-        f"- Scheduled DeepSeek-only unique-container trials: `{schedule['total']}` across waves 1-4.",
+        f"- Scheduled DeepSeek-only unique-container trials: `{schedule['total']}` across waves 1-6.",
         f"- Scheduled by wave: `{schedule['by_wave']}`.",
         f"- Scheduled by model: `{schedule['by_model']}`.",
         f"- Scheduled by difficulty: `{schedule['by_difficulty']}`.",
