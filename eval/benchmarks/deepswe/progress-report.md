@@ -829,6 +829,19 @@ DeepSeek monitor correction / early launch:
 - Queue status shortly after release: `CONFIGURING=582`, `RUNNING=13`, `PENDING=6` among the DeepSeek `swere-dsr*` arrays.
 - Result records at this check: `5` completed, `0` reward-pass, all `5` are `PyxisContainerStartError` records. These are saved under the wave run roots.
 
+## 2026-06-07 06:16 UTC
+
+Final strict unique-container DeepSeek wave:
+
+- Selected the remaining high-quality tasks not already present in any submitted manifest by task/image: `73` total, all `medium/go`, with `73` unique Docker images and `42` repos.
+- Submitted as CPU-only `m7i-cpu2` arrays for `2026-06-07T11:32:20Z`:
+  - `227452` / `swere-dsr5-ewe`: `25` rows, Docker auth shard `ethanewer`.
+  - `227453` / `swere-dsr5-och`: `24` rows, Docker auth shard `ethanoch`.
+  - `227454` / `swere-dsr5-oew`: `24` rows, Docker auth shard `ethanoewer`.
+- Model split: `deepseek-v4-pro=37`, `deepseek-v4-flash=36`; prompt split: `original=37`, `deepswe=36`.
+- Cross-wave validation: waves 1-5 now contain `1,273` rows, `1,273` unique tasks, and `1,273` unique Docker images.
+- Active foreground hourly loop is running with `timeout 3660 sleep 3600` between checks; detached backup monitor now also includes wave 5 in queue/result accounting.
+
 ## 2026-06-07 05:59 UTC
 
 DeepSeek Docker-reset monitor update:
