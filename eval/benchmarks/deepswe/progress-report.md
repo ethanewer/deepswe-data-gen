@@ -1,6 +1,38 @@
 # SWE-rebench V2 High-Quality Datagen Progress
 
-Last updated: 2026-06-07 03:16 UTC
+Last updated: 2026-06-07 03:28 UTC
+
+## 2026-06-07 03:28 UTC
+
+Clarification applied: deduplication is for new submissions going forward. Already-started duplicate easy rows were left running so their traces are preserved.
+
+Current active Slurm state:
+
+- `240 swere-hnk-mix1 RUNNING` on `m7i-cpu2`.
+- `13 swere-mdvr-mimo RUNNING` on `m7i-cpu2`.
+- `4 swere-uef-ewe-o CONFIGURING` on `m7i-cpu2`.
+- No active Kimi jobs.
+- No active H200/GPU data-generation jobs.
+
+New non-Kimi hard submission:
+
+- Submitted `225075` / `swere-hnk-mix1` under `datagen-20260607-pyxis-local-hard-nonkimi-scale1`.
+- Manifest has 240 hard trials using local `.sqsh` images only, so there are no Docker pulls in this batch.
+- Model mix: 180 `xiaomi/mimo-v2.5-pro` and 60 `deepseek-v4-pro`.
+- Prompt style mix: 120 original and 120 DeepSWE.
+- Task/language mix: 80 Python trials on `getmoto__moto-6391`, 80 Rust trials on `swc-project__swc-2598`, and 80 Rust trials on `swc-project__swc-3163`.
+- These cached hard tasks previously had Kimi coverage only; this adds non-Kimi traces now that Kimi is disabled.
+
+Unique easy status:
+
+- The 2,998-row unique easy DeepSeek Flash batch mostly failed at Pyxis image import due Docker Hub 429s despite authenticated credentials.
+- `sacct` now shows 2,994 failed-start rows and 4 still configuring.
+- Failure records/logs are preserved; these are not useful agent trajectories because the containers did not start.
+
+Image/import status:
+
+- Manual local import of one unused hard image downloaded Docker layers but failed during Enroot extraction on root-owned Go module-cache paths. Retrying with scratch extraction and root remapping did not fix it.
+- I am not submitting more broad uncached-image arrays until imports are reliable; new useful throughput is coming from local `.sqsh` images.
 
 ## 2026-06-07 03:16 UTC
 
