@@ -759,3 +759,28 @@ Initial status:
 Operational note:
 
 - New DeepSeek jobs are task-deduplicated. The bottleneck is unique Docker image imports, not DeepSeek API capacity.
+
+## 2026-06-07 05:33 UTC
+
+Docker reset wait / DeepSeek-only delayed wave:
+
+- OpenRouter key is deactivated. No OpenRouter/Kimi/MiMo jobs were submitted or scheduled in this wave.
+- Prepared `datagen-20260607-pyxis-deepseek-afterreset1` under `/wbl-fast`: 300 high-quality SWE-rebench V2 tasks, 300 unique instances, 300 unique repos, one rollout per task, and zero overlap with all prior submitted manifests.
+- Submitted three CPU-only `m7i-cpu2` Pyxis arrays with `--begin=2026-06-07T11:32:20Z`, so no Docker pulls or DeepSeek API calls should occur until after the Docker reset window:
+  - `226804` / `swere-dsr1-ewe`: 100 rows, Docker auth shard `ethanewer`, throttle 100.
+  - `226805` / `swere-dsr1-och`: 100 rows, Docker auth shard `ethanoch`, throttle 100.
+  - `226806` / `swere-dsr1-oew`: 100 rows, Docker auth shard `ethanoewer`, throttle 100.
+- Queue status at submission: all three arrays are `PENDING` for `BeginTime` on `m7i-cpu2`; no datagen job is on H200.
+
+Scheduled split:
+
+- Difficulty: `easy=166`, `medium=105`, `hard=29`.
+- Model: `deepseek-v4-flash=218`, `deepseek-v4-pro=82`.
+- Difficulty/model: `easy/deepseek-v4-flash=166`, `medium/deepseek-v4-flash=52`, `medium/deepseek-v4-pro=53`, `hard/deepseek-v4-pro=29`.
+- Prompt style: `original=150`, `deepswe=150`.
+- Language: `python=65`, `go=58`, `ts=51`, `rust=46`, `js=43`, `java=15`, `php=14`, `c=5`, `cpp=3`.
+
+Pass-rate status:
+
+- This delayed wave has `0` completed and `0` passed so far because it has not started yet.
+- Failed container starts will still write `result.json` records; successful starts will save mini-swe-agent trajectories, verifier logs, and model patches under the run root.
