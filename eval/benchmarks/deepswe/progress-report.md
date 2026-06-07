@@ -1,6 +1,20 @@
 # SWE-rebench V2 High-Quality Datagen Progress
 
-Last updated: 2026-06-07 02:03 UTC
+Last updated: 2026-06-07 02:10 UTC
+
+## 2026-06-07 02:10 UTC
+
+New submission after user request to bias toward cheaper MiMo:
+
+- Submitted `datagen-20260607-pyxis-local-medium-mimo-scale1`: 3,000 medium JS MiMo (`xiaomi/mimo-v2.5-pro`) trials on `serverless__serverless-6545`.
+- Style mix is weighted to the stronger observed slice: 2,400 original prompt trials and 600 DeepSWE prompt trials.
+- The first attempt to submit one 2,400-row original array was rejected by Slurm, so the original prompt manifest was split into four 600-row arrays. All four original arrays plus the 600-row DeepSWE array were accepted.
+
+Status at submission check:
+
+- New MiMo arrays are on `m7i-cpu2`; no H200/GPU rows.
+- No non-empty stderr files yet for the new MiMo scale run.
+- This makes the newly submitted medium workload MiMo-heavy relative to the Kimi-heavy hard and previous medium scale jobs.
 
 ## 2026-06-07 02:03 UTC
 
