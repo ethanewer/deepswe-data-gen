@@ -709,3 +709,30 @@ Quality notes:
 - Scale2 local flake8 duplicate rollouts are high quality by reward so far: 1,028/1,031 at the latest scan.
 - Original and DeepSWE are effectively tied on the high-pass local-image duplicate runs, so the new larger diverse wave remains split 50/50.
 - Medium Kimi/MiMo coverage is now running on two local medium images: `serverless__serverless-6545` and `swc-project__swc-4250`.
+
+## 2026-06-07 03:58 UTC
+
+Kimi duplicate-spend audit:
+
+- No new Kimi jobs are being submitted. New submissions are limited to DeepSeek and MiMo.
+- Submitted-manifest audit found 2,198 Kimi rows total: 1,382 medium, 630 hard, 186 easy.
+- The worst concentration is `serverless__serverless-6545`: 1,360 Kimi medium rows on one task. This was caused by scaling against locally cached task images without enforcing a per-task/model cap.
+- Other Kimi concentrations: `swc-project__swc-3163`, `getmoto__moto-6391`, and `swc-project__swc-2598` each have 210 hard rows; `martinthoma__flake8-simplify-124` has 186 easy rows.
+- Going forward, new medium submissions use a no-prior-manifest-overlap check and one rollout per task before any duplicates.
+
+Diverse medium corrective wave:
+
+- Prepared a 240-task medium batch from the high-quality subset with 240 unique instances and 240 unique repos, after replacing the one previously seen task (`ruby__bigdecimal-302`) with `unidata__netcdf-c-1464`.
+- Language split: `go=45`, `python=45`, `rust=40`, `ts=40`, `js=35`, `java=15`, `php=15`, `c=3`, `cpp=2`.
+- Model split: `xiaomi/mimo-v2.5-pro=160`, `deepseek-v4-flash=60`, `deepseek-v4-pro=20`; Kimi is 0.
+- Prompt split: `original=120`, `deepswe=120`.
+- Submitted as CPU-only `m7i-cpu2` Slurm/Pyxis arrays:
+  - `226118` / `swere-mdu1-och`: 80 rows, Docker-authenticated, max 25 concurrent.
+  - `226119` / `swere-mdu1-ewe`: 80 rows, Docker-authenticated, max 25 concurrent.
+  - `226120` / `swere-mdu1-oew`: 80 rows, Docker-authenticated, max 25 concurrent.
+- Initial status: `226119` hit Docker Hub 429s after successful auth; Pyxis start-failure `result.json` records are being written with zero API calls/cost. The other two shards started running, with 50 array tasks active at the first queue check.
+
+Current quality/throughput note:
+
+- The immediate failure mode for the diverse medium wave is registry import pressure, not model quality. Failed container starts are recorded as failed trials, and successful starts will save full mini-swe-agent trajectories plus verifier results.
+- All datagen submissions in this wave are CPU-only and write under `/wbl-fast`.
