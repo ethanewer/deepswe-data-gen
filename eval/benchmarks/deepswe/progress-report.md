@@ -858,6 +858,15 @@ First-reset capacity fill:
 - Cross-wave validation: waves 1-6 now contain `1,800` rows, `1,800` unique tasks, and `1,800` unique Docker images.
 - The foreground hourly loop remains active and sleeping one hour at a time; the backup monitor now includes waves 1-6.
 
+## 2026-06-07 09:16 UTC
+
+Active monitor correction:
+
+- The foreground loop caught that the backup monitor was not probing the new wave-5/6 first-reset window because the monitor still had a hardcoded window list.
+- Patched and restarted the backup monitor so it now tracks `window1b = waves 5-6`.
+- Corrected window1b registry probe results at `09:15 UTC`: `ethanewer=91/200`, `ethanoch=95/200`, `ethanoewer=49/200`.
+- Since those are below the `120` remaining-pull threshold, waves 5-6 were not released early and remain pending for `2026-06-07T11:32:20Z`.
+
 ## 2026-06-07 05:59 UTC
 
 DeepSeek Docker-reset monitor update:
