@@ -1746,3 +1746,18 @@ Queue snapshot:
 ```
 No scheduled DeepSeek datagen jobs currently visible in squeue.
 ```
+
+
+## 2026-06-07 19:43 UTC
+
+DeepSeek coverage expansion after ethanewer Docker plan upgrade:
+
+- New run root: `/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/runs/swerebench-v2/datagen-20260607-pyxis-deepseek-coverage1`.
+- Selection target: every high-quality task without a saved trajectory at selection time, prioritizing medium first because it had the lowest coverage.
+- Coverage before this wave: `{'easy': {'pct': 10.51, 'remaining_without_trajectory': 4938, 'saved': 580, 'total': 5518}, 'hard': {'pct': 11.94, 'remaining_without_trajectory': 295, 'saved': 40, 'total': 335}, 'medium': {'pct': 2.84, 'remaining_without_trajectory': 9175, 'saved': 268, 'total': 9443}}`.
+- Selected unique tasks: `14408` total; by difficulty `{'easy': 4938, 'hard': 295, 'medium': 9175}`; by model `{'deepseek-v4-flash': 4938, 'deepseek-v4-pro': 9470}`; prompt styles `{'deepswe': 7205, 'original': 7203}`.
+- Submitted so far: `11118` rows across `15` Slurm arrays; by difficulty `{'medium': 9175, 'easy': 1648, 'hard': 295}`; by model `{'deepseek-v4-pro': 9470, 'deepseek-v4-flash': 1648}`; requested concurrency by model `{'deepseek-v4-pro': 475, 'deepseek-v4-flash': 455}`.
+- Current result records: `2145`; saved trajectories `{'medium': 554, 'hard': 21, 'easy': 269}`; reward passes `{'medium': 108, 'hard': 2, 'easy': 93}`; exception types `{'': 844, 'PyxisContainerStartError': 1203, 'ValueError': 98}`.
+- Current model results: total `{'deepseek-v4-pro': 1528, 'deepseek-v4-flash': 617}`; saved trajectories `{'deepseek-v4-pro': 575, 'deepseek-v4-flash': 269}`; reward passes `{'deepseek-v4-pro': 110, 'deepseek-v4-flash': 93}`.
+- Docker/Pyxis behavior: future generated scripts now use an empty `/wbl-fast` Enroot config for the anonymous attempt, then retry with `ethanewer` credentials only if no `result.json` was produced. The first submitted medium arrays predated the empty-config fix but still use the authenticated retry path.
+- Slurm note: broad array submission is being throttled by temporary `sbatch` controller backoff; a foreground retry loop is submitting the remaining easy Flash shards gradually.

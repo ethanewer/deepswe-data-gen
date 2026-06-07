@@ -115,6 +115,7 @@ if [[ -n "$DOCKER_USER" ]]; then
 fi
 PYXIS_IMAGE="$ANON_PYXIS_IMAGE"
 LAST_PYXIS_IMAGE="$PYXIS_IMAGE"
+ANON_ENROOT_CONFIG_PATH="$WORKSPACE/enroot-anonymous"
 STDOUT_LOG={log_dir}/{args.job_name}.${{SLURM_ARRAY_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}.out
 STDERR_LOG={log_dir}/{args.job_name}.${{SLURM_ARRAY_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}.err
 
@@ -127,6 +128,7 @@ export HOME="$WORKSPACE/home"
 export MSWEA_COST_TRACKING=ignore_errors
 export MSWEA_SILENT_STARTUP=1
 mkdir -p "$HOME"
+mkdir -p "$ANON_ENROOT_CONFIG_PATH"
 
 set -a
 source {shell_quote(args.env_file)}
@@ -193,7 +195,7 @@ run_agent_attempt() {{
 }}
 
 set +e
-run_agent_attempt anonymous "$ANON_PYXIS_IMAGE" ""
+run_agent_attempt anonymous "$ANON_PYXIS_IMAGE" "$ANON_ENROOT_CONFIG_PATH"
 STATUS=$?
 if [[ "$STATUS" -ne 0 && ! -f "$WORKSPACE/result.json" && -n "$DOCKER_USER" ]]; then
   echo "anonymous import/run failed before result.json; retrying with Docker Hub credentials"
@@ -243,7 +245,10 @@ def main() -> None:
         return
     env = os.environ.copy()
     result = subprocess.run(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=True, env=env)
-    job_id = result.stdout.strip()
+    output_lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    if not output_lines:
+        raise SystemExit("sbatch succeeded but did not print a job id")
+    job_id = output_lines[-1]
     (args.run_root / "slurm" / f"{args.job_name}.jobid").write_text(job_id + "\n", encoding="utf-8")
     print(f"job_id={job_id}")
 
