@@ -1211,3 +1211,80 @@ Queue snapshot:
  226827_[0-99%100]  m7i-cpu2               swere-dsr4-och    PENDING       0:00 (BeginTime)
  226828_[0-99%100]  m7i-cpu2               swere-dsr4-oew    PENDING       0:00 (BeginTime)
 ```
+
+## 2026-06-07 14:18 UTC
+
+DeepSeek Docker-reset monitor update:
+
+- Scheduled DeepSeek-only unique-container trials: `1800` across waves 1-6.
+- Scheduled by wave: `{'wave1': 300, 'wave2': 300, 'wave3': 300, 'wave4': 300, 'wave5': 73, 'wave6': 527}`.
+- Scheduled by model: `{'deepseek-v4-flash': 1019, 'deepseek-v4-pro': 781}`.
+- Scheduled by difficulty: `{'easy': 398, 'hard': 158, 'medium': 1244}`.
+- Scheduled prompt styles: `{'deepswe': 899, 'original': 901}`.
+- Completed result records so far: `1707`; reward-pass: `18`; saved trajectories: `117`; Pyxis start failures: `1590`.
+- Results by model: total `{'deepseek-v4-flash': 966, 'deepseek-v4-pro': 741}`, reward `{'deepseek-v4-flash': 12, 'deepseek-v4-pro': 6}`.
+- Results by difficulty: total `{'easy': 386, 'hard': 153, 'medium': 1168}`, reward `{'easy': 6, 'hard': 3, 'medium': 9}`.
+- Results by style: `{'deepswe': 859, 'original': 848}`.
+- Probe success state: `{'window1:ewe': True, 'window1:och': True, 'window1:oew': True, 'window1b:ewe': True, 'window1b:och': True, 'window1b:oew': False, 'window2:ewe': True, 'window2:och': True, 'window2:oew': True}`.
+- Release state: `{'window1': '2026-06-07 06:05:13 UTC', 'window1b': 'scheduled-start 2026-06-07 11:35:19 UTC', 'window2': '2026-06-07 14:08:23 UTC'}`.
+
+Queue snapshot:
+
+```
+226827_0  m7i-cpu2               swere-dsr4-och    RUNNING       5:48 m7i-cpu2-dy-m7i-cpu-cr-0-124
+          226823_5  m7i-cpu2               swere-dsr3-ewe    RUNNING       5:48 m7i-cpu2-dy-m7i-cpu-cr-0-83
+         226823_51  m7i-cpu2               swere-dsr3-ewe    RUNNING       5:48 m7i-cpu2-dy-m7i-cpu-cr-0-77
+         226823_78  m7i-cpu2               swere-dsr3-ewe    RUNNING       5:48 m7i-cpu2-dy-m7i-cpu-cr-0-105
+         226823_80  m7i-cpu2               swere-dsr3-ewe    RUNNING       5:48 m7i-cpu2-dy-m7i-cpu-cr-0-105
+         226823_81  m7i-cpu2               swere-dsr3-ewe    RUNNING       5:48 m7i-cpu2-dy-m7i-cpu-cr-0-105
+         226823_95  m7i-cpu2               swere-dsr3-ewe    RUNNING       5:48 m7i-cpu2-dy-m7i-cpu-cr-0-92
+         226823_96  m7i-cpu2               swere-dsr3-ewe    RUNNING       5:48 m7i-cpu2-dy-m7i-cpu-cr-0-92
+         226824_15  m7i-cpu2               swere-dsr3-och    RUNNING       5:48 m7i-cpu2-dy-m7i-cpu-cr-0-97
+         226824_27  m7i-cpu2               swere-dsr3-och    RUNNING       5:48 m7i-cpu2-dy-m7i-cpu-cr-0-100
+         226824_29  m7i-cpu2               swere-dsr3-och    RUNNING       5:48 m7i-cpu2-dy-m7i-cpu-cr-0-100
+         226824_46  m7i-cpu2               swere-dsr3-och    RUNNING       5:48 m7i-cpu2-dy-m7i-cpu-cr-0-63
+         226824_48  m7i-cpu2               swere-dsr3-och    RUNNING       5:48 m7i-cpu2-dy-m7i-cpu-cr-0-63
+         226824_49  m7i-cpu2               swere-dsr3-och    RUNNING       5:48 m7i-cpu2-dy-m7i-cpu-cr-0-63
+         226824_87  m7i-cpu2               swere-dsr3-och    RUNNING       5:48 m7i-cpu2-dy-m7i-cpu-cr-0-35
+         226824_88  m7i-cpu2               swere-dsr3-och    RUNNING       5:48 m7i-cpu2-dy-m7i-cpu-cr-0-35
+         226825_14  m7i-cpu2               swere-dsr3-oew    RUNNING       5:48 m7i-cpu2-dy-m7i-cpu-cr-0-42
+         226825_43  m7i-cpu2               swere-dsr3-oew    RUNNING       5:48 m7i-cpu2-dy-m7i-cpu-cr-0-285
+         226825_45  m7i-cpu2               swere-dsr3-oew    RUNNING       5:48 m7i-cpu2-dy-m7i-cpu-cr-0-285
+         226825_96  m7i-cpu2               swere-dsr3-oew    RUNNING       5:48 m7i-cpu2-dy-m7i-cpu-cr-0-298
+         226825_97  m7i-cpu2               swere-dsr3-oew    RUNNING       5:48 m7i-cpu2-dy-m7i-cpu-cr-0-298
+         226826_74  m7i-cpu2               swere-dsr4-ewe    RUNNING       5:48 m7i-cpu2-dy-m7i-cpu-cr-0-118
+         226826_75  m7i-cpu2               swere-dsr4-ewe    RUNNING       5:48 m7i-cpu2-dy-m7i-cpu-cr-0-118
+         226826_80  m7i-cpu2               swere-dsr4-ewe    RUNNING       5:48 m7i-cpu2-dy-m7i-cpu-cr-0-119
+         226826_92  m7i-cpu2               swere-dsr4-ewe    RUNNING       5:48 m7i-cpu2-dy-m7i-cpu-cr-0-122
+         226826_98  m7i-cpu2               swere-dsr4-ewe    RUNNING       5:48 m7i-cpu2-dy-m7i-cpu-cr-0-124
+          226827_1  m7i-cpu2               swere-dsr4-och    RUNNING       5:48 m7i-cpu2-dy-m7i-cpu-cr-0-124
+         226827_51  m7i-cpu2               swere-dsr4-och    RUNNING       5:48 m7i-cpu2-dy-m7i-cpu-cr-0-137
+         226827_57  m7i-cpu2               swere-dsr4-och    RUNNING       5:48 m7i-cpu2-dy-m7i-cpu-cr-0-138
+         226827_62  m7i-cpu2               swere-dsr4-och    RUNNING       5:48 m7i-cpu2-dy-m7i-cpu-cr-0-6
+         226827_65  m7i-cpu2               swere-dsr4-och    RUNNING       5:48 m7i-cpu2-dy-m7i-cpu-cr-0-6
+         226827_81  m7i-cpu2               swere-dsr4-och    RUNNING       5:48 m7i-cpu2-dy-m7i-cpu-cr-0-10
+         226828_97  m7i-cpu2               swere-dsr4-oew    RUNNING       5:48 m7i-cpu2-dy-m7i-cpu-cr-0-250
+         226823_10  m7i-cpu2               swere-dsr3-ewe    RUNNING       6:18 m7i-cpu2-dy-m7i-cpu-cr-0-116
+         226823_20  m7i-cpu2               swere-dsr3-ewe    RUNNING       6:18 m7i-cpu2-dy-m7i-cpu-cr-0-3
+         226823_27  m7i-cpu2               swere-dsr3-ewe    RUNNING       6:18 m7i-cpu2-dy-m7i-cpu-cr-0-87
+         226823_62  m7i-cpu2               swere-dsr3-ewe    RUNNING       6:18 m7i-cpu2-dy-m7i-cpu-cr-0-80
+         226823_70  m7i-cpu2               swere-dsr3-ewe    RUNNING       6:18 m7i-cpu2-dy-m7i-cpu-cr-0-103
+         226823_76  m7i-cpu2               swere-dsr3-ewe    RUNNING       6:18 m7i-cpu2-dy-m7i-cpu-cr-0-104
+         226823_98  m7i-cpu2               swere-dsr3-ewe    RUNNING       6:18 m7i-cpu2-dy-m7i-cpu-cr-0-93
+         226823_99  m7i-cpu2               swere-dsr3-ewe    RUNNING       6:18 m7i-cpu2-dy-m7i-cpu-cr-0-93
+          226824_3  m7i-cpu2               swere-dsr3-och    RUNNING       6:18 m7i-cpu2-dy-m7i-cpu-cr-0-94
+          226824_9  m7i-cpu2               swere-dsr3-och    RUNNING       6:18 m7i-cpu2-dy-m7i-cpu-cr-0-95
+         226824_21  m7i-cpu2               swere-dsr3-och    RUNNING       6:18 m7i-cpu2-dy-m7i-cpu-cr-0-98
+         226824_42  m7i-cpu2               swere-dsr3-och    RUNNING       6:18 m7i-cpu2-dy-m7i-cpu-cr-0-62
+         226824_44  m7i-cpu2               swere-dsr3-och    RUNNING       6:18 m7i-cpu2-dy-m7i-cpu-cr-0-62
+         226824_56  m7i-cpu2               swere-dsr3-och    RUNNING       6:18 m7i-cpu2-dy-m7i-cpu-cr-0-65
+         226824_66  m7i-cpu2               swere-dsr3-och    RUNNING       6:18 m7i-cpu2-dy-m7i-cpu-cr-0-68
+         226824_72  m7i-cpu2               swere-dsr3-och    RUNNING       6:18 m7i-cpu2-dy-m7i-cpu-cr-0-69
+         226824_73  m7i-cpu2               swere-dsr3-och    RUNNING       6:18 m7i-cpu2-dy-m7i-cpu-cr-0-69
+         226824_74  m7i-cpu2               swere-dsr3-och    RUNNING       6:18 m7i-cpu2-dy-m7i-cpu-cr-0-70
+         226824_79  m7i-cpu2               swere-dsr3-och    RUNNING       6:18 m7i-cpu2-dy-m7i-cpu-cr-0-71
+         226824_81  m7i-cpu2               swere-dsr3-och    RUNNING       6:18 m7i-cpu2-dy-m7i-cpu-cr-0-71
+         226825_27  m7i-cpu2               swere-dsr3-oew    RUNNING       6:18 m7i-cpu2-dy-m7i-cpu-cr-0-45
+         226825_33  m7i-cpu2               swere-dsr3-oew    RUNNING       6:18 m7i-cpu2-dy-m7i-cpu-cr-0-46
+         226825_37  m7i-cpu2               swere-ds
+```
