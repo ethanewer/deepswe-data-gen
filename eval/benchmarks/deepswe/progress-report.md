@@ -1094,3 +1094,36 @@ Queue snapshot:
 227505_[0-175%176]  m7i-cpu2               swere-dsr6-och    PENDING       0:00 (BeginTime)
 227506_[0-175%176]  m7i-cpu2               swere-dsr6-oew    PENDING       0:00 (BeginTime)
 ```
+
+## 2026-06-07 11:15 UTC
+
+DeepSeek Docker-reset monitor update:
+
+- Scheduled DeepSeek-only unique-container trials: `1800` across waves 1-4.
+- Scheduled by wave: `{'wave1': 300, 'wave2': 300, 'wave3': 300, 'wave4': 300, 'wave5': 73, 'wave6': 527}`.
+- Scheduled by model: `{'deepseek-v4-flash': 1019, 'deepseek-v4-pro': 781}`.
+- Scheduled by difficulty: `{'easy': 398, 'hard': 158, 'medium': 1244}`.
+- Scheduled prompt styles: `{'deepswe': 899, 'original': 901}`.
+- Completed result records so far: `600`; reward-pass: `7`; saved trajectories: `0`; Pyxis start failures: `576`.
+- Results by model: total `{'deepseek-v4-flash': 383, 'deepseek-v4-pro': 217}`, reward `{'deepseek-v4-flash': 5, 'deepseek-v4-pro': 2}`.
+- Results by difficulty: total `{'easy': 216, 'hard': 49, 'medium': 335}`, reward `{'easy': 3, 'hard': 2, 'medium': 2}`.
+- Results by style: `{'deepswe': 300, 'original': 300}`.
+- Probe success state: `{'window1:ewe': True, 'window1:och': True, 'window1:oew': True, 'window1b:ewe': True, 'window1b:och': True, 'window1b:oew': False}`.
+- Release state: `{'window1': '2026-06-07 06:05:13 UTC'}`.
+
+Queue snapshot:
+
+```
+226823_[0-99%100]  m7i-cpu2               swere-dsr3-ewe    PENDING       0:00 (BeginTime)
+ 226824_[0-99%100]  m7i-cpu2               swere-dsr3-och    PENDING       0:00 (BeginTime)
+ 226825_[0-99%100]  m7i-cpu2               swere-dsr3-oew    PENDING       0:00 (BeginTime)
+ 226826_[0-99%100]  m7i-cpu2               swere-dsr4-ewe    PENDING       0:00 (BeginTime)
+ 226827_[0-99%100]  m7i-cpu2               swere-dsr4-och    PENDING       0:00 (BeginTime)
+ 226828_[0-99%100]  m7i-cpu2               swere-dsr4-oew    PENDING       0:00 (BeginTime)
+  227452_[0-24%25]  m7i-cpu2               swere-dsr5-ewe    PENDING       0:00 (BeginTime)
+  227453_[0-23%24]  m7i-cpu2               swere-dsr5-och    PENDING       0:00 (BeginTime)
+  227454_[0-23%24]  m7i-cpu2               swere-dsr5-oew    PENDING       0:00 (BeginTime)
+227504_[0-174%175]  m7i-cpu2               swere-dsr6-ewe    PENDING       0:00 (BeginTime)
+227505_[0-175%176]  m7i-cpu2               swere-dsr6-och    PENDING       0:00 (BeginTime)
+227506_[0-175%176]  m7i-cpu2               swere-dsr6-oew    PENDING       0:00 (BeginTime)
+```
