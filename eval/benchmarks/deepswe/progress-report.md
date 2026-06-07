@@ -1,6 +1,24 @@
 # SWE-rebench V2 High-Quality Datagen Progress
 
-Last updated: 2026-06-07 00:36 UTC
+Last updated: 2026-06-07 02:03 UTC
+
+## 2026-06-07 02:03 UTC
+
+New submissions after user request to increase hard and medium trials:
+
+- Submitted `datagen-20260607-pyxis-local-hard-kimi-scale1`: 600 hard Kimi (`moonshotai/kimi-k2.6`) trials across `swc-project__swc-3163`, `getmoto__moto-6391`, and `swc-project__swc-2598`, split original/DeepSWE 50/50. These use local `.sqsh` images and run on `m7i-cpu2`.
+- Submitted `datagen-20260607-pyxis-local-medium-serverless-scale3`: 1,000 medium JS trials on the high-pass `serverless__serverless-6545` task: 400 Kimi original, 300 Kimi DeepSWE, and 300 MiMo original. MiMo DeepSWE remains excluded because its observed pass rate was weaker.
+
+Status at submission check:
+
+- Active/pending `swere*` queue: 902 Slurm array rows visible immediately after submission.
+- All visible `swere*` jobs are on `m7i-cpu2`; no H200/GPU rows.
+- No non-empty stderr files yet for the new hard Kimi scale or medium scale3 runs.
+
+Recent completed quality signal used for the new mix:
+
+- Hard Kimi smokes completed with 0/30 reward-pass, but hard traces are being scaled anyway per request because failed hard traces are still useful.
+- Medium `serverless__serverless-6545` remains the strongest non-easy task source: Kimi original and MiMo original are high-pass, Kimi DeepSWE is good, and MiMo DeepSWE is substantially weaker.
 
 ## 2026-06-07 00:36 UTC
 
