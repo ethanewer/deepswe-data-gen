@@ -1288,3 +1288,25 @@ Queue snapshot:
          226825_33  m7i-cpu2               swere-dsr3-oew    RUNNING       6:18 m7i-cpu2-dy-m7i-cpu-cr-0-46
          226825_37  m7i-cpu2               swere-ds
 ```
+
+## 2026-06-07 15:18 UTC
+
+DeepSeek Docker-reset monitor update:
+
+- Scheduled DeepSeek-only unique-container trials: `1800` across waves 1-6.
+- Scheduled by wave: `{'wave1': 300, 'wave2': 300, 'wave3': 300, 'wave4': 300, 'wave5': 73, 'wave6': 527}`.
+- Scheduled by model: `{'deepseek-v4-flash': 1019, 'deepseek-v4-pro': 781}`.
+- Scheduled by difficulty: `{'easy': 398, 'hard': 158, 'medium': 1244}`.
+- Scheduled prompt styles: `{'deepswe': 899, 'original': 901}`.
+- Completed result records so far: `1799`; reward-pass: `32`; saved trajectories: `209`; Pyxis start failures: `1590`.
+- Results by model: total `{'deepseek-v4-flash': 1018, 'deepseek-v4-pro': 781}`, reward `{'deepseek-v4-flash': 18, 'deepseek-v4-pro': 14}`.
+- Results by difficulty: total `{'easy': 398, 'hard': 158, 'medium': 1243}`, reward `{'easy': 9, 'hard': 4, 'medium': 19}`.
+- Results by style: `{'deepswe': 898, 'original': 901}`.
+- Probe success state: `{'window1:ewe': True, 'window1:och': True, 'window1:oew': True, 'window1b:ewe': True, 'window1b:och': True, 'window1b:oew': False, 'window2:ewe': True, 'window2:och': True, 'window2:oew': True}`.
+- Release state: `{'window1': '2026-06-07 06:05:13 UTC', 'window1b': 'scheduled-start 2026-06-07 11:35:19 UTC', 'window2': '2026-06-07 14:08:23 UTC'}`.
+
+Queue snapshot:
+
+```
+226824_44  m7i-cpu2               swere-dsr3-och    RUNNING    1:06:23 m7i-cpu2-dy-m7i-cpu-cr-0-62
+```
