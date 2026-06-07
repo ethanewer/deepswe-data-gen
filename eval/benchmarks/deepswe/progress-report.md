@@ -1,6 +1,20 @@
 # SWE-rebench V2 High-Quality Datagen Progress
 
-Last updated: 2026-06-07 02:10 UTC
+Last updated: 2026-06-07 02:21 UTC
+
+## 2026-06-07 02:21 UTC
+
+New action after user request to replace unstarted Kimi medium jobs with cheaper MiMo while preserving diversity:
+
+- Canceled 121 pending Kimi medium Slurm array elements from `datagen-20260607-pyxis-local-medium-serverless-scale3`; running Kimi elements were left alone so in-flight traces are preserved.
+- Submitted replacement array `218290` / `swere-mdvr-mimo` under `datagen-20260607-pyxis-local-medium-mimo-diverse-replace1`.
+- Replacement manifest has 240 medium MiMo (`xiaomi/mimo-v2.5-pro`) trials using local `.sqsh` images: 120 on `serverless__serverless-6545`, 60 on `serverless__serverless-6417`, and 60 on `swc-project__swc-4250`.
+- Style mix is 140 original prompt trials and 100 DeepSWE prompt trials; language mix is 180 JS and 60 Rust.
+
+Status at submission check:
+
+- The Kimi medium arrays had no pending elements remaining; only running elements remained active.
+- The replacement MiMo array was accepted on `m7i-cpu2`; all visible `swere*` datagen jobs were on `m7i-cpu2`, with no H200/GPU rows.
 
 ## 2026-06-07 02:10 UTC
 
