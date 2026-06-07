@@ -736,3 +736,26 @@ Current quality/throughput note:
 
 - The immediate failure mode for the diverse medium wave is registry import pressure, not model quality. Failed container starts are recorded as failed trials, and successful starts will save full mini-swe-agent trajectories plus verifier results.
 - All datagen submissions in this wave are CPU-only and write under `/wbl-fast`.
+
+## 2026-06-07 04:52 UTC
+
+DeepSeek non-duplicate submission:
+
+- Selected and materialized 360 new high-quality tasks with no overlap against any prior submitted manifest and no duplicate repos within the wave.
+- Difficulty split: `easy=201`, `medium=120`, `hard=39`.
+- Language split: `python=80`, `go=68`, `ts=59`, `rust=55`, `js=52`, `java=18`, `php=17`, `c=7`, `cpp=4`.
+- Model split: `deepseek-v4-flash=281`, `deepseek-v4-pro=79`.
+- Prompt split: `original=180`, `deepswe=180`.
+- Submitted as CPU-only `m7i-cpu2` Slurm/Pyxis arrays:
+  - `226390` / `swere-dsu1-och`: 180 rows, Docker-authenticated, max 15 concurrent.
+  - `226391` / `swere-dsu1-oew`: 180 rows, Docker-authenticated, max 15 concurrent.
+
+Initial status:
+
+- `swere-dsu1-och` hit Docker Hub 429 on all 180 rows after successful auth; failure `result.json` records are present with zero API calls/cost.
+- `swere-dsu1-oew` is still active: 15 running and 157 pending at the latest check; 8 rows have already written Pyxis-start failure records.
+- Active older datagen rows: 2 MiMo rows from `swere-mnk-mix1` remain running.
+
+Operational note:
+
+- New DeepSeek jobs are task-deduplicated. The bottleneck is unique Docker image imports, not DeepSeek API capacity.
