@@ -1,6 +1,24 @@
 # SWE-rebench V2 High-Quality Datagen Progress
 
-Last updated: 2026-06-07 02:21 UTC
+Last updated: 2026-06-07 03:16 UTC
+
+## 2026-06-07 03:16 UTC
+
+New action after user request to use cheap DeepSeek Flash easy tasks while avoiding duplicates:
+
+- Submitted an initial cached-image DeepSeek Flash easy batch, then canceled 4,055 pending elements after the duplicate-risk correction. Already-started cached-image elements were left running/configuring so partial traces are preserved.
+- Submitted `datagen-20260607-pyxis-unique-easy-flash-scale1`: 2,998 easy `deepseek-v4-flash` trials with 2,998 unique task IDs and zero duplicate `instance_id`s.
+- Unique easy batch style mix: 1,500 original and 1,498 DeepSWE.
+- Unique easy batch language mix: 1,096 Python, 575 Go, 523 JS, 473 TS, 201 Rust, 79 Java, 50 PHP, and 1 C task.
+- The unique batch uses the pre-materialized high-quality easy task directories from `datagen-20260606-easy-scale3` and Docker-authenticated Pyxis image pulls split across the three Docker credential directories.
+
+Status at submission check:
+
+- No active Kimi jobs remained.
+- Active `swere*` queue: 2,826 rows visible, all on `m7i-cpu2`.
+- New unique easy arrays accounted for 2,114 visible rows at scan time; the rest were already-started cached Flake8 Flash rows plus remaining MiMo medium rows.
+- Immediate stderr check showed Docker Hub 429s on most unique easy image imports despite authenticated enroot credentials. These failed-start traces are preserved through Slurm logs and the Pyxis failure-result writer where the wrapper regains control; the currently viable easy work is mostly from images already cached/imported.
+- Going forward, new submissions are restricted to `deepseek-v4-flash`, `deepseek-v4-pro`, and `xiaomi/mimo-v2.5-pro`; Kimi is disabled for new work.
 
 ## 2026-06-07 02:21 UTC
 
