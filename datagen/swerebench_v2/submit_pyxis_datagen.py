@@ -127,6 +127,7 @@ export PYTHONPATH={shell_quote(pydeps_overlay)}:{shell_quote(repo_root / ".venv"
 export HOME="$WORKSPACE/home"
 export MSWEA_COST_TRACKING=ignore_errors
 export MSWEA_SILENT_STARTUP=1
+export ENROOT_REMAP_ROOT=yes
 mkdir -p "$HOME"
 mkdir -p "$ANON_ENROOT_CONFIG_PATH"
 

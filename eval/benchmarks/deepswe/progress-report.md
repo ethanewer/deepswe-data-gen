@@ -1803,3 +1803,12 @@ DeepSeek high-quality coverage expansion status:
 - Language trajectory counts: `{'js': 665, 'go': 496, 'python': 232, 'php': 162, 'ts': 96, 'java': 89, 'cpp': 48, 'c': 41, 'rust': 39}`.
 - Runtime fix: `pydantic` and `anyio` were repaired in `/wbl-fast/usrs/ee/code-swe-data/runtime/pydeps-overlay`; `litellm` import now succeeds for future DeepSeek starts.
 - Queue state: `m7i-cpu2` only, with `1104` running array tasks and `23` queued array records at the time of this report. No coverage datagen was submitted to GPU partitions.
+
+## 2026-06-07 20:56 UTC
+
+Pyxis extraction-failure retry pilot:
+
+- Submitter update: future generated Slurm scripts now export `ENROOT_REMAP_ROOT=yes` before `srun`, in addition to Pyxis `--container-remap-root`.
+- Pilot target: no-trajectory `PyxisContainerStartError` rows, to test whether Enroot root remapping fixes the Go-module-cache extraction permission failures before launching a broad retry wave.
+- Submitted pilot arrays on `m7i-cpu2`: `238012` medium/pro `64` rows, `238015` easy/flash `32` rows, `238017` hard/pro `24` rows.
+- The pilot scripts were verified to include `ENROOT_REMAP_ROOT=yes`; no GPU partitions were used.
