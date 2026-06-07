@@ -18,7 +18,7 @@ BASE = REPO / "runs" / "swerebench-v2"
 MONITOR_ROOT = BASE / "monitor-deepseek-20260607"
 PROGRESS = REPO / "eval" / "benchmarks" / "deepswe" / "progress-report.md"
 PYTHON = Path("/wbl-fast/usrs/ee/code-swe-data/runtime/cpython-3.12.13-linux-x86_64-gnu/bin/python3.12")
-WAVES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+WAVES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
 
 
 def utc_now() -> str:

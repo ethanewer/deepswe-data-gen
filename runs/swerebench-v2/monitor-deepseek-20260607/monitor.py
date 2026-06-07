@@ -29,7 +29,7 @@ SHARDS = {
     "och": "ethanoch",
     "oew": "ethanoewer",
 }
-ALL_WAVES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+ALL_WAVES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
 WINDOWS = {
     "window1": [1, 2],
     "window1b": [5, 6],
@@ -407,7 +407,7 @@ def append_report(state: dict) -> None:
         "",
         "DeepSeek Docker-reset monitor update:",
         "",
-        f"- Scheduled DeepSeek-only unique-container trials: `{schedule['total']}` across waves 1-10.",
+        f"- Scheduled DeepSeek-only unique-container trials: `{schedule['total']}` across waves 1-11.",
         f"- Scheduled by wave: `{schedule['by_wave']}`.",
         f"- Scheduled by model: `{schedule['by_model']}`.",
         f"- Scheduled by difficulty: `{schedule['by_difficulty']}`.",
