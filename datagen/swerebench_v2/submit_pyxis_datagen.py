@@ -36,7 +36,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--enroot-config-path",
         type=Path,
-        help="Credential/config directory for Pyxis/enroot image imports.",
+        help=(
+            "Credential/config directory for Pyxis/enroot image imports. "
+            "When --docker-user is set, generated jobs try an anonymous import "
+            "first and only use this path on the authenticated retry."
+        ),
     )
     parser.add_argument(
         "--docker-user",
@@ -100,12 +104,17 @@ fi
 if [[ "$EXTRA_BODY_JSON" == "-" ]]; then
   EXTRA_BODY_JSON=""
 fi
-PYXIS_IMAGE="${{IMAGE#docker.io/}}"
-PYXIS_IMAGE="${{PYXIS_IMAGE#docker://}}"
+PYXIS_IMAGE_REF="${{IMAGE#docker.io/}}"
+PYXIS_IMAGE_REF="${{PYXIS_IMAGE_REF#docker://}}"
+ANON_PYXIS_IMAGE="registry-1.docker.io#${{PYXIS_IMAGE_REF}}"
 DOCKER_USER={shell_quote(args.docker_user)}
+AUTH_ENROOT_CONFIG_PATH={shell_quote(str(args.enroot_config_path) if args.enroot_config_path else "")}
+AUTH_PYXIS_IMAGE="$ANON_PYXIS_IMAGE"
 if [[ -n "$DOCKER_USER" ]]; then
-  PYXIS_IMAGE="${{DOCKER_USER}}@registry-1.docker.io#${{PYXIS_IMAGE}}"
+  AUTH_PYXIS_IMAGE="${{DOCKER_USER}}@registry-1.docker.io#${{PYXIS_IMAGE_REF}}"
 fi
+PYXIS_IMAGE="$ANON_PYXIS_IMAGE"
+LAST_PYXIS_IMAGE="$PYXIS_IMAGE"
 STDOUT_LOG={log_dir}/{args.job_name}.${{SLURM_ARRAY_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}.out
 STDERR_LOG={log_dir}/{args.job_name}.${{SLURM_ARRAY_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}.err
 
@@ -115,7 +124,6 @@ export UV_CACHE_DIR={shell_quote(cache_root / "uv")}
 export PIP_CACHE_DIR={shell_quote(cache_root / "pip")}
 export PYTHONPATH={shell_quote(pydeps_overlay)}:{shell_quote(repo_root / ".venv" / "lib" / "python3.12" / "site-packages")}:{shell_quote(repo_root)}
 export HOME="$WORKSPACE/home"
-{f"export ENROOT_CONFIG_PATH={shell_quote(args.enroot_config_path)}" if args.enroot_config_path else ""}
 export MSWEA_COST_TRACKING=ignore_errors
 export MSWEA_SILENT_STARTUP=1
 mkdir -p "$HOME"
@@ -140,11 +148,23 @@ echo "instance_id=$INSTANCE_ID"
 echo "rollout_id=$ROLLOUT_ID"
 echo "model=$MODEL"
 echo "image=$IMAGE"
-echo "pyxis_image=$PYXIS_IMAGE"
+echo "anonymous_pyxis_image=$ANON_PYXIS_IMAGE"
+echo "authenticated_pyxis_image=$AUTH_PYXIS_IMAGE"
 echo "workspace=$WORKSPACE"
 
-set +e
-srun --container-image="$PYXIS_IMAGE" \\
+run_agent_attempt() {{
+  local attempt_label="$1"
+  local attempt_image="$2"
+  local attempt_enroot_config="$3"
+  LAST_PYXIS_IMAGE="$attempt_image"
+  echo "pyxis_attempt=$attempt_label"
+  echo "pyxis_image=$attempt_image"
+  if [[ -n "$attempt_enroot_config" ]]; then
+    export ENROOT_CONFIG_PATH="$attempt_enroot_config"
+  else
+    unset ENROOT_CONFIG_PATH
+  fi
+  srun --container-image="$attempt_image" \\
   --container-writable \\
   --container-remap-root \\
   --no-container-mount-home \\
@@ -170,7 +190,16 @@ srun --container-image="$PYXIS_IMAGE" \\
     --model-timeout {args.model_timeout} \\
     --agent-wall-time-limit {args.agent_wall_time_limit} \\
     --command-timeout {args.command_timeout}
+}}
+
+set +e
+run_agent_attempt anonymous "$ANON_PYXIS_IMAGE" ""
 STATUS=$?
+if [[ "$STATUS" -ne 0 && ! -f "$WORKSPACE/result.json" && -n "$DOCKER_USER" ]]; then
+  echo "anonymous import/run failed before result.json; retrying with Docker Hub credentials"
+  run_agent_attempt authenticated "$AUTH_PYXIS_IMAGE" "$AUTH_ENROOT_CONFIG_PATH"
+  STATUS=$?
+fi
 set -e
 
 if [[ "$STATUS" -ne 0 && ! -f "$WORKSPACE/result.json" ]]; then
@@ -186,7 +215,7 @@ if [[ "$STATUS" -ne 0 && ! -f "$WORKSPACE/result.json" ]]; then
     --repo "$REPO" \\
     --task-dir "$TASK_DIR" \\
     --image "$IMAGE" \\
-    --pyxis-image "$PYXIS_IMAGE" \\
+    --pyxis-image "$LAST_PYXIS_IMAGE" \\
     --exit-status "$STATUS" \\
     --stdout-log "$STDOUT_LOG" \\
     --stderr-log "$STDERR_LOG"
