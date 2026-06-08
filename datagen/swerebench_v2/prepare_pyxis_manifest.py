@@ -17,13 +17,13 @@ MODEL_SETTINGS: dict[str, dict[str, Any]] = {
         "litellm_model": "openai/deepseek-v4-flash",
         "api_key_env": "DEEPSEEK_API_KEY",
         "api_base": "https://api.deepseek.com",
-        "extra_body": {"thinking": {"type": "disabled"}},
+        "extra_body": {"thinking": {"type": "enabled"}},
     },
     "deepseek-v4-pro": {
         "litellm_model": "openai/deepseek-v4-pro",
         "api_key_env": "DEEPSEEK_API_KEY",
         "api_base": "https://api.deepseek.com",
-        "extra_body": {"thinking": {"type": "disabled"}},
+        "extra_body": {"thinking": {"type": "enabled"}},
     },
     "moonshotai/kimi-k2.6": {
         "litellm_model": "openrouter/moonshotai/kimi-k2.6",

@@ -47,9 +47,30 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="Docker Hub username to include in Pyxis image URIs; token stays in enroot credentials.",
     )
+    parser.add_argument(
+        "--container-source",
+        choices=("registry", "dockerd"),
+        default="registry",
+        help=(
+            "Use registry imports directly through Pyxis, or pre-pull with the "
+            "node Docker daemon and run Pyxis from dockerd://. The dockerd path "
+            "avoids rootless Enroot layer-permission failures on some images."
+        ),
+    )
+    parser.add_argument(
+        "--auth-first",
+        action="store_true",
+        help="Try the authenticated Docker Hub path before anonymous pulls/imports.",
+    )
+    parser.add_argument(
+        "--docker-login-from-enroot",
+        action="store_true",
+        help="For --container-source=dockerd, run docker login using the enroot .credentials file.",
+    )
     parser.add_argument("--temperature", type=float, default=0.0)
-    parser.add_argument("--max-tokens", type=int, default=4096)
-    parser.add_argument("--model-timeout", type=int, default=180)
+    parser.add_argument("--max-tokens", type=int, default=16384)
+    parser.add_argument("--reasoning-effort", default="high")
+    parser.add_argument("--model-timeout", type=int, default=600)
     parser.add_argument("--agent-wall-time-limit", type=int, default=2700)
     parser.add_argument("--command-timeout", type=int, default=180)
     parser.add_argument("--dry-run", action="store_true")
@@ -106,6 +127,7 @@ if [[ "$EXTRA_BODY_JSON" == "-" ]]; then
 fi
 PYXIS_IMAGE_REF="${{IMAGE#docker.io/}}"
 PYXIS_IMAGE_REF="${{PYXIS_IMAGE_REF#docker://}}"
+DOCKER_PULL_REF="$PYXIS_IMAGE_REF"
 ANON_PYXIS_IMAGE="registry-1.docker.io#${{PYXIS_IMAGE_REF}}"
 DOCKER_USER={shell_quote(args.docker_user)}
 AUTH_ENROOT_CONFIG_PATH={shell_quote(str(args.enroot_config_path) if args.enroot_config_path else "")}
@@ -113,6 +135,10 @@ AUTH_PYXIS_IMAGE="$ANON_PYXIS_IMAGE"
 if [[ -n "$DOCKER_USER" ]]; then
   AUTH_PYXIS_IMAGE="${{DOCKER_USER}}@registry-1.docker.io#${{PYXIS_IMAGE_REF}}"
 fi
+DOCKERD_PYXIS_IMAGE="dockerd://${{PYXIS_IMAGE_REF}}"
+CONTAINER_SOURCE={shell_quote(args.container_source)}
+AUTH_FIRST={1 if args.auth_first else 0}
+DOCKER_LOGIN_FROM_ENROOT={1 if args.docker_login_from_enroot else 0}
 PYXIS_IMAGE="$ANON_PYXIS_IMAGE"
 LAST_PYXIS_IMAGE="$PYXIS_IMAGE"
 ANON_ENROOT_CONFIG_PATH="$WORKSPACE/enroot-anonymous"
@@ -151,9 +177,83 @@ echo "instance_id=$INSTANCE_ID"
 echo "rollout_id=$ROLLOUT_ID"
 echo "model=$MODEL"
 echo "image=$IMAGE"
+echo "container_source=$CONTAINER_SOURCE"
+echo "auth_first=$AUTH_FIRST"
 echo "anonymous_pyxis_image=$ANON_PYXIS_IMAGE"
 echo "authenticated_pyxis_image=$AUTH_PYXIS_IMAGE"
+echo "dockerd_pyxis_image=$DOCKERD_PYXIS_IMAGE"
 echo "workspace=$WORKSPACE"
+
+docker_login_from_enroot() {{
+  local credentials_file="$AUTH_ENROOT_CONFIG_PATH/.credentials"
+  if [[ -z "$DOCKER_USER" ]]; then
+    return 0
+  fi
+  if [[ -z "$AUTH_ENROOT_CONFIG_PATH" || ! -r "$credentials_file" ]]; then
+    echo "docker_login_skipped=missing_enroot_credentials"
+    return 1
+  fi
+  local password
+  password="$(
+    awk -v user="$DOCKER_USER" '
+      $1 == "machine" && $2 == "registry-1.docker.io" {{
+        login = ""; password = "";
+        for (i = 1; i <= NF; i++) {{
+          if ($i == "login") login = $(i + 1);
+          if ($i == "password") password = $(i + 1);
+        }}
+        if (login == user && password != "") {{
+          print password;
+          exit;
+        }}
+      }}
+    ' "$credentials_file"
+  )"
+  if [[ -z "$password" ]]; then
+    echo "docker_login_skipped=no_matching_credential"
+    return 1
+  fi
+  printf '%s' "$password" | docker login -u "$DOCKER_USER" --password-stdin registry-1.docker.io >"$WORKSPACE/docker-login.log" 2>&1
+  local status=$?
+  unset password
+  if [[ "$status" -eq 0 ]]; then
+    echo "docker_login=ok"
+  else
+    echo "docker_login=failed status=$status"
+  fi
+  return "$status"
+}}
+
+docker_pull_image() {{
+  local status=0
+  local logged_in=0
+  if [[ "$AUTH_FIRST" -eq 1 && "$DOCKER_LOGIN_FROM_ENROOT" -eq 1 && -n "$DOCKER_USER" ]]; then
+    docker_login_from_enroot || true
+    logged_in=1
+  fi
+  if docker image inspect "$DOCKER_PULL_REF" >/dev/null 2>&1; then
+    echo "docker_image_present=$DOCKER_PULL_REF"
+    return 0
+  fi
+  docker pull "$DOCKER_PULL_REF" >"$WORKSPACE/docker-pull.log" 2>&1
+  status=$?
+  if [[ "$status" -eq 0 ]]; then
+    echo "docker_pull=ok"
+    return 0
+  fi
+  if [[ "$logged_in" -eq 0 && "$DOCKER_LOGIN_FROM_ENROOT" -eq 1 && -n "$DOCKER_USER" ]]; then
+    echo "docker_pull_initial_failed status=$status; retrying after login"
+    docker_login_from_enroot || true
+    docker pull "$DOCKER_PULL_REF" >>"$WORKSPACE/docker-pull.log" 2>&1
+    status=$?
+  fi
+  if [[ "$status" -eq 0 ]]; then
+    echo "docker_pull=ok"
+  else
+    echo "docker_pull=failed status=$status"
+  fi
+  return "$status"
+}}
 
 run_agent_attempt() {{
   local attempt_label="$1"
@@ -190,18 +290,37 @@ run_agent_attempt() {{
     --repo "$REPO" \\
     --temperature {args.temperature} \\
     --max-tokens {args.max_tokens} \\
+    --reasoning-effort {shell_quote(args.reasoning_effort)} \\
     --model-timeout {args.model_timeout} \\
     --agent-wall-time-limit {args.agent_wall_time_limit} \\
     --command-timeout {args.command_timeout}
 }}
 
 set +e
-run_agent_attempt anonymous "$ANON_PYXIS_IMAGE" "$ANON_ENROOT_CONFIG_PATH"
-STATUS=$?
-if [[ "$STATUS" -ne 0 && ! -f "$WORKSPACE/result.json" && -n "$DOCKER_USER" ]]; then
-  echo "anonymous import/run failed before result.json; retrying with Docker Hub credentials"
+if [[ "$CONTAINER_SOURCE" == "dockerd" ]]; then
+  LAST_PYXIS_IMAGE="$DOCKERD_PYXIS_IMAGE"
+  docker_pull_image
+  STATUS=$?
+  if [[ "$STATUS" -eq 0 ]]; then
+    run_agent_attempt dockerd "$DOCKERD_PYXIS_IMAGE" ""
+    STATUS=$?
+  fi
+elif [[ "$AUTH_FIRST" -eq 1 && -n "$DOCKER_USER" ]]; then
   run_agent_attempt authenticated "$AUTH_PYXIS_IMAGE" "$AUTH_ENROOT_CONFIG_PATH"
   STATUS=$?
+  if [[ "$STATUS" -ne 0 && ! -f "$WORKSPACE/result.json" ]]; then
+    echo "authenticated import/run failed before result.json; retrying anonymous"
+    run_agent_attempt anonymous "$ANON_PYXIS_IMAGE" "$ANON_ENROOT_CONFIG_PATH"
+    STATUS=$?
+  fi
+else
+  run_agent_attempt anonymous "$ANON_PYXIS_IMAGE" "$ANON_ENROOT_CONFIG_PATH"
+  STATUS=$?
+  if [[ "$STATUS" -ne 0 && ! -f "$WORKSPACE/result.json" && -n "$DOCKER_USER" ]]; then
+    echo "anonymous import/run failed before result.json; retrying with Docker Hub credentials"
+    run_agent_attempt authenticated "$AUTH_PYXIS_IMAGE" "$AUTH_ENROOT_CONFIG_PATH"
+    STATUS=$?
+  fi
 fi
 set -e
 

@@ -1944,3 +1944,19 @@ Queue snapshot:
 ```
 No scheduled DeepSeek datagen jobs currently visible in squeue.
 ```
+
+## 2026-06-08 03:14 UTC
+
+DeepSeek reasoning-mode throughput update:
+
+- DeepSeek docs check: thinking mode is enabled with `extra_body={"thinking":{"type":"enabled"}}`; default thinking effort is `high`; `temperature`, `top_p`, `presence_penalty`, and `frequency_penalty` are unsupported/no-op in thinking mode, so the driver now omits `temperature` for thinking requests.
+- Datagen config changed for all future DeepSeek runs: `reasoning_effort=high`, `max_tokens=16384`, `model_timeout=600`, `extra_body_json={"thinking":{"type":"enabled"}}`.
+- Bottleneck resolved: CPU-node Docker daemon is available on `m7i-cpu2`; a `dockerd://` Pyxis probe on previously failing `swerebenchv2/argoproj-argo:4413-1be03db` completed successfully on CPU-only Slurm in `00:02:46`.
+- New run root: `/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/runs/swerebench-v2/datagen-20260608-pyxis-deepseek-reasoning1`.
+- Remaining no-trajectory DeepSeek task pool prepared for `r03`: `easy=3922`, `medium=7150`, `hard=243`.
+- Prepared pool by language: easy `{'c': 14, 'cpp': 14, 'go': 803, 'java': 162, 'js': 557, 'php': 190, 'python': 1212, 'rust': 356, 'ts': 614}`; medium `{'c': 17, 'cpp': 14, 'go': 1461, 'java': 350, 'js': 494, 'php': 307, 'python': 2170, 'rust': 1333, 'ts': 1004}`; hard `{'c': 1, 'cpp': 1, 'go': 54, 'java': 18, 'js': 12, 'python': 62, 'rust': 63, 'ts': 32}`.
+- Submitted unique reasoning rows so far: `easy=3922` with `deepseek-v4-flash`; `medium=5364` with `deepseek-v4-pro`; `hard=243` with `deepseek-v4-pro`. Medium shards `s06/s07` remain prepared but not submitted yet (`1786` rows) due Slurm controller backpressure while current arrays configure.
+- Submitted job IDs: pilot `244573`; hard `244583`; easy shards `244655,244656,244748,244749`; medium shards `244750,244751,244752,244753,244754,244755`.
+- Pilot status: all 10 pilot trajectories were saved. Current reliable pilot result snapshot: Flash/easy has 4 completed results with 2 reward passes; several pilot result files were overwritten by cancelled duplicate full-array elements, so pilot passrate will be recomputed from stable artifacts after current cancellation noise settles.
+- Queue/resource state at update time: `m7i-cpu2` is saturated as intended, with roughly `3806/4800` CPUs allocated and reasoning jobs in `RUNNING`, `CONFIGURING`, and `COMPLETING` states. No H200/GPU partitions are being used for this wave.
+- Next action: monitor container/API startup and passrates; retry medium shards `s06/s07` when Slurm accepts more arrays; keep all new submissions on CPU-only nodes and under `/wbl-fast`.

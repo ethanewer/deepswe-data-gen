@@ -51,8 +51,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--repo", default="")
     parser.add_argument("--rollout-id", default="r00")
     parser.add_argument("--temperature", type=float, default=0.0)
-    parser.add_argument("--max-tokens", type=int, default=4096)
-    parser.add_argument("--model-timeout", type=int, default=180)
+    parser.add_argument("--max-tokens", type=int, default=16384)
+    parser.add_argument("--reasoning-effort", default="high")
+    parser.add_argument("--model-timeout", type=int, default=600)
     parser.add_argument("--agent-wall-time-limit", type=int, default=2700)
     parser.add_argument("--command-timeout", type=int, default=180)
     return parser.parse_args()
@@ -160,11 +161,19 @@ def build_agent(args: argparse.Namespace, workdir: str, trajectory_path: Path) -
     config = yaml.safe_load(args.config_file.read_text(encoding="utf-8")) or {}
     extra_body = json.loads(args.extra_body_json) if args.extra_body_json else None
 
+    thinking_enabled = (
+        isinstance(extra_body, dict)
+        and isinstance(extra_body.get("thinking"), dict)
+        and extra_body["thinking"].get("type") == "enabled"
+    )
     model_kwargs: dict[str, Any] = {
-        "temperature": args.temperature,
         "max_tokens": args.max_tokens,
         "timeout": args.model_timeout,
     }
+    if thinking_enabled:
+        model_kwargs["reasoning_effort"] = args.reasoning_effort
+    else:
+        model_kwargs["temperature"] = args.temperature
     if args.api_base:
         model_kwargs["api_base"] = args.api_base
     if extra_body:
@@ -285,6 +294,9 @@ def main() -> None:
         "workdir": workdir,
         "base_commit": base_commit,
         "started_at": started_at,
+        "max_tokens": args.max_tokens,
+        "reasoning_effort": args.reasoning_effort,
+        "extra_body_json": args.extra_body_json,
     }
     (args.workspace / "metadata.json").write_text(json.dumps(metadata_record, indent=2) + "\n")
 
