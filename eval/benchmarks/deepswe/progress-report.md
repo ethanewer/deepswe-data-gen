@@ -2267,3 +2267,20 @@ MiMo/OpenRouter coverage expansion:
 - Reasoning quality sample remains clean: `120` recent submitted trajectories checked, `7,493` assistant messages checked, `0` assistant messages missing reasoning.
 
 Next action: continue the retry loop for `or20` and `gr03-01` until Slurm accepts both, while monitoring that newly submitted jobs preserve reasoning in every assistant message.
+
+## 2026-06-08 21:03 UTC
+
+MiMo/OpenRouter dependency-failure retry:
+
+- All remaining coverage shards have been accepted by Slurm. The original missing-task queue is now complete at the task level: `3,501` tasks already in the unique reasoning dataset plus `11,795` accepted missing-task rows, for `15,296 / 15,296` high-quality tasks represented.
+- Late log inspection found an infrastructure dependency regression in started native jobs: `jinja2` resolved to a broken namespace package from the repo `.venv`, and a later wave saw missing `pydantic`. These are zero-call failures saved as `PyxisContainerStartError`, so they do not contain useful traces and need retry.
+- Repaired the mounted `/wbl-fast` dependency paths used by queued jobs:
+  - `/wbl-fast/usrs/ee/code-swe-data/runtime/manual-pydeps/pydantic-stack-clean`
+  - `/wbl-fast/usrs/ee/code-swe-data/runtime/pydeps-miniswe-complete-20260608T1830Z`
+  - patched `/wbl-fast/usrs/ee/code-swe-data/runtime/pydeps-miniswe-upstream-11ec55d/minisweagent/models/openrouter_model.py` to honor `request_timeout=600` without sending it in the OpenRouter payload.
+- Exact import validation now passes for `jinja2.StrictUndefined`, `pydantic`, `requests/urllib3`, `DefaultAgent`, and native `OpenRouterModel` under both the explicit complete-overlay path and the default pinned-overlay path.
+- Built retry manifest `mimo-depfail-retry-r04.tsv` from saved no-call dependency failures, deduped by task and preserving existing failure artifacts. Rows: `1,792` total (`easy=265`, `medium=1,506`, `hard=21`); model split `xiaomi/mimo-v2.5=1,771`, `xiaomi/mimo-v2.5-pro=21`; style split `deepswe=919`, `original=873`.
+- Submitted all dependency retry shards on CPU-only `m7i-cpu2`: `r04dep-00` job `344270` (`500` rows), `r04dep-01` job `344285` (`500`), `r04dep-02` job `344303` (`500`), `r04dep-03` job `344318` (`292`).
+- Current visible MiMo queue: `8,206` array elements, `414` running and `7,792` pending, all on `m7i-cpu2`. The r04 dependency retries are accepted but have not started yet, so there are no r04dep logs to sample.
+
+Next action: continue monitoring for r04dep startup; once they start, verify the dependency failure is gone and sample submitted trajectories for reasoning in every assistant message.
