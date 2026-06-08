@@ -2284,3 +2284,18 @@ MiMo/OpenRouter dependency-failure retry:
 - Current visible MiMo queue: `8,206` array elements, `414` running and `7,792` pending, all on `m7i-cpu2`. The r04 dependency retries are accepted but have not started yet, so there are no r04dep logs to sample.
 
 Next action: continue monitoring for r04dep startup; once they start, verify the dependency failure is gone and sample submitted trajectories for reasoning in every assistant message.
+
+## 2026-06-08 22:00 UTC
+
+MiMo/OpenRouter queue and runtime repair:
+
+- Enforced the queue constraint that no MiMo datagen jobs should remain pending for `JobArrayTaskLimit`. A later Slurm reshuffle exposed `24` more `JobArrayTaskLimit` elements; those were canceled as well. Current visible MiMo queue after the second cancellation/recheck: `661` array elements, `397` running and `264` pending, with `JobArrayTaskLimit=0`.
+- All visible MiMo datagen jobs are on CPU-only `m7i-cpu2` nodes. No new large retry wave was submitted while the runtime path was unstable.
+- Canceled the r04 dependency-retry wave before it could add more bad no-call failures, then canceled the old pending tail that was blocked by array task limits.
+- Created a stable symlink dependency overlay at `/wbl-fast/usrs/ee/code-swe-data/runtime/pydeps-mimo-symlink-stable-20260608T2145Z` and redirected the old mounted dependency paths to it:
+  - `/wbl-fast/usrs/ee/code-swe-data/runtime/manual-pydeps/pydantic-stack-clean`
+  - `/wbl-fast/usrs/ee/code-swe-data/runtime/pydeps-miniswe-complete-20260608T1830Z`
+- Newly started jobs then exposed one more container-only dependency miss: `pydantic_core` imports `typing_extensions`, but `typing_extensions` was not in the overlay. Added `typing_extensions.py` and `typing_extensions-4.15.0.dist-info` symlinks from `/wbl-fast/usrs/ee/code-swe-data/runtime/pydeps-datagen`.
+- Revalidated the mounted runtime with `python3 -S` so it does not depend on local site-packages. Imports now pass for `typing_extensions`, `jinja2.StrictUndefined`, `pydantic`, `requests`, `urllib3`, `DefaultAgent`, and native `OpenRouterModel`.
+
+Next action: keep monitoring newly starting MiMo jobs after the `typing_extensions` repair before submitting any additional retries, so the queue does not accumulate preserved infrastructure failures.
