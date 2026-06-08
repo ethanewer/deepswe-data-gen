@@ -264,8 +264,18 @@ def run_verifier(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def host_workspace_path(workspace: Path) -> Path:
+    """Return the host-visible workspace when running under a /workspace mount."""
+    home = os.environ.get("HOME")
+    if home:
+        home_path = Path(home)
+        if home_path.name == "home":
+            return home_path.parent
+    return workspace
+
+
 def result_index_path(workspace: Path) -> Path | None:
-    for parent in workspace.parents:
+    for parent in host_workspace_path(workspace).parents:
         if parent.name == "pyxis-traces":
             return parent.parent / "manifest" / "result_index.jsonl"
     return None
@@ -275,11 +285,18 @@ def append_result_index(workspace: Path, result: dict[str, Any]) -> None:
     index_path = result_index_path(workspace)
     if index_path is None:
         return
+    host_workspace = host_workspace_path(workspace)
     trajectory_path = Path(result["trajectory_path"])
     try:
         trajectory_saved = trajectory_path.exists() and trajectory_path.stat().st_size > 2
     except OSError:
         trajectory_saved = False
+    trajectory_record_path = host_workspace / "agent" / "mini-swe-agent.trajectory.json"
+    patch_path = result.get("patch_path")
+    if patch_path:
+        patch_path_obj = Path(patch_path)
+        if patch_path_obj.is_absolute() and str(patch_path_obj).startswith("/workspace/"):
+            patch_path = str(host_workspace / patch_path_obj.relative_to("/workspace"))
     record = {
         "instance_id": result.get("instance_id"),
         "rollout_id": result.get("rollout_id"),
@@ -296,9 +313,9 @@ def append_result_index(workspace: Path, result: dict[str, Any]) -> None:
         "cost_usd": result.get("cost_usd", 0.0),
         "reward": result.get("reward", 0),
         "trajectory_saved": trajectory_saved,
-        "result_path": str(workspace / "result.json"),
-        "trajectory_path": str(trajectory_path),
-        "patch_path": result.get("patch_path"),
+        "result_path": str(host_workspace_path(workspace) / "result.json"),
+        "trajectory_path": str(trajectory_record_path),
+        "patch_path": patch_path,
     }
     index_path.parent.mkdir(parents=True, exist_ok=True)
     with index_path.open("a", encoding="utf-8") as handle:

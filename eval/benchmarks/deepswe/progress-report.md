@@ -1501,6 +1501,16 @@ DeepSeek high-reasoning coverage recovery:
 - Using the last strict saved-trajectory snapshot as the completed baseline, active-plus-complete coverage projects above the 50% target for all difficulties: easy `469 + 2,377 >= 2,469`, medium `291 + 5,361 >= 4,588`, hard `123 + 114 >= 148`.
 - The append-only result index currently contains recent Pyxis/startup failures from older and canceled waves; r13/r14 agent trajectories are not expected there until the current container imports and teacher runs finish.
 
+## 2026-06-08 07:25 UTC
+
+DeepSeek high-reasoning repair update:
+
+- Root cause found for many r13/r14 non-trajectory starts: the shared Pyxis dependency overlay had no working `jinja2`, then a mismatched/missing `pydantic_core`. I repaired the overlay in place with the standalone `/wbl-fast` runtime Python and validated mini-swe-agent imports with `Jinja2`, `pydantic==2.13.4`, and `pydantic-core==2.46.4`.
+- Confirmed saved host trajectories are being written despite the result-index undercount: sample host files include `agent/mini-swe-agent.trajectory.json` sizes in the hundreds of KB for r13 medium/easy and r12 hard tasks.
+- Fixed the mini-swe-agent driver result-index locator for successful jobs. Successful jobs run with `--workspace /workspace`, so the old index locator could not find `pyxis-traces`; the driver now derives the host workspace from `$HOME` and records host-visible result, patch, and trajectory paths.
+- Reduced hot-array throttles after seeing `/run/pyxis` no-space and pre-repair import failures: r14 medium to `20`, r13 easy to `60`, and r12 hard to `15`. This should reduce wasted startup failures while preserving queued coverage.
+- Current monitoring remains CPU-only on `m7i-cpu2`; no H200/GPU generation jobs are visible.
+
 ## 2026-06-08 06:23 UTC
 
 DeepSeek reasoning coverage ramp:
