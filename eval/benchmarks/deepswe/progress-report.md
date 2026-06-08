@@ -2313,3 +2313,18 @@ MiMo/OpenRouter stale-wave cancellation and submitter fix:
 - Canceled the remaining old-script MiMo elements because they were actively producing preserved zero-call dependency failures. Final queue after cleanup: `0` visible MiMo elements and `JobArrayTaskLimit=0`.
 
 Next action: submit only a small corrected probe wave first, verify no dependency failures and all assistant messages preserve reasoning, then resume controlled coverage retries without array throttles that create `JobArrayTaskLimit`.
+
+## 2026-06-08 22:25 UTC
+
+MiMo/OpenRouter corrected restart:
+
+- The first corrected probe (`r05probe`) still failed because the full dependency overlay had an incomplete `jinja2` package: bytecode files were present, but source files such as `jinja2/__init__.py` were missing. The failure was preserved as a no-call trajectory/result artifact where applicable.
+- Repaired `/wbl-fast/usrs/ee/code-swe-data/runtime/pydeps-mimo-stable-20260608T2136Z` with `rsync` from the intact pinned mini-swe-agent overlay so `jinja2` and its dist-info are self-contained and container-visible.
+- Submitted a fresh four-task probe (`r06probe`) on CPU-only `m7i-cpu2`, with no array backlog (`0-3%4`). All four tasks have now created `mini-swe-agent.trajectory.json` files.
+- Reasoning quality check on `r06probe`: `4` trajectories, `356` assistant messages, `0` assistant messages missing reasoning.
+- Submitted a conservative fixed-path retry wave `swere-mimo-r07fix-00` with `100` tasks and array concurrency equal to row count (`0-99%100`), so it does not create `JobArrayTaskLimit` pending elements. Difficulty mix: `20` easy, `70` medium, `10` hard; model mix: `90` `xiaomi/mimo-v2.5`, `10` `xiaomi/mimo-v2.5-pro`.
+- Early r07 startup check found no dependency tracebacks. Current r07 trajectory count: `8 / 100`.
+- Reasoning quality check on current r07 trajectories: `8` trajectories, `200` assistant messages, `0` assistant messages missing reasoning.
+- Live MiMo queue at this check: `104` visible elements (`34` running, `70` configuring), `JobArrayTaskLimit=0`.
+
+Next action: continue monitoring r07 for startup failures and trajectory growth; only submit the next batch after this wave remains clean, using row-count-equal array concurrency to avoid `JobArrayTaskLimit`.
