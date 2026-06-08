@@ -2188,3 +2188,21 @@ DeepSeek high-reasoning coverage status:
 - Prepared r16 manifests remain ready for resubmission once DeepSeek balance is restored: `9,717` unique high-quality tasks selected, with hard `243`, medium `7,143`, easy `2,331`, balanced between original and DeepSWE prompt styles.
 
 Current blocker: DeepSeek account balance. Docker auth/pulls, CPU partition selection, Pyxis startup, and the high-reasoning mini-swe-agent configuration have all been verified enough to resume quickly after the key is funded.
+
+## 2026-06-08 14:59 UTC
+
+DeepSeek high-reasoning post-drain coverage table:
+
+- No `swere-rsn` datagen jobs are visible in `squeue`; the prior draining jobs have finished or disappeared from the queue.
+- Current strict accounting was recomputed from manifest workspaces under `runs/swerebench-v2/datagen-20260608-pyxis-deepseek-reasoning1`, counting a task as complete only when `agent/mini-swe-agent.trajectory.json` exists and is non-empty.
+- Unique saved-trajectory coverage by difficulty:
+
+| difficulty | passed unique | complete saved unique | 50% target | complete coverage |
+|---|---:|---:|---:|---:|
+| easy | 553 | 1,827 | 2,469 | 74.0% |
+| medium | 302 | 2,007 | 4,588 | 43.7% |
+| hard | 16 | 203 | 148 | 137.2% |
+
+- Trial-level saved trajectories: easy `2,172`, medium `2,379`, hard `283`.
+- Trial-level passes: easy `568`, medium `308`, hard `17`.
+- Remaining blocker for new coverage remains DeepSeek account balance; no additional DeepSeek jobs were submitted.
