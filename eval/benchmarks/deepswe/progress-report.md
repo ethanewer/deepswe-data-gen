@@ -2328,3 +2328,18 @@ MiMo/OpenRouter corrected restart:
 - Live MiMo queue at this check: `104` visible elements (`34` running, `70` configuring), `JobArrayTaskLimit=0`.
 
 Next action: continue monitoring r07 for startup failures and trajectory growth; only submit the next batch after this wave remains clean, using row-count-equal array concurrency to avoid `JobArrayTaskLimit`.
+
+## 2026-06-08 23:52 UTC
+
+MiMo/OpenRouter packed CPU coverage restart:
+
+- Found that the previous fixed overlay had regressed again: container-side imports saw missing source files such as `pydantic/__init__.py` and a missing `certifi/cacert.pem`. Rebuilt a complete immutable overlay at `/wbl-fast/usrs/ee/code-swe-data/runtime/pydeps-mimo-complete-fixed-20260608T232518Z` from the intact pinned mini-swe-agent overlay, and repointed the mounted runtime aliases to it.
+- Patched the Pyxis submitter to avoid adding duplicate dependency paths when the manual dependency alias resolves to the same overlay, and to export `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, and `CURL_CA_BUNDLE` from the validated overlay.
+- Added a packed CPU-only submitter, `datagen/swerebench_v2/submit_pyxis_datagen_packed.py`, so each Slurm array element runs multiple task containers on one `m7i-cpu2` node. This reduces queue entries while keeping each CPU node busy.
+- Fixed the packed submitter default memory to fit `m7i-cpu2` nodes (`56G`, not `64G+`) and made `sbatch` failures print Slurm's actual rejection message.
+- Current usable reasoning coverage before this packed restart: `3,528 / 15,296` high-quality tasks (`23.07%`). By difficulty: easy `1,666 / 5,518` (`30.19%`), medium `1,653 / 9,443` (`17.51%`), hard `209 / 335` (`62.39%`).
+- Submitted packed probe `swere-mimo-pack-r08probe` job `350436`: `8` unique uncovered tasks (`easy=2`, `medium=4`, `hard=2`), two array elements, four task containers per CPU node. Docker auth/pulls succeeded through `dockerd://`, and all `8 / 8` trajectories are saved. Reasoning check: `8` trajectories, `0` assistant messages missing reasoning.
+- Submitted packed wave `swere-mimo-pack-r09` job `350678`: `1,024` unique uncovered tasks (`easy=300`, `medium=600`, `hard=124`), `86` array elements with `12` rows per element and `4` concurrent task containers per element. This includes all currently uncovered hard tasks in the missing manifest.
+- Current visible packed MiMo queue: `88` elements total (`2` running probe elements, `86` configuring r09 elements), all on CPU-only `m7i-cpu2`, with `JobArrayTaskLimit=0`.
+
+Next action: monitor r09 startup and first trajectories for Docker/Pyxis/import/API failures; if clean, prepare the next non-overlapping packed wave from the remaining uncovered easy/medium tasks while r09 runs.

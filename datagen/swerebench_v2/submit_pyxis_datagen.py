@@ -109,13 +109,16 @@ def write_array_script(args: argparse.Namespace, n_rows: int) -> Path:
     shared_root = REPO_ROOT.parent
     pydeps_overlay = require_pinned_minisweagent_overlay()
     pydantic_stack = shared_root / "runtime" / "manual-pydeps" / "pydantic-stack-clean"
-    pythonpath_parts = [
-        *([pydantic_stack] if pydantic_stack.exists() else []),
+    pythonpath_parts = []
+    if pydantic_stack.exists() and pydantic_stack.resolve() != pydeps_overlay.resolve():
+        pythonpath_parts.append(pydantic_stack)
+    pythonpath_parts.extend([
         pydeps_overlay,
         repo_root / ".venv" / "lib" / "python3.12" / "site-packages",
         repo_root,
-    ]
+    ])
     pythonpath = ":".join(str(path) for path in pythonpath_parts)
+    ca_bundle = pydeps_overlay / "certifi" / "cacert.pem"
 
     script = f"""#!/usr/bin/env bash
 #SBATCH -J {args.job_name}
@@ -180,6 +183,9 @@ export UV_CACHE_DIR={shell_quote(cache_root / "uv")}
 export PIP_CACHE_DIR={shell_quote(cache_root / "pip")}
 export PYDEPS_OVERLAY={shell_quote(pydeps_overlay)}
 export PYTHONPATH={shell_quote(pythonpath)}
+export SSL_CERT_FILE={shell_quote(ca_bundle)}
+export REQUESTS_CA_BUNDLE={shell_quote(ca_bundle)}
+export CURL_CA_BUNDLE={shell_quote(ca_bundle)}
 export HOME="$WORKSPACE/home"
 export ENROOT_TEMP_PATH="$WORKSPACE/enroot-tmp"
 export MSWEA_COST_TRACKING=ignore_errors
@@ -326,7 +332,7 @@ run_agent_attempt() {{
   --container-remap-root \\
   --no-container-mount-home \\
   --container-mounts="$MOUNTS" \\
-  --container-env=OPENAI_API_KEY,DEEPSEEK_API_KEY,OPENROUTER_API_KEY,OPENAI_BASE_URL,OPENAI_API_BASE,HF_HOME,XDG_CACHE_HOME,UV_CACHE_DIR,PIP_CACHE_DIR,PYTHONPATH,HOME,MSWEA_COST_TRACKING,MSWEA_SILENT_STARTUP,PYTHONDONTWRITEBYTECODE \\
+  --container-env=OPENAI_API_KEY,DEEPSEEK_API_KEY,OPENROUTER_API_KEY,OPENAI_BASE_URL,OPENAI_API_BASE,HF_HOME,XDG_CACHE_HOME,UV_CACHE_DIR,PIP_CACHE_DIR,PYTHONPATH,SSL_CERT_FILE,REQUESTS_CA_BUNDLE,CURL_CA_BUNDLE,HOME,MSWEA_COST_TRACKING,MSWEA_SILENT_STARTUP,PYTHONDONTWRITEBYTECODE \\
   {shell_quote(args.python)} {shell_quote(DRIVER)} \\
     --task-dir "$TASK_DIR" \\
     --workspace /workspace \\
