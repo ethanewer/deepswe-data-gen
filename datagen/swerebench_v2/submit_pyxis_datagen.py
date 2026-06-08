@@ -94,7 +94,9 @@ def write_array_script(args: argparse.Namespace, n_rows: int) -> Path:
     cache_root = Path("/wbl-fast/usrs/ee/code-swe-data/cache")
     repo_root = REPO_ROOT
     shared_root = REPO_ROOT.parent
-    pydeps_overlay = shared_root / "runtime" / "pydeps-overlay"
+    pydeps_overlay = Path(
+        os.environ.get("PYDEPS_OVERLAY", str(shared_root / "runtime" / "pydeps-overlay"))
+    )
 
     script = f"""#!/usr/bin/env bash
 #SBATCH -J {args.job_name}
