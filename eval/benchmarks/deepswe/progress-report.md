@@ -1487,21 +1487,6 @@ Queue snapshot:
 No scheduled DeepSeek datagen jobs currently visible in squeue.
 ```
 
-## 2026-06-08 08:33 UTC
-
-DeepSeek high-reasoning recovery and current blocker:
-
-- Repaired the shared mini-swe-agent runtime overlay in `/wbl-fast/usrs/ee/code-swe-data/runtime/pydeps-overlay-immutable-20260608T0525Z`; validation now constructs a LiteLLM DeepSeek model with `thinking.enabled`, `reasoning_effort=high`, and `max_tokens=16384`.
-- Confirmed active generation jobs are CPU-only on `m7i-cpu2`; no H200/GPU partition is involved.
-- Canceled pending medium `deepseek-v4-pro` jobs after fresh runs reached the API and returned `Insufficient Balance`; already-running Pro jobs were left to drain so they can write result artifacts where possible.
-- Built deduplicated r16 Flash replacement manifests from the coverage1 high-quality pool, skipping coverage1 tasks with saved trajectories and currently active task IDs. r16 selected `9,717` unique tasks: hard `243`, medium `7,143`, easy `2,331`; styles are balanced (`4,870` DeepSWE, `4,847` original).
-- Submitted accepted r16 Flash arrays: hard job `300737` and medium jobs `300738`, `300879`, `300880`, `300980`, `301122`, `301204`, `301292`, `301293`. The easy r16 submission was attempted but Slurm returned temporary controller backpressure before accepting it.
-- Early r16 logs show `deepseek-v4-flash` is also now returning `Insufficient Balance`. This makes the current bottleneck the DeepSeek account balance, not Docker, Pyxis, CPU capacity, or prompt/runtime configuration.
-- To avoid wasting Docker pulls and CPU, all pending DeepSeek datagen array elements were canceled. Running elements were left to finish and write failure records/traces where the driver is already active; configuring elements were canceled before driver startup.
-- Queue after pending/configuring cancellation: easy running `114`, hard r16 Flash running `60`, medium r16 Flash running `492` plus `2` completing. There are no pending DeepSeek datagen elements left at this checkpoint.
-
-Current implication: the 50% coverage target cannot progress further until the DeepSeek key has usable balance or a replacement DeepSeek key is provided. When balance is restored, the r16 manifests are already prepared under `runs/swerebench-v2/datagen-20260608-pyxis-deepseek-reasoning1/manifest/` and can be resubmitted quickly.
-
 ## 2026-06-08 07:09 UTC
 
 DeepSeek high-reasoning coverage recovery:
@@ -2161,3 +2146,30 @@ Queue snapshot:
 ```
 No scheduled DeepSeek datagen jobs currently visible in squeue.
 ```
+
+## 2026-06-08 08:33 UTC
+
+DeepSeek high-reasoning recovery and current blocker:
+
+- Repaired the shared mini-swe-agent runtime overlay in `/wbl-fast/usrs/ee/code-swe-data/runtime/pydeps-overlay-immutable-20260608T0525Z`; validation now constructs a LiteLLM DeepSeek model with `thinking.enabled`, `reasoning_effort=high`, and `max_tokens=16384`.
+- Confirmed active generation jobs are CPU-only on `m7i-cpu2`; no H200/GPU partition is involved.
+- Canceled pending medium `deepseek-v4-pro` jobs after fresh runs reached the API and returned `Insufficient Balance`; already-running Pro jobs were left to drain so they can write result artifacts where possible.
+- Built deduplicated r16 Flash replacement manifests from the coverage1 high-quality pool, skipping coverage1 tasks with saved trajectories and currently active task IDs. r16 selected `9,717` unique tasks: hard `243`, medium `7,143`, easy `2,331`; styles are balanced (`4,870` DeepSWE, `4,847` original).
+- Submitted accepted r16 Flash arrays: hard job `300737` and medium jobs `300738`, `300879`, `300880`, `300980`, `301122`, `301204`, `301292`, `301293`. The easy r16 submission was attempted but Slurm returned temporary controller backpressure before accepting it.
+- Early r16 logs show `deepseek-v4-flash` is also now returning `Insufficient Balance`. This makes the current bottleneck the DeepSeek account balance, not Docker, Pyxis, CPU capacity, or prompt/runtime configuration.
+- To avoid wasting Docker pulls and CPU, all pending DeepSeek datagen array elements were canceled. Running elements were left to finish and write failure records/traces where the driver is already active; configuring elements were canceled before driver startup.
+- Queue after pending/configuring cancellation: easy running `114`, hard r16 Flash running `60`, medium r16 Flash running `492` plus `2` completing. There are no pending DeepSeek datagen elements left at this checkpoint.
+
+Current implication: the 50% coverage target cannot progress further until the DeepSeek key has usable balance or a replacement DeepSeek key is provided. When balance is restored, the r16 manifests are already prepared under `runs/swerebench-v2/datagen-20260608-pyxis-deepseek-reasoning1/manifest/` and can be resubmitted quickly.
+
+## 2026-06-08 08:48 UTC
+
+DeepSeek balance blocker follow-up:
+
+- Rechecked DeepSeek directly with a tiny `deepseek-v4-flash` thinking request; the API still returns `Insufficient Balance`.
+- No new jobs were submitted. Prepared r16 manifests remain available for immediate resubmission once the DeepSeek key is funded again.
+- Pending/configuring DeepSeek jobs remain canceled. The visible queue drained from `272` to `47` CPU-only jobs during this monitoring pass; all remaining jobs are on `m7i-cpu2`.
+- Current visible queue: easy Flash `5`, hard r16 Flash `5`, medium r16 Flash `35` running plus `2` completing. No pending DeepSeek datagen elements are visible.
+- r16 hard/medium Flash artifacts are being preserved despite the failed API state. Current sampled r16 artifact counts: hard `55` result files, `45` trajectories, `41` balance-failure results; medium `459` result files, `410` trajectories, `402` balance-failure results, and `3` reward-pass results from jobs that completed before the balance failure dominated.
+
+Current action: continue avoiding new DeepSeek submissions until the API probe succeeds. Resuming coverage generation is now gated on DeepSeek balance, not scheduler capacity, Docker pulls, Pyxis, or the harness.
