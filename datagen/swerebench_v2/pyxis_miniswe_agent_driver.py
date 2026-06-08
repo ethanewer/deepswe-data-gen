@@ -10,6 +10,7 @@ existing Harbor verifier script.
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import os
 import shlex
@@ -301,7 +302,9 @@ def append_result_index(workspace: Path, result: dict[str, Any]) -> None:
     }
     index_path.parent.mkdir(parents=True, exist_ok=True)
     with index_path.open("a", encoding="utf-8") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
         handle.write(json.dumps(record, sort_keys=True) + "\n")
+        fcntl.flock(handle, fcntl.LOCK_UN)
 
 
 def main() -> None:
