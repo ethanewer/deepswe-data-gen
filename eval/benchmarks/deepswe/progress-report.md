@@ -2173,3 +2173,18 @@ DeepSeek balance blocker follow-up:
 - r16 hard/medium Flash artifacts are being preserved despite the failed API state. Current sampled r16 artifact counts: hard `55` result files, `45` trajectories, `41` balance-failure results; medium `459` result files, `410` trajectories, `402` balance-failure results, and `3` reward-pass results from jobs that completed before the balance failure dominated.
 
 Current action: continue avoiding new DeepSeek submissions until the API probe succeeds. Resuming coverage generation is now gated on DeepSeek balance, not scheduler capacity, Docker pulls, Pyxis, or the harness.
+
+## 2026-06-08 09:00 UTC
+
+DeepSeek high-reasoning coverage status:
+
+- Rechecked both `deepseek-v4-flash` and `deepseek-v4-pro` directly with tiny high-reasoning requests; both return `Insufficient Balance`.
+- No new DeepSeek work was submitted. Submitting more while the API is in this state would only consume Docker/CPU and produce balance-failure traces.
+- Remaining live datagen queue is CPU-only on `m7i-cpu2`: easy Flash `2` running, hard Flash `1` running, medium Flash `2` completing. The running jobs have already pulled their Docker images and are retrying on the DeepSeek balance error; they were left to drain so the mini-swe-agent driver can write failure trajectories/results.
+- The current coverage snapshot, counting only tasks with saved mini-swe-agent trajectories as complete, is:
+  - easy: passed unique `164`; complete saved unique `469`; queued/running unique `1849`; complete+queued `2318` of target `2469`.
+  - medium: passed unique `70`; complete saved unique `291`; queued/running unique `3678`; complete+queued `3969` of target `4588`.
+  - hard: passed unique `10`; complete saved unique `123`; queued/running unique `20`; complete+queued `143` of target `148`.
+- Prepared r16 manifests remain ready for resubmission once DeepSeek balance is restored: `9,717` unique high-quality tasks selected, with hard `243`, medium `7,143`, easy `2,331`, balanced between original and DeepSWE prompt styles.
+
+Current blocker: DeepSeek account balance. Docker auth/pulls, CPU partition selection, Pyxis startup, and the high-reasoning mini-swe-agent configuration have all been verified enough to resume quickly after the key is funded.
