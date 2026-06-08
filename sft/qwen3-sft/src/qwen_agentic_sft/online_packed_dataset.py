@@ -96,6 +96,8 @@ def tokenize_chat_example(
     for idx, message in enumerate(messages):
         if message.get("role") != "assistant":
             continue
+        if message.get("trainable") is False or message.get("loss") is False:
+            continue
         start = 0 if idx == 0 else len(encode_text(tokenizer, render_chat(tokenizer, messages[:idx], tools, chat_template)))
         end = len(encode_text(tokenizer, render_chat(tokenizer, messages[: idx + 1], tools, chat_template)))
         if end <= start:

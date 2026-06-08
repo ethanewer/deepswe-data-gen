@@ -231,6 +231,10 @@ def normalize_message(msg: Any) -> dict[str, Any] | None:
             "role": "assistant",
             "content": merge_thinking(reasoning, message_content(msg)),
         }
+        if msg.get("trainable") is False:
+            out["trainable"] = False
+        if msg.get("loss") is False:
+            out["loss"] = False
         calls = normalize_tool_calls(msg.get("tool_calls"))
         if not calls:
             calls = normalize_tool_calls(msg.get("function_calls"))
