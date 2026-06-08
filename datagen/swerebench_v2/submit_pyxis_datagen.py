@@ -213,7 +213,7 @@ docker_login_from_enroot() {{
     echo "docker_login_skipped=no_matching_credential"
     return 1
   fi
-  printf '%s' "$password" | docker login -u "$DOCKER_USER" --password-stdin registry-1.docker.io >"$WORKSPACE/docker-login.log" 2>&1
+  printf '%s' "$password" | docker login -u "$DOCKER_USER" --password-stdin >"$WORKSPACE/docker-login.log" 2>&1
   local status=$?
   unset password
   if [[ "$status" -eq 0 ]]; then
