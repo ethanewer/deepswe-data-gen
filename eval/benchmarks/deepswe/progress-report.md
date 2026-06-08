@@ -1961,6 +1961,21 @@ DeepSeek reasoning-mode throughput update:
 - Queue/resource state at update time: `m7i-cpu2` is saturated as intended, with roughly `3806/4800` CPUs allocated and reasoning jobs in `RUNNING`, `CONFIGURING`, and `COMPLETING` states. No H200/GPU partitions are being used for this wave.
 - Next action: monitor container/API startup and passrates; retry medium shards `s06/s07` when Slurm accepts more arrays; keep all new submissions on CPU-only nodes and under `/wbl-fast`.
 
+## 2026-06-08 03:36 UTC
+
+DeepSeek reasoning-mode bottleneck follow-up:
+
+- Commit state pushed: `3537eec` enabled DeepSeek thinking/high/16k and `dockerd://`; `2428a62` switched Docker auth to the Docker Hub default endpoint; `c251f32` stopped calling the Docker login endpoint per task and writes per-workspace Docker auth config from the existing enroot credential; `dc38bd8` added retry/backoff for transient Docker pull failures.
+- Bottleneck sequence observed:
+  - `r03` proved `dockerd://` fixes rootless Enroot extraction failures, but default Docker login was initially wrong and many pulls hit the unauthenticated rate limit.
+  - `r04/r05` fixed the auth target, then exposed Docker Hub login/API throttling under hundreds of simultaneous login calls.
+  - Current launcher avoids Docker login calls and retries pulls with backoff on `429`, TLS timeout, reset, EOF, and timeout errors.
+- Validation probe: CPU-only auth-config pull probe `263640` pulled `swerebenchv2/cloudflare-cloudflare-go:959-1190d57` successfully without calling `docker login`.
+- Current stable wave: `r06` retry set excludes active jobs and any task already having `r03/r04/r05` trajectories. Prepared rows: `easy=3856`, `medium=7131`, `hard=189`.
+- Accepted `r06` jobs so far: hard `273072`; easy `273073,273074,273125,273126,273127`; medium `273128,273184,273195,273196,273197,273198`. Medium `s06/s07` are still prepared but not submitted due Slurm `sbatch` backpressure.
+- Current `r06` pull sample: `159` jobs reached Docker auth config, `142` reached `docker_pull=ok`, `146` entered `dockerd` Pyxis, and `20` used the new retry sleep path before continuing. This is the first stable Docker-throughput configuration in this wave.
+- Current concurrency is intentionally lower while Docker Hub throttling recovers: hard `20`, easy `75`, medium `60` accepted from `s00`-`s05`. Increase only after pull success remains stable.
+
 ## 2026-06-08 03:17 UTC
 
 DeepSeek Docker-reset monitor update:
