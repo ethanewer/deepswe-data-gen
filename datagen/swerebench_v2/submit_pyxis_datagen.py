@@ -213,15 +213,17 @@ docker_login_from_enroot() {{
     echo "docker_login_skipped=no_matching_credential"
     return 1
   fi
-  printf '%s' "$password" | docker login -u "$DOCKER_USER" --password-stdin >"$WORKSPACE/docker-login.log" 2>&1
-  local status=$?
+  local auth
+  auth="$(printf '%s:%s' "$DOCKER_USER" "$password" | base64 | tr -d '\\n')"
   unset password
-  if [[ "$status" -eq 0 ]]; then
-    echo "docker_login=ok"
-  else
-    echo "docker_login=failed status=$status"
-  fi
-  return "$status"
+  mkdir -p "$HOME/.docker"
+  umask 077
+  cat >"$HOME/.docker/config.json" <<JSON
+{{"auths":{{"https://index.docker.io/v1/":{{"auth":"$auth"}},"registry-1.docker.io":{{"auth":"$auth"}},"docker.io":{{"auth":"$auth"}}}}}}
+JSON
+  unset auth
+  echo "docker_auth_config=ok" >"$WORKSPACE/docker-login.log"
+  echo "docker_login=ok"
 }}
 
 docker_pull_image() {{
