@@ -1508,6 +1508,16 @@ DeepSeek high-reasoning coverage push:
 - Current queue state at snapshot time: about `801` running array elements, with pending work held by array throttles rather than GPU/CPU partition mismatch.
 - Next action: continue monitoring post-overlay logs; retry any remaining no-trajectory dependency/startup failures while maintaining high CPU throughput.
 
+## 2026-06-08 04:39 UTC
+
+DeepSeek high-reasoning throughput addendum:
+
+- A few fresh r08 starts still saw the old overlay inode through shared-storage caching, so the validated clean dependency tree was also synced into `/wbl-fast/usrs/ee/code-swe-data/runtime/pydeps-overlay.backup.20260608T040818Z`. Both the active overlay path and the backup inode now validate through `pydantic`, LiteLLM, and mini-swe-agent imports.
+- Post-repair r08 sample is clean: latest r08 logs had no missing-module errors, no Docker `429`, and r08 has started writing trajectories.
+- Third ramp applied: easy arrays to `125`, medium arrays to `60`, hard unchanged. Latest queue sample shows `1075` active/configuring/completing elements across `280` CPU nodes, all on `m7i-cpu2`.
+- Recent trajectory throughput sample: `117` trajectories written in the last 15 minutes across r06/r08, with both `deepseek-v4-flash` and `deepseek-v4-pro` active.
+- Next action: keep monitoring at the new throttle, then recompute strict task coverage and submit another deduplicated failed-only retry wave if no-trajectory startup failures remain.
+
 ## 2026-06-07 17:04 UTC
 
 DeepSeek Docker-reset monitor update:
