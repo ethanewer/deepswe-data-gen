@@ -2232,3 +2232,21 @@ MiMo/OpenRouter reasoning coverage expansion:
 - Reasoning quality sample after fixing host/container path resolution: `80` submitted trajectories checked, `5,254` assistant messages checked, `0` assistant messages missing reasoning.
 
 Next action: monitor post-fix auth-first jobs for real trajectory growth, then build retry manifests for zero-call Docker/runtime failures using a new rollout id so the failure artifacts remain preserved.
+
+## 2026-06-08 19:36 UTC
+
+MiMo/OpenRouter native reasoning retry:
+
+- Active generation remains CPU-only on `m7i-cpu2`; no GPU/H200 jobs are involved.
+- The unstable dependency path was isolated: copied packages in `.venv` and the main overlay were being removed/reverted. New Slurm scripts now prepend the stable Pydantic stack at `/wbl-fast/usrs/ee/code-swe-data/runtime/manual-pydeps/pydantic-stack-clean` before the mini-swe-agent overlay.
+- The fixed-PythonPath retry initially reached task containers but exposed a separate LiteLLM import failure through `aiohttp`, reported by mini-swe-agent as `Unknown model class: litellm`. Pending LiteLLM-configured `fp*` elements were canceled; running elements were left to finish or pick up the patched driver if they had not entered the container yet.
+- The driver now routes `openrouter/*` rows through mini-swe-agent's native `openrouter` model class, strips the `openrouter/` prefix for the API model name, passes `reasoning: {"effort": "high", "exclude": false}` as a top-level OpenRouter payload field, and uses a 600s OpenRouter request timeout for high-reasoning calls.
+- Built OpenRouter-native retry manifest from the unique-reasoning missing set, skipping already saved all-reasoning trajectories and active running tasks. Retry rows: `10,460` total, difficulty split `easy=3,469`, `medium=6,868`, `hard=123`; model split `xiaomi/mimo-v2.5=10,337`, `xiaomi/mimo-v2.5-pro=123`.
+- Retry language mix: python `2,689`, ts `1,835`, js `1,669`, rust `1,600`, go `1,573`, java `553`, php `476`, cpp `35`, c `30`.
+- Accepted OpenRouter-native shards so far: `or00`-`or17` plus direct retry `or18`, covering `9,500` submitted rows. `or19` and `or20` (`960` rows total) are still hitting temporary Slurm `Resource temporarily unavailable` and will be retried after scheduler cooldown.
+- Current visible MiMo queue after native submission: about `9.1k` array elements, all on `m7i-cpu2`, with roughly `414` running and the rest pending depending on the polling instant.
+- Current MiMo trace tree snapshot from the latest scan: status counts include `Submitted=1,504`, `ValueError=1,305`, `PyxisContainerStartError=5,433`, `LimitsExceeded=47`, `TimeExceeded=12`, `FileNotFoundError=2`. The large Pyxis/ValueError counts are preserved failed attempts from earlier infrastructure/LiteLLM waves and are not counted as successful coverage.
+- Current reward passes in this MiMo run: easy `170`, medium `166`, hard `0`.
+- Native OpenRouter jobs are producing real trajectories now. Recent bounded sample: `80` submitted trajectories, `4,371` assistant messages checked, `0` assistant messages missing reasoning.
+
+Next action: keep monitoring native OpenRouter jobs for pass rate and API stability, retry `or19`/`or20`, and build another failed/no-reasoning retry manifest after the active queue drains enough to avoid duplicates.

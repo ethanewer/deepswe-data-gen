@@ -178,24 +178,30 @@ def build_agent(args: argparse.Namespace, workdir: str, trajectory_path: Path) -
         )
     )
     reasoning_enabled = thinking_enabled or openrouter_reasoning_enabled
-    model_kwargs: dict[str, Any] = {
-        "max_tokens": args.max_tokens,
-        "timeout": args.model_timeout,
-    }
+    use_native_openrouter = args.litellm_model.startswith("openrouter/")
+    model_kwargs: dict[str, Any] = {"max_tokens": args.max_tokens}
+    if use_native_openrouter:
+        model_kwargs["request_timeout"] = args.model_timeout
+    else:
+        model_kwargs["timeout"] = args.model_timeout
     if thinking_enabled:
         model_kwargs["reasoning_effort"] = args.reasoning_effort
     if not reasoning_enabled:
         model_kwargs["temperature"] = args.temperature
     if args.api_base:
         model_kwargs["api_base"] = args.api_base
-    if extra_body:
+    if extra_body and use_native_openrouter:
+        model_kwargs.update(extra_body)
+    elif extra_body:
         model_kwargs["extra_body"] = extra_body
+    model_name = args.litellm_model.removeprefix("openrouter/") if use_native_openrouter else args.litellm_model
+    model_class = "openrouter" if use_native_openrouter else "litellm"
 
     model_config = recursive_merge(
         config.get("model", {}),
         {
-            "model_name": args.litellm_model,
-            "model_class": "litellm",
+            "model_name": model_name,
+            "model_class": model_class,
             "model_kwargs": model_kwargs,
             "cost_tracking": "ignore_errors",
         },

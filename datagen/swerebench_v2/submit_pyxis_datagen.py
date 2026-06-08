@@ -102,10 +102,20 @@ def write_array_script(args: argparse.Namespace, n_rows: int) -> Path:
     cache_root = Path("/wbl-fast/usrs/ee/code-swe-data/cache")
     repo_root = REPO_ROOT
     shared_root = REPO_ROOT.parent
-    default_pydeps_overlay = shared_root / "runtime" / "pydeps-overlay-immutable-20260608T0525Z"
+    default_pydeps_overlay = shared_root / "runtime" / "pydeps-miniswe-complete-20260608T1830Z"
+    if not default_pydeps_overlay.exists():
+        default_pydeps_overlay = shared_root / "runtime" / "pydeps-overlay-immutable-20260608T0525Z"
     if not default_pydeps_overlay.exists():
         default_pydeps_overlay = shared_root / "runtime" / "pydeps-overlay"
     pydeps_overlay = Path(os.environ.get("PYDEPS_OVERLAY", str(default_pydeps_overlay)))
+    pydantic_stack = shared_root / "runtime" / "manual-pydeps" / "pydantic-stack-clean"
+    pythonpath_parts = [
+        *([pydantic_stack] if pydantic_stack.exists() else []),
+        pydeps_overlay,
+        repo_root / ".venv" / "lib" / "python3.12" / "site-packages",
+        repo_root,
+    ]
+    pythonpath = ":".join(str(path) for path in pythonpath_parts)
 
     script = f"""#!/usr/bin/env bash
 #SBATCH -J {args.job_name}
@@ -130,6 +140,13 @@ if [[ -z "$ROW" ]]; then
 fi
 
 IFS=$'\\t' read -r IDX ROLLOUT_ID INSTANCE_ID TASK_DIR WORKSPACE IMAGE MODEL LITELLM_MODEL API_KEY_ENV API_BASE EXTRA_BODY_JSON DIFFICULTY LANGUAGE STYLE REPO <<<"$ROW"
+SUBMIT_DIR="${{SLURM_SUBMIT_DIR:-$PWD}}"
+if [[ "$TASK_DIR" != /* ]]; then
+  TASK_DIR="$SUBMIT_DIR/$TASK_DIR"
+fi
+if [[ "$WORKSPACE" != /* ]]; then
+  WORKSPACE="$SUBMIT_DIR/$WORKSPACE"
+fi
 mkdir -p "$WORKSPACE"
 if [[ "$API_BASE" == "-" ]]; then
   API_BASE=""
@@ -161,7 +178,7 @@ export HF_HOME={shell_quote(cache_root / "hf")}
 export XDG_CACHE_HOME={shell_quote(cache_root / "xdg")}
 export UV_CACHE_DIR={shell_quote(cache_root / "uv")}
 export PIP_CACHE_DIR={shell_quote(cache_root / "pip")}
-export PYTHONPATH={shell_quote(pydeps_overlay)}:{shell_quote(repo_root / ".venv" / "lib" / "python3.12" / "site-packages")}:{shell_quote(repo_root)}
+export PYTHONPATH={shell_quote(pythonpath)}
 export HOME="$WORKSPACE/home"
 export ENROOT_TEMP_PATH="$WORKSPACE/enroot-tmp"
 export MSWEA_COST_TRACKING=ignore_errors
