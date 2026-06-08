@@ -2206,3 +2206,29 @@ DeepSeek high-reasoning post-drain coverage table:
 - Trial-level saved trajectories: easy `2,172`, medium `2,379`, hard `283`.
 - Trial-level passes: easy `568`, medium `308`, hard `17`.
 - Remaining blocker for new coverage remains DeepSeek account balance; no additional DeepSeek jobs were submitted.
+
+## 2026-06-08 17:55 UTC
+
+MiMo/OpenRouter reasoning coverage expansion:
+
+- Switched the active coverage push to the provided OpenRouter key only. The manifest maps easy/medium tasks to `xiaomi/mimo-v2.5` and hard tasks to `xiaomi/mimo-v2.5-pro`.
+- Verified both MiMo model IDs return non-empty OpenRouter reasoning fields when called with `reasoning: {"effort": "high", "exclude": false}`. New Slurm manifests carry `extra_body_json={"reasoning":{"effort":"high","exclude":false}}`, `max_tokens=16384`, and `reasoning_effort=high`.
+- Used the existing unique reasoning dataset at `/wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/deepswe-highquality-unique-reasoning/data/train.jsonl` to select missing high-quality tasks. Missing count before this wave: `11,795` tasks (`easy=3,857`, `medium=7,809`, `hard=129`).
+- Smoke jobs ran on CPU-only `m7i-cpu2` nodes. The saved smoke trajectories had reasoning in every checked assistant message.
+- Initial scale submission exposed two infrastructure issues:
+  - Docker pull wrapper retried anonymous first, then logged in, but did not retry after Docker Hub returned the exact `unauthenticated pull rate limit` message. This caused many preserved zero-call failure results.
+  - The mounted mini-swe-agent overlay was missing runtime deps (`rich`, `typing_extensions`, `pydantic`, `pydantic_core`), causing auth-first jobs to fail after image import.
+- Fixed the submit wrapper to retry immediately after Docker login and to treat `rate limit` as transient. Also added `PYTHONDONTWRITEBYTECODE=1` for newly generated scripts.
+- Repaired the `/wbl-fast` runtime overlay in place from existing local dependency directories; validation now imports `rich`, `pydantic`, `litellm`, and `minisweagent` successfully.
+- Canceled `7,432` pending old-script array elements before they started. Running elements were left to finish and preserve their results/traces.
+- Built a replacement manifest with `9,729` unique rows: the canceled pending rows plus the `2,297` never-submitted deepswe rows. All `17` auth-first replacement arrays were accepted on `m7i-cpu2`:
+  - `af00`-`af09`: jobs `320127`, `320153`-`320158`, `320260`-`320262`
+  - `af10`-`af16`: jobs `321004`-`321006`, `321041`-`321044`
+- Current MiMo queue after accepting all replacements: `9,360` visible array elements, `311` running and `9,049` pending, all on `m7i-cpu2`.
+- Current MiMo result files: `2,436` unique tasks. Status breakdown: `Submitted=176`, `PyxisContainerStartError=2,245`, `ValueError=11`, `LimitsExceeded=3`, `FileNotFoundError=1`. Most `PyxisContainerStartError` entries are preserved infrastructure failures from before the Docker/runtime fixes and will need retry manifests rather than being counted as covered reasoning trajectories.
+- Current result files by difficulty: `easy=912`, `medium=1,488`, `hard=36`. Reward passes so far: `easy=28`, `medium=28`, `hard=0`.
+- Current result files by model: `xiaomi/mimo-v2.5=2,400`, `xiaomi/mimo-v2.5-pro=36`. Recorded cost so far: about `$37.48` for `xiaomi/mimo-v2.5` and `$2.68` for `xiaomi/mimo-v2.5-pro`.
+- Saved trajectory files counted in the trace tree: `296`.
+- Reasoning quality sample after fixing host/container path resolution: `80` submitted trajectories checked, `5,254` assistant messages checked, `0` assistant messages missing reasoning.
+
+Next action: monitor post-fix auth-first jobs for real trajectory growth, then build retry manifests for zero-call Docker/runtime failures using a new rollout id so the failure artifacts remain preserved.

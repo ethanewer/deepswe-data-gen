@@ -167,13 +167,24 @@ def build_agent(args: argparse.Namespace, workdir: str, trajectory_path: Path) -
         and isinstance(extra_body.get("thinking"), dict)
         and extra_body["thinking"].get("type") == "enabled"
     )
+    reasoning_config = extra_body.get("reasoning") if isinstance(extra_body, dict) else None
+    openrouter_reasoning_enabled = (
+        isinstance(reasoning_config, dict)
+        and not reasoning_config.get("exclude", False)
+        and (
+            reasoning_config.get("enabled") is True
+            or bool(reasoning_config.get("effort"))
+            or bool(reasoning_config.get("max_tokens"))
+        )
+    )
+    reasoning_enabled = thinking_enabled or openrouter_reasoning_enabled
     model_kwargs: dict[str, Any] = {
         "max_tokens": args.max_tokens,
         "timeout": args.model_timeout,
     }
     if thinking_enabled:
         model_kwargs["reasoning_effort"] = args.reasoning_effort
-    else:
+    if not reasoning_enabled:
         model_kwargs["temperature"] = args.temperature
     if args.api_base:
         model_kwargs["api_base"] = args.api_base

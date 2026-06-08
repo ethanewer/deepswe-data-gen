@@ -31,11 +31,17 @@ MODEL_SETTINGS: dict[str, dict[str, Any]] = {
         "api_base": "",
         "extra_body": {"reasoning": {"effort": "none", "exclude": True}},
     },
+    "xiaomi/mimo-v2.5": {
+        "litellm_model": "openrouter/xiaomi/mimo-v2.5",
+        "api_key_env": "OPENROUTER_API_KEY",
+        "api_base": "",
+        "extra_body": {"reasoning": {"effort": "high", "exclude": False}},
+    },
     "xiaomi/mimo-v2.5-pro": {
         "litellm_model": "openrouter/xiaomi/mimo-v2.5-pro",
         "api_key_env": "OPENROUTER_API_KEY",
         "api_base": "",
-        "extra_body": {},
+        "extra_body": {"reasoning": {"effort": "high", "exclude": False}},
     },
 }
 

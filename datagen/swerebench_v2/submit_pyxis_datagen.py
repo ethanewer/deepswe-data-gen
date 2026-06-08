@@ -167,6 +167,7 @@ export ENROOT_TEMP_PATH="$WORKSPACE/enroot-tmp"
 export MSWEA_COST_TRACKING=ignore_errors
 export MSWEA_SILENT_STARTUP=1
 export ENROOT_REMAP_ROOT=yes
+export PYTHONDONTWRITEBYTECODE=1
 mkdir -p "$HOME"
 mkdir -p "$ENROOT_TEMP_PATH"
 mkdir -p "$ANON_ENROOT_CONFIG_PATH"
@@ -253,6 +254,7 @@ docker_pull_image() {{
   fi
   : >"$WORKSPACE/docker-pull.log"
   for attempt in 1 2 3 4 5 6; do
+    refreshed_auth=0
     echo "docker_pull_attempt=$attempt" | tee -a "$WORKSPACE/docker-pull.log"
     docker pull "$DOCKER_PULL_REF" >>"$WORKSPACE/docker-pull.log" 2>&1
     status=$?
@@ -264,8 +266,13 @@ docker_pull_image() {{
       echo "docker_pull_initial_failed status=$status; refreshing auth config" | tee -a "$WORKSPACE/docker-pull.log"
       docker_login_from_enroot || true
       logged_in=1
+      refreshed_auth=1
     fi
-    if [[ "$attempt" -lt 6 ]] && grep -Eiq '429|Too Many Requests|TLS handshake timeout|connection reset|unexpected EOF|temporarily unavailable|timeout' "$WORKSPACE/docker-pull.log"; then
+    if [[ "$refreshed_auth" -eq 1 && "$attempt" -lt 6 ]]; then
+      echo "docker_pull_retry_after_auth=1" | tee -a "$WORKSPACE/docker-pull.log"
+      continue
+    fi
+    if [[ "$attempt" -lt 6 ]] && grep -Eiq '429|Too Many Requests|rate limit|TLS handshake timeout|connection reset|unexpected EOF|temporarily unavailable|timeout' "$WORKSPACE/docker-pull.log"; then
       sleep_seconds=$((20 * attempt + RANDOM % 20))
       echo "docker_pull_retry_sleep=$sleep_seconds" | tee -a "$WORKSPACE/docker-pull.log"
       sleep "$sleep_seconds"
@@ -298,7 +305,7 @@ run_agent_attempt() {{
   --container-remap-root \\
   --no-container-mount-home \\
   --container-mounts="$MOUNTS" \\
-  --container-env=OPENAI_API_KEY,DEEPSEEK_API_KEY,OPENROUTER_API_KEY,OPENAI_BASE_URL,OPENAI_API_BASE,HF_HOME,XDG_CACHE_HOME,UV_CACHE_DIR,PIP_CACHE_DIR,PYTHONPATH,HOME,MSWEA_COST_TRACKING,MSWEA_SILENT_STARTUP \\
+  --container-env=OPENAI_API_KEY,DEEPSEEK_API_KEY,OPENROUTER_API_KEY,OPENAI_BASE_URL,OPENAI_API_BASE,HF_HOME,XDG_CACHE_HOME,UV_CACHE_DIR,PIP_CACHE_DIR,PYTHONPATH,HOME,MSWEA_COST_TRACKING,MSWEA_SILENT_STARTUP,PYTHONDONTWRITEBYTECODE \\
   {shell_quote(args.python)} {shell_quote(DRIVER)} \\
     --task-dir "$TASK_DIR" \\
     --workspace /workspace \\
