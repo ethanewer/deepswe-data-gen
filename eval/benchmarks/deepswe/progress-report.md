@@ -1487,6 +1487,27 @@ Queue snapshot:
 No scheduled DeepSeek datagen jobs currently visible in squeue.
 ```
 
+## 2026-06-08 04:19 UTC
+
+DeepSeek high-reasoning coverage push:
+
+- All current DeepSeek generation uses thinking enabled, `reasoning_effort=high`, and `max_tokens=16384`; easy uses `deepseek-v4-flash`, medium/hard use `deepseek-v4-pro`.
+- CPU-only status: all visible datagen jobs are on `m7i-cpu2`; no H200/GPU partition is being used.
+- Runtime fix: rebuilt a clean mini-swe-agent/LiteLLM dependency overlay under `/wbl-fast/usrs/ee/code-swe-data/runtime/pydeps-overlay` and atomically swapped it in after import validation. This fixes the missing `pydantic`, `typing_extensions`, `attrs`, and `anyio` failures seen in earlier r07/r06 starts.
+- Throughput ramp: raised current array throttles to easy r06 `75` per shard, medium r06 `45` per shard, hard r06 `60`, and r07 retry arrays `50/50/50` where applicable.
+- Submitted deduplicated r08 retry wave for rows that had `result.json` but no saved trajectory and were not already complete or active: easy `818` rows (`job 276392`, concurrency `80`), medium `585` rows (`job 276474`, concurrency `40`), hard `124` rows (`job 276475`, concurrency `30`).
+- Current strict coverage snapshot counts only tasks with saved mini-swe-agent trajectories as complete:
+
+| difficulty | high-quality total | 50% target | passed unique | complete unique | queued/running unique | complete + queued | remaining now | remaining if queued complete |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| easy | 4938 | 2469 | 135 | 411 | 3453 | 3849 | 2058 | 0 |
+| medium | 9175 | 4588 | 50 | 231 | 5180 | 5381 | 4357 | 0 |
+| hard | 295 | 148 | 8 | 119 | 136 | 243 | 29 | 0 |
+
+- Trial-level saved trajectories and pass counts: easy `272/826` passed, medium `100/466` passed, hard `11/190` passed.
+- Current queue state at snapshot time: about `801` running array elements, with pending work held by array throttles rather than GPU/CPU partition mismatch.
+- Next action: continue monitoring post-overlay logs; retry any remaining no-trajectory dependency/startup failures while maintaining high CPU throughput.
+
 ## 2026-06-07 17:04 UTC
 
 DeepSeek Docker-reset monitor update:
