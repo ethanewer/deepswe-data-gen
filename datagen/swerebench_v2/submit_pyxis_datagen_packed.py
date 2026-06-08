@@ -174,6 +174,7 @@ run_row() {{
   local row_log_id="${{SLURM_ARRAY_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}_row${{row_number}}"
   local STDOUT_LOG="$LOG_DIR/{args.job_name}.${{row_log_id}}.out"
   local STDERR_LOG="$LOG_DIR/{args.job_name}.${{row_log_id}}.err"
+  local PULL_LOCK="$LOG_DIR/{args.job_name}.${{SLURM_ARRAY_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}.docker-pull.lock"
 
   {{
     set -u
@@ -302,7 +303,7 @@ JSON
           echo "docker_pull_retry_after_auth=1" | tee -a "$WORKSPACE/docker-pull.log"
           continue
         fi
-        if [[ "$attempt" -lt 6 ]] && grep -Eiq '429|Too Many Requests|rate limit|TLS handshake timeout|connection reset|unexpected EOF|temporarily unavailable|timeout' "$WORKSPACE/docker-pull.log"; then
+        if [[ "$attempt" -lt 6 ]] && grep -Eiq '429|Too Many Requests|rate limit|TLS handshake timeout|connection reset|unexpected EOF|EOF|failed to do request|temporarily unavailable|timeout' "$WORKSPACE/docker-pull.log"; then
           local sleep_seconds=$((20 * attempt + RANDOM % 20))
           echo "docker_pull_retry_sleep=$sleep_seconds" | tee -a "$WORKSPACE/docker-pull.log"
           sleep "$sleep_seconds"
@@ -360,8 +361,16 @@ JSON
     local STATUS=0
     if [[ "$CONTAINER_SOURCE" == "dockerd" ]]; then
       LAST_PYXIS_IMAGE="$DOCKERD_PYXIS_IMAGE"
-      docker_pull_image
-      STATUS=$?
+      if command -v flock >/dev/null 2>&1; then
+        (
+          flock 9
+          docker_pull_image
+        ) 9>"$PULL_LOCK"
+        STATUS=$?
+      else
+        docker_pull_image
+        STATUS=$?
+      fi
       if [[ "$STATUS" -eq 0 ]]; then
         run_agent_attempt dockerd "$DOCKERD_PYXIS_IMAGE" ""
         STATUS=$?
