@@ -1518,6 +1518,18 @@ DeepSeek high-reasoning throughput addendum:
 - Recent trajectory throughput sample: `117` trajectories written in the last 15 minutes across r06/r08, with both `deepseek-v4-flash` and `deepseek-v4-pro` active.
 - Next action: keep monitoring at the new throttle, then recompute strict task coverage and submit another deduplicated failed-only retry wave if no-trajectory startup failures remain.
 
+## 2026-06-08 04:59 UTC
+
+DeepSeek high-reasoning r09 recovery wave:
+
+- Strict coverage recompute showed current queued work was no longer enough for 50% if only saved trajectories count: projected shortfalls were easy `1223`, medium `963`, hard `26`.
+- Prepared deduplicated r09 failed-only retry manifests, excluding tasks already complete or active: easy `2756`, medium `1874`, hard `121`.
+- Slurm array-size limit required splitting r09: easy shards `900/900/900/56`, medium shards `800/800/274`, hard `121`.
+- Submitted r09 jobs on `m7i-cpu2`: easy `281902,281996,281997,281998`; medium `281999,282000,282001`; hard `282002`.
+- Current r09 queue sample: hard is now running (`50` running, `71` pending); easy has `474` running and `2367` pending; medium has `460` running and `4210` pending.
+- r09 startup health sample: no missing-module errors and no Docker `429`; r09 trajectories have not landed yet because the wave is still in startup/agent phase.
+- Next action: continue timed monitoring, recompute strict coverage after r09 starts producing trajectories, and retry only no-trajectory failures that remain outside active/complete sets.
+
 ## 2026-06-07 17:04 UTC
 
 DeepSeek Docker-reset monitor update:
