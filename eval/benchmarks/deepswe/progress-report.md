@@ -2250,3 +2250,20 @@ MiMo/OpenRouter native reasoning retry:
 - Native OpenRouter jobs are producing real trajectories now. Recent bounded sample: `80` submitted trajectories, `4,371` assistant messages checked, `0` assistant messages missing reasoning.
 
 Next action: keep monitoring native OpenRouter jobs for pass rate and API stability, retry `or19`/`or20`, and build another failed/no-reasoning retry manifest after the active queue drains enough to avoid duplicates.
+
+## 2026-06-08 20:20 UTC
+
+MiMo/OpenRouter coverage expansion:
+
+- Checkpointed and pushed the OpenRouter native/reasoning fixes as commit `96b370b`.
+- Used the unique all-reasoning dataset file to select still-missing high-quality tasks. Current accounting: `3,501` tasks already in the unique reasoning dataset, `11,795` high-quality tasks missing from that dataset, `15,296` high-quality tasks total.
+- Native retry manifest covers `10,460` of the missing tasks. Accepted native shards now cover `10,000` tasks: `or00`-`or19`. The only unaccepted native shard is `or20` with `460` tasks.
+- Built a no-duplicate gap manifest for the tasks absent from both the unique reasoning dataset and the native retry manifest: `1,335` rows (`easy=388`, `medium=941`, `hard=6`), model split `xiaomi/mimo-v2.5=1,329`, `xiaomi/mimo-v2.5-pro=6`, style split `original=806`, `deepswe=529`.
+- Split the gap manifest into three CPU arrays. Accepted gap shards: `gr03-00` job `338318` (`500` tasks) and `gr03-02` job `339911` (`335` tasks). Remaining unaccepted gap shard: `gr03-01` (`500` tasks).
+- Accepted-or-complete coverage target accounting is now `14,336 / 15,296` high-quality tasks. Remaining scheduler-blocked tasks are `960` total: `or20=460`, `gr03-01=500`.
+- Current visible MiMo queue: `9,049` array elements, `414` running and `8,635` pending, all on `m7i-cpu2`.
+- Current MiMo trace tree snapshot: `9,295` result files, `2,945` non-empty trajectory files. Status counts include `Submitted=2,462`, `PyxisContainerStartError=5,435`, `ValueError=1,305`, `LimitsExceeded=70`, `TimeExceeded=21`, `FileNotFoundError=2`.
+- Current reward passes in this MiMo run: `xiaomi/mimo-v2.5` easy `244`, medium `203`; hard/pro passes are still `0` in the current snapshot.
+- Reasoning quality sample remains clean: `120` recent submitted trajectories checked, `7,493` assistant messages checked, `0` assistant messages missing reasoning.
+
+Next action: continue the retry loop for `or20` and `gr03-01` until Slurm accepts both, while monitoring that newly submitted jobs preserve reasoning in every assistant message.
