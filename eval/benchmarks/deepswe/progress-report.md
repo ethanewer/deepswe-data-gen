@@ -2299,3 +2299,17 @@ MiMo/OpenRouter queue and runtime repair:
 - Revalidated the mounted runtime with `python3 -S` so it does not depend on local site-packages. Imports now pass for `typing_extensions`, `jinja2.StrictUndefined`, `pydantic`, `requests`, `urllib3`, `DefaultAgent`, and native `OpenRouterModel`.
 
 Next action: keep monitoring newly starting MiMo jobs after the `typing_extensions` repair before submitting any additional retries, so the queue does not accumulate preserved infrastructure failures.
+
+## 2026-06-08 22:08 UTC
+
+MiMo/OpenRouter stale-wave cancellation and submitter fix:
+
+- Follow-up log inspection showed the 22:00 runtime repair was not enough for already-generated Slurm scripts: `PYTHONPATH` placed the pinned mini-swe-agent overlay before the repaired dependency stack, so broken `jinja2`/missing `pydantic` entries could still win.
+- Repointed the mounted dependency aliases to the validated full overlay `/wbl-fast/usrs/ee/code-swe-data/runtime/pydeps-mimo-stable-20260608T2136Z`:
+  - `/wbl-fast/usrs/ee/code-swe-data/runtime/manual-pydeps/pydantic-stack-clean`
+  - `/wbl-fast/usrs/ee/code-swe-data/runtime/pydeps-miniswe-complete-20260608T1830Z`
+- Validated those exact alias paths with `python3 -S`; imports pass for `typing_extensions`, `jinja2.StrictUndefined`, `pydantic`, `pydantic_core`, `requests`, `urllib3`, `DefaultAgent`, and native `OpenRouterModel`.
+- Patched the Pyxis submitter so future Slurm scripts put the repaired dependency stack before the pinned mini-swe-agent overlay in `PYTHONPATH`.
+- Canceled the remaining old-script MiMo elements because they were actively producing preserved zero-call dependency failures. Final queue after cleanup: `0` visible MiMo elements and `JobArrayTaskLimit=0`.
+
+Next action: submit only a small corrected probe wave first, verify no dependency failures and all assistant messages preserve reasoning, then resume controlled coverage retries without array throttles that create `JobArrayTaskLimit`.

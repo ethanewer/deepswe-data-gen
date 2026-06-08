@@ -110,8 +110,8 @@ def write_array_script(args: argparse.Namespace, n_rows: int) -> Path:
     pydeps_overlay = require_pinned_minisweagent_overlay()
     pydantic_stack = shared_root / "runtime" / "manual-pydeps" / "pydantic-stack-clean"
     pythonpath_parts = [
-        pydeps_overlay,
         *([pydantic_stack] if pydantic_stack.exists() else []),
+        pydeps_overlay,
         repo_root / ".venv" / "lib" / "python3.12" / "site-packages",
         repo_root,
     ]
