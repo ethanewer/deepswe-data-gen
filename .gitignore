@@ -36,3 +36,17 @@ virtualenv/
 __pycache__/
 *.pyc
 .DS_Store
+
+# Local model serving runtime artifacts. Keep scripts/docs in git, but keep
+# downloaded checkpoints, caches, venvs, and generated logs outside the repo.
+/local_model_serving/
+/local_model_serving_runtime/
+/runtime/local_model_serving/
+/models/
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+*.gguf
+*.onnx
+*.bin

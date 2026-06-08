@@ -22,3 +22,6 @@ Start with:
 Detailed setup, model configuration, and per-benchmark commands are documented
 in [eval/README.md](eval/README.md). Data generation commands are documented in
 [datagen/README.md](datagen/README.md).
+
+Local Kimi K2.6 and MiMo V2.5 serving setup for SWE-RBench synthetic data is
+documented in [docs/local_model_serving.md](docs/local_model_serving.md).
