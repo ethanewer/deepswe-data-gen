@@ -237,18 +237,28 @@ docker_pull_image() {{
     echo "docker_image_present=$DOCKER_PULL_REF"
     return 0
   fi
-  docker pull "$DOCKER_PULL_REF" >"$WORKSPACE/docker-pull.log" 2>&1
-  status=$?
-  if [[ "$status" -eq 0 ]]; then
-    echo "docker_pull=ok"
-    return 0
-  fi
-  if [[ "$logged_in" -eq 0 && "$DOCKER_LOGIN_FROM_ENROOT" -eq 1 && -n "$DOCKER_USER" ]]; then
-    echo "docker_pull_initial_failed status=$status; retrying after login"
-    docker_login_from_enroot || true
+  : >"$WORKSPACE/docker-pull.log"
+  for attempt in 1 2 3 4 5 6; do
+    echo "docker_pull_attempt=$attempt" | tee -a "$WORKSPACE/docker-pull.log"
     docker pull "$DOCKER_PULL_REF" >>"$WORKSPACE/docker-pull.log" 2>&1
     status=$?
-  fi
+    if [[ "$status" -eq 0 ]]; then
+      echo "docker_pull=ok"
+      return 0
+    fi
+    if [[ "$logged_in" -eq 0 && "$DOCKER_LOGIN_FROM_ENROOT" -eq 1 && -n "$DOCKER_USER" ]]; then
+      echo "docker_pull_initial_failed status=$status; refreshing auth config" | tee -a "$WORKSPACE/docker-pull.log"
+      docker_login_from_enroot || true
+      logged_in=1
+    fi
+    if [[ "$attempt" -lt 6 ]] && grep -Eiq '429|Too Many Requests|TLS handshake timeout|connection reset|unexpected EOF|temporarily unavailable|timeout' "$WORKSPACE/docker-pull.log"; then
+      sleep_seconds=$((20 * attempt + RANDOM % 20))
+      echo "docker_pull_retry_sleep=$sleep_seconds" | tee -a "$WORKSPACE/docker-pull.log"
+      sleep "$sleep_seconds"
+      continue
+    fi
+    break
+  done
   if [[ "$status" -eq 0 ]]; then
     echo "docker_pull=ok"
   else
