@@ -10,6 +10,11 @@ import shlex
 import subprocess
 from pathlib import Path
 
+from eval.minisweagent_pin import (
+    MINI_SWE_AGENT_GIT_SHA,
+    MINI_SWE_AGENT_OVERLAY_ENV,
+    require_pinned_minisweagent_overlay,
+)
 from eval.paths import REPO_ROOT
 
 
@@ -102,16 +107,11 @@ def write_array_script(args: argparse.Namespace, n_rows: int) -> Path:
     cache_root = Path("/wbl-fast/usrs/ee/code-swe-data/cache")
     repo_root = REPO_ROOT
     shared_root = REPO_ROOT.parent
-    default_pydeps_overlay = shared_root / "runtime" / "pydeps-miniswe-complete-20260608T1830Z"
-    if not default_pydeps_overlay.exists():
-        default_pydeps_overlay = shared_root / "runtime" / "pydeps-overlay-immutable-20260608T0525Z"
-    if not default_pydeps_overlay.exists():
-        default_pydeps_overlay = shared_root / "runtime" / "pydeps-overlay"
-    pydeps_overlay = Path(os.environ.get("PYDEPS_OVERLAY", str(default_pydeps_overlay)))
+    pydeps_overlay = require_pinned_minisweagent_overlay()
     pydantic_stack = shared_root / "runtime" / "manual-pydeps" / "pydantic-stack-clean"
     pythonpath_parts = [
-        *([pydantic_stack] if pydantic_stack.exists() else []),
         pydeps_overlay,
+        *([pydantic_stack] if pydantic_stack.exists() else []),
         repo_root / ".venv" / "lib" / "python3.12" / "site-packages",
         repo_root,
     ]
@@ -178,6 +178,7 @@ export HF_HOME={shell_quote(cache_root / "hf")}
 export XDG_CACHE_HOME={shell_quote(cache_root / "xdg")}
 export UV_CACHE_DIR={shell_quote(cache_root / "uv")}
 export PIP_CACHE_DIR={shell_quote(cache_root / "pip")}
+export PYDEPS_OVERLAY={shell_quote(pydeps_overlay)}
 export PYTHONPATH={shell_quote(pythonpath)}
 export HOME="$WORKSPACE/home"
 export ENROOT_TEMP_PATH="$WORKSPACE/enroot-tmp"
@@ -211,6 +212,9 @@ echo "model=$MODEL"
 echo "image=$IMAGE"
 echo "container_source=$CONTAINER_SOURCE"
 echo "auth_first=$AUTH_FIRST"
+echo "mini_swe_agent_git_sha={MINI_SWE_AGENT_GIT_SHA}"
+echo "mini_swe_agent_overlay_env={MINI_SWE_AGENT_OVERLAY_ENV}"
+echo "mini_swe_agent_pydeps_overlay=$PYDEPS_OVERLAY"
 echo "anonymous_pyxis_image=$ANON_PYXIS_IMAGE"
 echo "authenticated_pyxis_image=$AUTH_PYXIS_IMAGE"
 echo "dockerd_pyxis_image=$DOCKERD_PYXIS_IMAGE"

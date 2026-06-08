@@ -14,6 +14,8 @@ OPENAI_BASE_URL_VALUE="${OPENAI_BASE_URL_VALUE:-http://172.17.0.1.nip.io:8000/v1
 OPENAI_API_BASE_VALUE="${OPENAI_API_BASE_VALUE:-$OPENAI_BASE_URL_VALUE}"
 OPENAI_API_KEY_VALUE="${OPENAI_API_KEY_VALUE:-dummy}"
 MAX_OUTPUT_TOKENS="${MAX_OUTPUT_TOKENS:-4096}"
+MINI_SWE_AGENT_GIT_SHA="${MINI_SWE_AGENT_GIT_SHA:-11ec55dd2e39d5374cbad456294206c19c94e896}"
+MINI_SWE_AGENT_REQUIREMENT="mini-swe-agent @ git+https://github.com/SWE-agent/mini-swe-agent.git@${MINI_SWE_AGENT_GIT_SHA}"
 DEFAULT_PIER_BIN=""
 if [[ -x ".venv-swe-uv/bin/pier" ]]; then
   DEFAULT_PIER_BIN=".venv-swe-uv/bin/pier"
@@ -48,6 +50,7 @@ OPENAI_API_KEY="$OPENAI_API_KEY_VALUE" \
   -i wazero-multi-module-snapshots \
   -i psd-tools-blend-range-api \
   -i ytt-jsonpath-query-api \
+  --agent-kwarg "extra_python_packages=[\"${MINI_SWE_AGENT_REQUIREMENT}\"]" \
   --agent-kwarg "model_kwargs={\"tool_choice\":\"required\",\"parallel_tool_calls\":false,\"max_tool_calls\":1,\"max_output_tokens\":${MAX_OUTPUT_TOKENS}}" \
   --agent-env "MSWEA_API_KEY=$OPENAI_API_KEY_VALUE" \
   --agent-env "OPENAI_BASE_URL=$OPENAI_BASE_URL_VALUE" \

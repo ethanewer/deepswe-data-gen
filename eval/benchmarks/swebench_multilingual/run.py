@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from eval.model.config import add_model_args, model_from_defaults
+from eval.minisweagent_pin import prepend_minisweagent_overlay
 from eval.paths import REPO_ROOT, configure_ca_bundle, python_executable
 
 
@@ -1027,6 +1028,7 @@ def run_minisweagent_generation(
     python: str,
 ) -> dict[str, str]:
     generation_env = model_config.generation_env()
+    prepend_minisweagent_overlay(generation_env)
     extra_body = json.dumps(model_config.extra_body, separators=(",", ":"))
     generation_cmd = [
         python,

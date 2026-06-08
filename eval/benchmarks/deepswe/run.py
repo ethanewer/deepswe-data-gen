@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 
 from eval.model.config import add_model_args, model_from_defaults
+from eval.minisweagent_pin import MINI_SWE_AGENT_PIER_EXTRA_PACKAGES
 from eval.paths import REPO_ROOT
 
 
@@ -187,6 +188,13 @@ def build_command(args: argparse.Namespace, defaults: dict, model_config) -> lis
     }
     if model_config.extra_body:
         model_kwargs["extra_body"] = model_config.extra_body
+    command.extend(
+        [
+            "--agent-kwarg",
+            "extra_python_packages="
+            f"{json.dumps(MINI_SWE_AGENT_PIER_EXTRA_PACKAGES, separators=(',', ':'))}",
+        ]
+    )
     command.extend(["--agent-kwarg", f"model_kwargs={json.dumps(model_kwargs, separators=(',', ':'))}"])
     if model_config.api_base:
         command.extend(["--agent-env", f"OPENAI_BASE_URL={model_config.api_base}"])
