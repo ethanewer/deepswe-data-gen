@@ -1487,6 +1487,20 @@ Queue snapshot:
 No scheduled DeepSeek datagen jobs currently visible in squeue.
 ```
 
+## 2026-06-08 07:09 UTC
+
+DeepSeek high-reasoning coverage recovery:
+
+- Active objective: 50% high-quality task coverage for every difficulty using DeepSeek only, with `deepseek-v4-flash` for easy and `deepseek-v4-pro` for medium/hard. All new jobs use thinking enabled, `reasoning_effort=high`, `max_tokens=16384`, and CPU-only `m7i-cpu2`.
+- Fixed the dependency-overlay startup issue by using the immutable Pyxis dependency overlay. Current r13/r14 startup samples have absolute `/wbl-fast/...` workspaces, Docker auth and pull success, and `dockerd://` Pyxis imports in progress.
+- Submitted hard top-up `r12`: job `290710`, 120 unique hard tasks, DeepSeek v4 Pro. Current active hard coverage is 114 queued/running unique tasks.
+- Submitted medium top-ups with corrected absolute workspaces: jobs `291950` and `291951` (`r13`, 900 rows each) plus job `292435` (`r14`, 900 rows). Current active medium coverage is 5,361 queued/running unique tasks.
+- Submitted easy top-up with corrected absolute workspaces: job `292204` (`r13`, 1,000 rows). Current active easy coverage is 2,377 queued/running unique tasks.
+- I canceled the bad `r12` easy/medium arrays (`290792`, `290966`, `291088`) because their generated workspace paths were relative and Pyxis rejected those mounts. Failure result records/traces from those starts were preserved; replacement `r13` workspaces are fresh.
+- Current active queue by difficulty/model: easy `2,377` `deepseek-v4-flash`; medium `5,361` `deepseek-v4-pro`; hard `114` `deepseek-v4-pro`. Expanded `squeue` shows `0` GPU/H200 generation jobs.
+- Using the last strict saved-trajectory snapshot as the completed baseline, active-plus-complete coverage projects above the 50% target for all difficulties: easy `469 + 2,377 >= 2,469`, medium `291 + 5,361 >= 4,588`, hard `123 + 114 >= 148`.
+- The append-only result index currently contains recent Pyxis/startup failures from older and canceled waves; r13/r14 agent trajectories are not expected there until the current container imports and teacher runs finish.
+
 ## 2026-06-08 06:23 UTC
 
 DeepSeek reasoning coverage ramp:
