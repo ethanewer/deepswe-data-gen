@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -31,6 +32,47 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--stdout-log", default="")
     parser.add_argument("--stderr-log", default="")
     return parser.parse_args()
+
+
+def result_index_path(workspace: Path) -> Path | None:
+    for parent in workspace.parents:
+        if parent.name == "pyxis-traces":
+            return parent.parent / "manifest" / "result_index.jsonl"
+    return None
+
+
+def append_result_index(workspace: Path, result: dict) -> None:
+    index_path = result_index_path(workspace)
+    if index_path is None:
+        return
+    trajectory_path = Path(result["trajectory_path"])
+    try:
+        trajectory_saved = trajectory_path.exists() and trajectory_path.stat().st_size > 2
+    except OSError:
+        trajectory_saved = False
+    record = {
+        "instance_id": result.get("instance_id"),
+        "rollout_id": result.get("rollout_id"),
+        "model": result.get("model"),
+        "litellm_model": result.get("litellm_model"),
+        "instruction_style": result.get("instruction_style"),
+        "difficulty": result.get("difficulty"),
+        "language": result.get("language"),
+        "repo": result.get("repo"),
+        "finished_at": result.get("finished_at"),
+        "agent_exit_status": result.get("agent_exit_status"),
+        "agent_exception_type": (result.get("agent_exception") or {}).get("type"),
+        "api_calls": result.get("api_calls", 0),
+        "cost_usd": result.get("cost_usd", 0.0),
+        "reward": result.get("reward", 0),
+        "trajectory_saved": trajectory_saved,
+        "result_path": str(workspace / "result.json"),
+        "trajectory_path": str(trajectory_path),
+        "patch_path": result.get("patch_path"),
+    }
+    index_path.parent.mkdir(parents=True, exist_ok=True)
+    with index_path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, sort_keys=True) + "\n")
 
 
 def main() -> None:
@@ -64,6 +106,10 @@ def main() -> None:
         "stderr_log": args.stderr_log,
     }
     (args.workspace / "result.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    try:
+        append_result_index(args.workspace, result)
+    except Exception:  # noqa: BLE001 - result.json has already been written
+        (args.workspace / "result_index_error.log").write_text(traceback.format_exc())
 
 
 if __name__ == "__main__":

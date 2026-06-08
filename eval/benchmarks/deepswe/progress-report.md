@@ -1487,6 +1487,21 @@ Queue snapshot:
 No scheduled DeepSeek datagen jobs currently visible in squeue.
 ```
 
+## 2026-06-08 06:23 UTC
+
+DeepSeek reasoning coverage ramp:
+
+- Active target remains 50% high-quality task coverage for each difficulty, using `deepseek-v4-flash` for easy and `deepseek-v4-pro` for medium/hard.
+- All current `swere-rsn` jobs are on `m7i-cpu2`; no DeepSeek datagen jobs are on H200/GPU partitions.
+- Reasoning settings remain enabled for future DeepSeek starts: `extra_body_json={"thinking":{"type":"enabled"}}`, `reasoning_effort=high`, `max_tokens=16384`, and no temperature in thinking mode.
+- Fixed startup blocker: repaired `/wbl-fast/usrs/ee/code-swe-data/runtime/pydeps-overlay-immutable-20260608T0525Z` so `pydantic`, `pydantic_core`, `typing_extensions`, `litellm`, and `mini-swe-agent` import correctly.
+- Throughput ramp: raised array throttles after a clean bounded startup sample. Current expanded Slurm state is `RUNNING=675`, `CONFIGURING=56`, `PENDING=5063`.
+- Queue by difficulty/model: easy Flash `RUNNING=384`, `CONFIGURING=36`, `PENDING=1979`; medium Pro `RUNNING=287`, `CONFIGURING=20`, `PENDING=3084`; hard Pro `RUNNING=4`.
+- Prompt style mix in the active/queued set remains balanced: deepswe `RUNNING=320`, `CONFIGURING=28`, `PENDING=2537`; original `RUNNING=355`, `CONFIGURING=28`, `PENDING=2526`.
+- Bottleneck audit: Docker auth is not the current blocker. A temporary attempt to request Slurm `--tmp=20000` caused `BadConstraints` on `m7i-cpu2`, so it was reverted in place. Generated array scripts now set `ENROOT_TEMP_PATH=$WORKSPACE/enroot-tmp` under `/wbl-fast` for pending starts.
+- Latest bounded active-log sample after throttle increase: `startup_ok=163`, still-importing `16`, one old Docker rate-limit marker, and no `No space left on device` or missing-module failures.
+- Added a central append-only result index for future completions at `runs/swerebench-v2/datagen-20260608-pyxis-deepseek-reasoning1/manifest/result_index.jsonl` so hourly reports no longer require expensive recursive scans of trace directories. `result.json` remains the source of truth and all failed traces/results are still saved.
+
 ## 2026-06-08 04:19 UTC
 
 DeepSeek high-reasoning coverage push:

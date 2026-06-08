@@ -29,6 +29,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--array-concurrency", type=int, default=100)
     parser.add_argument("--cpus", type=int, default=4)
     parser.add_argument("--mem", default="16G")
+    parser.add_argument(
+        "--tmp",
+        default="",
+        help=(
+            "Temporary disk requested per Slurm task, in MB. Empty by default because "
+            "some CPU partitions report BadConstraints for nonzero tmp requests."
+        ),
+    )
     parser.add_argument("--time", default="04:00:00")
     parser.add_argument("--python", type=Path, default=DEFAULT_PYTHON)
     parser.add_argument("--config-file", type=Path, default=DEFAULT_CONFIG)
@@ -105,6 +113,7 @@ def write_array_script(args: argparse.Namespace, n_rows: int) -> Path:
 #SBATCH -n 1
 #SBATCH --cpus-per-task={args.cpus}
 #SBATCH --mem={args.mem}
+{f"#SBATCH --tmp={args.tmp}" if args.tmp else ""}
 #SBATCH --time={args.time}
 #SBATCH --array=0-{n_rows - 1}%{args.array_concurrency}
 #SBATCH --output={log_dir}/{args.job_name}.%A_%a.out
@@ -153,10 +162,12 @@ export UV_CACHE_DIR={shell_quote(cache_root / "uv")}
 export PIP_CACHE_DIR={shell_quote(cache_root / "pip")}
 export PYTHONPATH={shell_quote(pydeps_overlay)}:{shell_quote(repo_root / ".venv" / "lib" / "python3.12" / "site-packages")}:{shell_quote(repo_root)}
 export HOME="$WORKSPACE/home"
+export ENROOT_TEMP_PATH="$WORKSPACE/enroot-tmp"
 export MSWEA_COST_TRACKING=ignore_errors
 export MSWEA_SILENT_STARTUP=1
 export ENROOT_REMAP_ROOT=yes
 mkdir -p "$HOME"
+mkdir -p "$ENROOT_TEMP_PATH"
 mkdir -p "$ANON_ENROOT_CONFIG_PATH"
 
 set -a
