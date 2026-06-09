@@ -2517,3 +2517,15 @@ MiMo/OpenRouter r20 startup checkpoint:
 - All first-pass high-quality missing rows remain submitted/running. The next meaningful work is retry construction after the current wave tails finish, not adding more first-pass jobs.
 
 Next action: let r17-r20 finish, then compute task coverage from actual all-reasoning trajectories and generate targeted retry manifests for uncovered rows.
+
+## 2026-06-09 07:37 UTC
+
+MiMo/OpenRouter first-pass completion monitor:
+
+- All first-pass queued work is now running or completed; there are no pending packed elements.
+- Current tail state: r17 `2` running, r18 `19` running, r19 `67` running, r20 `43` running.
+- Queue snapshot: `131` visible packed elements, `131` running, `0` pending, all CPU-only `m7i-cpu2`, `JobArrayTaskLimit=0`.
+- No new scheduler, Docker, Pyxis, auth/quota, API, or dependency error mode has appeared since the targeted r20 startup check.
+- I am intentionally deferring the full all-reasoning coverage scan until fewer active task directories are writing; previous broad scans over active trace paths stalled on shared storage.
+
+Next action: continue completion monitoring. When the active tail is small, compute actual task coverage by difficulty/model and create retry manifests for rows without saved all-reasoning trajectories.
