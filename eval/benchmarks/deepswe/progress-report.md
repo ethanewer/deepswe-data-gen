@@ -2551,3 +2551,14 @@ MiMo/OpenRouter post-first-pass retry submission:
 - Queue snapshot after retry submission: `121` visible packed elements, `0` running, `121` pending, all CPU-only `m7i-cpu2`, `JobArrayTaskLimit=0`.
 
 Next action: monitor r21/r22 startup, validate reasoning capture, and rerun the cached coverage scan after retries finish.
+
+## 2026-06-09 10:33 UTC
+
+MiMo/OpenRouter retry monitor:
+
+- r21/r22 retries are running. Current queue snapshot: `109` visible packed elements, `109` running, `0` pending, all CPU-only `m7i-cpu2`, `JobArrayTaskLimit=0`.
+- r21/r22 startup log checks showed no broad Docker/Pyxis/auth/API/dependency failure mode.
+- Confirmed a small targeted Docker image issue for two `dhi__mikeio` rows: `docker_pull_attempt=1` failed with `pull access denied for swerebenchv2/dhi-mikeio`. These rows are preserved with `PyxisContainerStartError` and will remain uncovered unless the image/auth problem can be resolved or an alternate container exists.
+- An early retry trajectory sample touched active files too soon; many active trajectories had no assistant messages yet because they were still being written. I am not counting those as quality failures. The definitive all-reasoning scan will run only after r21/r22 complete.
+
+Next action: wait for retry jobs to finish, rerun the cached all-reasoning coverage scan, and generate a final small retry or blocked-image list from the remaining uncovered IDs.
