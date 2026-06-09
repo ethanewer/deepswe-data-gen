@@ -2505,3 +2505,15 @@ MiMo/OpenRouter first-pass coverage queue monitor:
 - First-pass coverage status remains: all current high-quality missing-manifest rows are submitted or running across r08-r20 (`easy=3,857`, `medium=7,809`, `hard=129` beyond the prior unique dataset).
 
 Next action: keep monitoring until r20 starts and first-pass waves finish enough to build a reliable retry manifest for rows without all-reasoning trajectories.
+
+## 2026-06-09 06:39 UTC
+
+MiMo/OpenRouter r20 startup checkpoint:
+
+- r20 has started and is now actively running. Current latest-wave state: r17 `20` running, r18 `76` running, r19 `86` running, r20 `26` running / `18` pending.
+- Targeted r20 controller-log spot check over the first running elements found no sampled Docker pull, Pyxis, auth/quota, API, or dependency errors.
+- r20 first-row-window trajectory check: `3` saved trajectories so far, all with reasoning on every assistant turn, `0` malformed/missing-reasoning rows in the sample.
+- Queue snapshot: `226` visible packed elements, `208` running, `18` pending, all CPU-only `m7i-cpu2`, `JobArrayTaskLimit=0`.
+- All first-pass high-quality missing rows remain submitted/running. The next meaningful work is retry construction after the current wave tails finish, not adding more first-pass jobs.
+
+Next action: let r17-r20 finish, then compute task coverage from actual all-reasoning trajectories and generate targeted retry manifests for uncovered rows.
