@@ -2449,3 +2449,22 @@ MiMo/OpenRouter r16 submission checkpoint:
 - Queue snapshot after r16 submission: `258` visible packed elements across the active tail, `160` running and `98` pending, all CPU-only `m7i-cpu2`, `JobArrayTaskLimit=0`.
 
 Next action: hold r17 until r16 starts or pending drains. Continue monitoring post-repair rows for sustained `Submitted` results and no recurrence of the `requests` overlay failure.
+
+## 2026-06-09 03:33 UTC
+
+MiMo/OpenRouter packed coverage expansion:
+
+- r17 was submitted as job `355703` after r16 startup checked clean. r17 manifest: `1,024` unique tasks (`easy=600`, `medium=424`), no hard tasks.
+- The remaining uncovered-pool calculation initially risked counting the canceled r10 manifest as selected, so I corrected the reservation logic to exclude canceled r10 except for its usable all-reasoning traces. r10b already covers the intended retry set.
+- r18 was staged, validated, and submitted as job `355720`. r18 manifest: `1,024` unique tasks (`easy=214`, `medium=807`, `hard=3`), including all remaining never-reserved hard tasks.
+- r19 and r20 are staged and dry-run validated, but held to avoid queue overload:
+  - r19: `1,024` unique tasks (`easy=378`, `medium=646`)
+  - r20: `524` unique tasks (`easy=193`, `medium=331`)
+- With r18 submitted and r19/r20 staged, every row in the current high-quality missing manifests is reserved exactly once across r08-r20: `easy=3,857`, `medium=7,809`, `hard=129`.
+- Current MiMo wave generation counters from manifest/result scan:
+  - `xiaomi/mimo-v2.5`: `5,345` completed result files, `5,784` saved trajectories, `4,422` all-reasoning trajectories, `926` passes.
+  - `xiaomi/mimo-v2.5-pro`: `126` completed result files, `119` saved trajectories, `118` all-reasoning trajectories, `12` passes.
+- Current all-reasoning saved trajectories from MiMo waves by difficulty: `easy=1,159`, `medium=3,263`, `hard=118`. These counts exclude pre-repair/malformed reasoning traces even when trace files are saved.
+- Current queued/running snapshot after r18 submission: `514` visible packed elements, `291` running, `1` configuring, `222` pending; all are CPU-only `m7i-cpu2`, and `JobArrayTaskLimit=0`.
+
+Next action: hold r19 until r18 starts or pending drops materially, then submit r19 and later r20 with the same safe packing. After first-pass reserved coverage completes, build targeted retry manifests for rows lost to pre-repair `requests` failures, transient container failures, and any completed trajectories missing assistant-turn reasoning.
