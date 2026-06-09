@@ -26,6 +26,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--difficulty", required=True)
     parser.add_argument("--language", required=True)
     parser.add_argument("--repo", default="")
+    parser.add_argument("--outside-original-high-quality-set", default="false")
     parser.add_argument("--task-dir", required=True)
     parser.add_argument("--image", required=True)
     parser.add_argument("--pyxis-image", required=True)
@@ -60,6 +61,7 @@ def append_result_index(workspace: Path, result: dict) -> None:
         "difficulty": result.get("difficulty"),
         "language": result.get("language"),
         "repo": result.get("repo"),
+        "outside_original_high_quality_set": result.get("outside_original_high_quality_set", False),
         "finished_at": result.get("finished_at"),
         "agent_exit_status": result.get("agent_exit_status"),
         "agent_exception_type": (result.get("agent_exception") or {}).get("type"),
@@ -90,6 +92,8 @@ def main() -> None:
         "difficulty": args.difficulty,
         "language": args.language,
         "repo": args.repo,
+        "outside_original_high_quality_set": str(args.outside_original_high_quality_set).lower()
+        in {"1", "true", "yes"},
         "task_dir": args.task_dir,
         "docker_image": args.image,
         "pyxis_image": args.pyxis_image,

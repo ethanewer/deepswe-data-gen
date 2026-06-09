@@ -137,7 +137,8 @@ if [[ -z "$ROW" ]]; then
   exit 2
 fi
 
-IFS=$'\\t' read -r IDX ROLLOUT_ID INSTANCE_ID TASK_DIR WORKSPACE IMAGE MODEL LITELLM_MODEL API_KEY_ENV API_BASE EXTRA_BODY_JSON DIFFICULTY LANGUAGE STYLE REPO <<<"$ROW"
+IFS=$'\\t' read -r IDX ROLLOUT_ID INSTANCE_ID TASK_DIR WORKSPACE IMAGE MODEL LITELLM_MODEL API_KEY_ENV API_BASE EXTRA_BODY_JSON DIFFICULTY LANGUAGE STYLE REPO OUTSIDE_ORIGINAL_HIGH_QUALITY_SET <<<"$ROW"
+OUTSIDE_ORIGINAL_HIGH_QUALITY_SET="${{OUTSIDE_ORIGINAL_HIGH_QUALITY_SET:-false}}"
 SUBMIT_DIR="${{SLURM_SUBMIT_DIR:-$PWD}}"
 if [[ "$TASK_DIR" != /* ]]; then
   TASK_DIR="$SUBMIT_DIR/$TASK_DIR"
@@ -343,6 +344,7 @@ run_agent_attempt() {{
     --difficulty "$DIFFICULTY" \\
     --language "$LANGUAGE" \\
     --repo "$REPO" \\
+    --outside-original-high-quality-set "$OUTSIDE_ORIGINAL_HIGH_QUALITY_SET" \\
     --temperature {args.temperature} \\
     --max-tokens {args.max_tokens} \\
     --reasoning-effort {shell_quote(args.reasoning_effort)} \\
@@ -390,6 +392,7 @@ if [[ "$STATUS" -ne 0 && ! -f "$WORKSPACE/result.json" ]]; then
     --difficulty "$DIFFICULTY" \\
     --language "$LANGUAGE" \\
     --repo "$REPO" \\
+    --outside-original-high-quality-set "$OUTSIDE_ORIGINAL_HIGH_QUALITY_SET" \\
     --task-dir "$TASK_DIR" \\
     --image "$IMAGE" \\
     --pyxis-image "$LAST_PYXIS_IMAGE" \\

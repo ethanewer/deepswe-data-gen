@@ -65,6 +65,16 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Allow generated task environments to access the internet.",
     )
+    parser.add_argument(
+        "--skip-high-quality-filter",
+        action="store_true",
+        help="Materialize selected instance IDs without requiring the original high-quality filter.",
+    )
+    parser.add_argument(
+        "--outside-original-high-quality-set",
+        action="store_true",
+        help="Mark generated task metadata as outside the original high-quality set.",
+    )
     return parser.parse_args()
 
 
@@ -172,7 +182,12 @@ def build_instruction(row: dict, style: str, rewrites: dict[str, str] | None = N
     return f"{problem}\n"
 
 
-def build_task_toml(row: dict, *, allow_internet: bool = False) -> str:
+def build_task_toml(
+    row: dict,
+    *,
+    allow_internet: bool = False,
+    outside_original_high_quality_set: bool = False,
+) -> str:
     metadata = row["meta"]["llm_metadata"]
     title = clean_issue_prompt(row["problem_statement"] or row["instance_id"]).splitlines()[0]
     title = title[:180]
@@ -202,6 +217,7 @@ def build_task_toml(row: dict, *, allow_internet: bool = False) -> str:
         swe_rebench_instance_id = {toml_string(row["instance_id"])}
         swe_rebench_difficulty = {toml_string(metadata["difficulty"])}
         swe_rebench_confidence = {metadata["confidence"]}
+        outside_original_high_quality_set = {str(outside_original_high_quality_set).lower()}
 
         [verifier]
         timeout_sec = 1800.0
@@ -350,11 +366,19 @@ def materialize_task(
     instruction_style: str,
     rewrites: dict[str, str],
     allow_internet: bool,
+    outside_original_high_quality_set: bool,
 ) -> Path:
     task_dir = output_dir / task_slug(row["instance_id"])
     if task_dir.exists():
         shutil.rmtree(task_dir)
-    write_text(task_dir / "task.toml", build_task_toml(row, allow_internet=allow_internet))
+    write_text(
+        task_dir / "task.toml",
+        build_task_toml(
+            row,
+            allow_internet=allow_internet,
+            outside_original_high_quality_set=outside_original_high_quality_set,
+        ),
+    )
     write_text(task_dir / "instruction.md", build_instruction(row, instruction_style, rewrites))
     write_text(task_dir / "environment" / "Dockerfile", build_environment_dockerfile(row))
     write_text(task_dir / "tests" / "test.patch", row["test_patch"] or "")
@@ -364,11 +388,11 @@ def materialize_task(
     return task_dir
 
 
-def iter_rows_by_id(instance_ids: Iterable[str]) -> Iterable[dict]:
+def iter_rows_by_id(instance_ids: Iterable[str], *, require_high_quality: bool = True) -> Iterable[dict]:
     wanted = set(instance_ids)
     dataset = load_dataset(DATASET_NAME, split=SPLIT)
     for row in dataset:
-        if row["instance_id"] in wanted and is_high_quality(row):
+        if row["instance_id"] in wanted and (not require_high_quality or is_high_quality(row)):
             yield row
 
 
@@ -385,9 +409,19 @@ def main() -> None:
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     selected_id_order = {instance_id: index for index, instance_id in enumerate(selected_ids)}
-    rows = sorted(iter_rows_by_id(selected_ids), key=lambda row: selected_id_order[row["instance_id"]])
+    rows = sorted(
+        iter_rows_by_id(selected_ids, require_high_quality=not args.skip_high_quality_filter),
+        key=lambda row: selected_id_order[row["instance_id"]],
+    )
     task_dirs = [
-        materialize_task(row, args.output_dir, args.instruction_style, rewrites, args.allow_internet)
+        materialize_task(
+            row,
+            args.output_dir,
+            args.instruction_style,
+            rewrites,
+            args.allow_internet,
+            args.outside_original_high_quality_set,
+        )
         for row in rows
     ]
 
@@ -396,6 +430,7 @@ def main() -> None:
         "split": SPLIT,
         "instruction_style": args.instruction_style,
         "allow_internet": args.allow_internet,
+        "outside_original_high_quality_set": args.outside_original_high_quality_set,
         "total": len(task_dirs),
         "tasks": [path.name for path in task_dirs],
     }

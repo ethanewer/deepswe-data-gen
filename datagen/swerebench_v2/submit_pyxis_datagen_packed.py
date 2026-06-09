@@ -161,8 +161,9 @@ run_row() {{
     return 2
   fi
 
-  local IDX ROLLOUT_ID INSTANCE_ID TASK_DIR WORKSPACE IMAGE MODEL LITELLM_MODEL API_KEY_ENV API_BASE EXTRA_BODY_JSON DIFFICULTY LANGUAGE STYLE REPO
-  IFS=$'\\t' read -r IDX ROLLOUT_ID INSTANCE_ID TASK_DIR WORKSPACE IMAGE MODEL LITELLM_MODEL API_KEY_ENV API_BASE EXTRA_BODY_JSON DIFFICULTY LANGUAGE STYLE REPO <<<"$row"
+  local IDX ROLLOUT_ID INSTANCE_ID TASK_DIR WORKSPACE IMAGE MODEL LITELLM_MODEL API_KEY_ENV API_BASE EXTRA_BODY_JSON DIFFICULTY LANGUAGE STYLE REPO OUTSIDE_ORIGINAL_HIGH_QUALITY_SET
+  IFS=$'\\t' read -r IDX ROLLOUT_ID INSTANCE_ID TASK_DIR WORKSPACE IMAGE MODEL LITELLM_MODEL API_KEY_ENV API_BASE EXTRA_BODY_JSON DIFFICULTY LANGUAGE STYLE REPO OUTSIDE_ORIGINAL_HIGH_QUALITY_SET <<<"$row"
+  OUTSIDE_ORIGINAL_HIGH_QUALITY_SET="${{OUTSIDE_ORIGINAL_HIGH_QUALITY_SET:-false}}"
 
   local row_log_id="${{SLURM_ARRAY_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}_row${{row_number}}"
   local STDOUT_LOG="$LOG_DIR/{args.job_name}.${{row_log_id}}.out"
@@ -342,6 +343,7 @@ JSON
           --difficulty "$DIFFICULTY" \\
           --language "$LANGUAGE" \\
           --repo "$REPO" \\
+          --outside-original-high-quality-set "$OUTSIDE_ORIGINAL_HIGH_QUALITY_SET" \\
           --temperature {args.temperature} \\
           --max-tokens {args.max_tokens} \\
           --reasoning-effort {shell_quote(args.reasoning_effort)} \\
@@ -398,6 +400,7 @@ JSON
         --difficulty "$DIFFICULTY" \\
         --language "$LANGUAGE" \\
         --repo "$REPO" \\
+        --outside-original-high-quality-set "$OUTSIDE_ORIGINAL_HIGH_QUALITY_SET" \\
         --task-dir "$TASK_DIR" \\
         --image "$IMAGE" \\
         --pyxis-image "$LAST_PYXIS_IMAGE" \\

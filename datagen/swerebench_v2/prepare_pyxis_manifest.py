@@ -167,6 +167,9 @@ def main() -> None:
                     "language": row["language"],
                     "repo": row.get("repo", ""),
                     "instruction_style": instruction_style,
+                    "outside_original_high_quality_set": row.get(
+                        "outside_original_high_quality_set", "false"
+                    ),
                     "model": model,
                     "litellm_model": settings["litellm_model"],
                     "api_key_env": settings["api_key_env"],
@@ -208,6 +211,7 @@ def main() -> None:
         "language",
         "instruction_style",
         "repo",
+        "outside_original_high_quality_set",
     ]
     with args.output_tsv.open("w", encoding="utf-8") as handle:
         for record in records:

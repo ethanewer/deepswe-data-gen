@@ -52,6 +52,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--language", default="")
     parser.add_argument("--repo", default="")
     parser.add_argument("--rollout-id", default="r00")
+    parser.add_argument("--outside-original-high-quality-set", default="false")
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--max-tokens", type=int, default=16384)
     parser.add_argument("--reasoning-effort", default="high")
@@ -329,12 +330,17 @@ def append_result_index(workspace: Path, result: dict[str, Any]) -> None:
         "difficulty": result.get("difficulty"),
         "language": result.get("language"),
         "repo": result.get("repo"),
+        "outside_original_high_quality_set": result.get("outside_original_high_quality_set", False),
         "finished_at": result.get("finished_at"),
         "agent_exit_status": result.get("agent_exit_status"),
         "agent_exception_type": (result.get("agent_exception") or {}).get("type"),
         "api_calls": result.get("api_calls", 0),
         "cost_usd": result.get("cost_usd", 0.0),
         "reward": result.get("reward", 0),
+        "api_base": result.get("api_base", ""),
+        "max_tokens": result.get("max_tokens"),
+        "reasoning_effort": result.get("reasoning_effort"),
+        "extra_body_json": result.get("extra_body_json", ""),
         "trajectory_saved": trajectory_saved,
         "result_path": str(host_workspace_path(workspace) / "result.json"),
         "trajectory_path": str(trajectory_record_path),
@@ -416,6 +422,8 @@ def main() -> None:
         "difficulty": args.difficulty,
         "language": args.language,
         "repo": args.repo,
+        "outside_original_high_quality_set": str(args.outside_original_high_quality_set).lower()
+        in {"1", "true", "yes"},
         "task_dir": str(args.task_dir),
         "docker_image": environment.get("docker_image"),
         "workdir": workdir,
