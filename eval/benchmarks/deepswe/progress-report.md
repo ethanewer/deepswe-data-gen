@@ -2594,3 +2594,15 @@ Local Qwen reasoning coverage restart:
 - Started wave 1 `swere-qwen36-w01` job `368035`: `256` unique uncovered tasks, split `easy=111`, `medium=112`, `hard=33`, with broad language coverage. The job uses packed CPU nodes (`rows_per_job=16`, `parallel_rows=2`) and no Slurm array throttle, so it should not create `JobArrayTaskLimit` queue states.
 
 Next action: keep monitoring `probe2` and `w01` startup, inspect early wave trajectories for reasoning/tool-call integrity, then submit the next unique-task wave if the Qwen server queue remains healthy.
+
+## 2026-06-09 22:41 UTC
+
+Local Qwen two-server expansion:
+
+- Validated the second local Qwen endpoint `http://l40s-8gpu-dy-l40s-8gpu-cr-0-3.integrated.pcluster:20010/v1`: `/v1/models` reports `qwen3.6-35b-a3b-fp8` with `max_model_len=131072`, raw tool-call chat returned a bash call with nonempty `reasoning_content`, and mini-swe-agent 2.3.1 smoke returned one parsed bash action with nonempty reasoning.
+- Wave 1 quality sample remains clean: `30` trajectories, `582` assistant turns, `0` missing reasoning, `0` toolless assistant turns, all mini-swe-agent `2.3.1`.
+- Started wave 2 `swere-qwen36-w02` job `368101`: `512` additional unique tasks routed to the first endpoint. Most elements are currently in Pyxis container configuration/import rather than model inference.
+- Started wave 3 `swere-qwen36-w03c3` job `368180`: `256` additional unique tasks routed to the second endpoint. This keeps the second-server ramp moderate instead of submitting another large shard immediately.
+- Added `api_base` to future per-row metadata/result records so later dataset builds can distinguish which local Qwen server produced each trace.
+
+Next action: monitor `w02` and `w03c3` startup, check both server queues and first `w03c3` trajectories for reasoning/tool-call integrity before submitting any additional shards.

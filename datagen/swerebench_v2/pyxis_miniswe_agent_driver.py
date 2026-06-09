@@ -368,6 +368,7 @@ def main() -> None:
         "rollout_id": args.rollout_id,
         "model": args.model,
         "litellm_model": args.litellm_model,
+        "api_base": args.api_base,
         "instruction_style": args.instruction_style,
         "difficulty": args.difficulty,
         "language": args.language,
