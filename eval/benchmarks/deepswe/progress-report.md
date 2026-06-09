@@ -2374,3 +2374,15 @@ MiMo/OpenRouter packed concurrency adjustment:
 - Current packed queue snapshot: `172` visible elements across r08/r09/r10b, `100` running, `72` pending for normal `Resources`, all CPU-only `m7i-cpu2`, `JobArrayTaskLimit=0`.
 
 Next action: keep r11 held until r10b has taken more of the freed CPU capacity and remains clean; then submit r11 with the safer 2-way packed defaults.
+
+## 2026-06-09 00:49 UTC
+
+MiMo/OpenRouter continued packed coverage:
+
+- r10b remained clean under the safer two-way packing, so r11 was regenerated with the same defaults (`rows_per_job=12`, `parallel_rows=2`, `cpus_per_row=8`) and submitted as job `352383`.
+- r11 manifest: `1,024` unique uncovered tasks (`easy=174`, `medium=850`), no hard tasks because r09 already selected all remaining hard IDs.
+- Current submitted packed waves r08/r09/r10b/r11 represent `3,079` unique missing-task rows beyond the prior unique dataset/current traces: `easy=700`, `medium=2,253`, `hard=126`.
+- Queue snapshot after r11 submission: `207` visible packed elements, `100` running and `107` pending, all CPU-only `m7i-cpu2`, `JobArrayTaskLimit=0`. Pending is normal scheduler `Resources`/`Priority`, not array throttling.
+- Live progress at this checkpoint: r09 `968` results / `983` trajectories, r10b `116` results / `207` trajectories, r11 accepted but not yet producing trajectories.
+
+Next action: continue holding r12 until r11 starts and pending elements drain; then submit r12 with the same safe packing. Keep filtering/retrying completed rows with missing reasoning turns.
