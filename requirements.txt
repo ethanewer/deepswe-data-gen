@@ -3,6 +3,7 @@ datacurve-pier @ git+https://github.com/datacurve-ai/pier
 fastapi
 huggingface-hub
 httpx
+click>=8.1,<9
 mini-swe-agent @ git+https://github.com/SWE-agent/mini-swe-agent.git@a85bf5eedb3a557715038a00e43a92e7831462e3
 numpy
 openai

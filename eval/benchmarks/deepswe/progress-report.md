@@ -2622,3 +2622,16 @@ Local Qwen second-server throughput increase:
   - coverage if all queued tasks save usable reasoning traces: `easy=100.00%`, `medium=96.35%`, `hard=100.00%`
 
 Next action: wait for `w04c3` to leave `CONFIGURING`, inspect its first saved traces for reasoning completeness, then submit the remaining `345` medium missing tasks to `cr-0-3` if server queue and CPU queue remain healthy.
+
+## 2026-06-09 23:01 UTC
+
+Local Qwen dependency fix and full-missing-set queueing:
+
+- Wave 4 `w04c3` left `CONFIGURING` and is running. Submitted final missing-task wave 5 `swere-qwen36-w05c3` job `368366`: `345` unique medium tasks routed to `cr-0-3`. All tasks missing from the uploaded unique90 dataset are now either saved or queued in this local-Qwen run.
+- Latest production trajectory quality sample: `80` recent trajectories, `1,203` assistant turns, `0` missing reasoning, `0` toolless turns, all mini-swe-agent `2.3.1`.
+- Found a harness dependency weakness: the clean mini-swe-agent overlay lacked `click`, so task images without their own `click` package failed before any agent trajectory could be written. Confirmed `220` early startup failures (`medium=172`, `easy=48`) with `ModuleNotFoundError: No module named 'click'`.
+- Fixed the live shared overlay by installing `click>=8.1,<9`; validated that `click`, `litellm`, and `minisweagent.models.litellm_model.LitellmModel` import cleanly from the same overlay path used by Slurm jobs. New rows are now reaching the local model; `qwen36r01` trajectory count increased after the fix.
+- Made the fix durable in the repo by adding `click>=8.1,<9` to `requirements.txt` and `MINI_SWE_AGENT_PIER_EXTRA_PACKAGES`.
+- Prepared retry manifest `qwen36-clickfix-retry220-cr03-thinking.{jsonl,tsv}` with rollout ID `qwen36r02clickfix`, preserving the failed `qwen36r01` records. Not submitted yet because `m7i-cpu2` currently has no idle nodes and `w05c3` still has pending elements; submitting now would add scheduler pressure.
+
+Next action: wait for current CPU capacity to free, submit the `220` click-fix retry rows to `cr-0-3`, and continue checking that post-fix rows save full reasoning trajectories.
