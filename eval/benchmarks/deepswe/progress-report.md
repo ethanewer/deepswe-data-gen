@@ -2386,3 +2386,16 @@ MiMo/OpenRouter continued packed coverage:
 - Live progress at this checkpoint: r09 `968` results / `983` trajectories, r10b `116` results / `207` trajectories, r11 accepted but not yet producing trajectories.
 
 Next action: continue holding r12 until r11 starts and pending elements drain; then submit r12 with the same safe packing. Keep filtering/retrying completed rows with missing reasoning turns.
+
+## 2026-06-09 01:42 UTC
+
+MiMo/OpenRouter r12 submission checkpoint:
+
+- Investigated a residual r10b no-trace start failure and found another Docker transient: `502 Bad Gateway` during layer copy. Patched and pushed commit `a141478` so future Docker pulls retry `502` / `Bad Gateway` as well as EOF/timeouts.
+- Regenerated r12 with the current safe packed defaults and the expanded Docker retry pattern, then submitted r12 job `353447`.
+- r12 manifest: `1,024` unique uncovered tasks (`easy=124`, `medium=900`), no hard tasks.
+- Current submitted packed waves r08/r09/r10b/r11/r12 represent `4,103` unique missing-task rows beyond the prior unique dataset/current traces: `easy=824`, `medium=3,153`, `hard=126`.
+- Queue snapshot after r12 submission: `237` visible packed elements, `151` running and `86` pending, all CPU-only `m7i-cpu2`, `JobArrayTaskLimit=0`.
+- Live progress at this checkpoint: r10b `803` results / `896` trajectories / `203` passes, r11 `105` results / `207` trajectories / `22` passes. r12 accepted but not yet producing trajectories.
+
+Next action: stage r13 from the remaining easy/medium uncovered tasks, hold submission until r12 starts or pending drains, and continue filtering/retrying rows with completed trajectories missing reasoning turns.
