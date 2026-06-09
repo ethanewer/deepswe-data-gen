@@ -137,6 +137,15 @@ def configure_runtime_env(args: argparse.Namespace) -> None:
     if args.api_base:
         os.environ["OPENAI_BASE_URL"] = args.api_base
         os.environ["OPENAI_API_BASE"] = args.api_base
+    if (
+        args.api_key_env == "OPENAI_API_KEY"
+        and args.api_base.startswith("http://")
+        and ".integrated.pcluster:" in args.api_base
+        and not os.environ.get("OPENAI_API_KEY")
+    ):
+        # Local OpenAI-compatible serving does not require auth, but the OpenAI
+        # client still requires a non-empty key before sending the request.
+        os.environ["OPENAI_API_KEY"] = "local-model-no-auth-required"
     if args.api_key_env == "DEEPSEEK_API_KEY" and os.environ.get("DEEPSEEK_API_KEY"):
         os.environ["OPENAI_API_KEY"] = os.environ["DEEPSEEK_API_KEY"]
 
