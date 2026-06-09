@@ -2411,3 +2411,16 @@ MiMo/OpenRouter r13 submission checkpoint:
 - Live progress at this checkpoint: r10b `966` results / `1,003` trajectories / `240` passes, r11 `387` results / `515` trajectories / `84` passes, r12 `39` results / `102` trajectories / `9` passes. r13 accepted but not yet producing trajectories.
 
 Next action: stage r14 from remaining easy/medium tasks and hold it until r13 starts or the pending queue drains. Continue requiring non-empty reasoning in every assistant turn for usable coverage.
+
+## 2026-06-09 02:42 UTC
+
+MiMo/OpenRouter dependency repair during r11-r13:
+
+- Detected a new live dependency corruption after r11/r12/r13 started: `requests` resolved to an empty namespace package under the mounted overlay, causing `AttributeError: module 'requests' has no attribute 'post'` / `requests.exceptions`.
+- This produced many preserved but unusable `AttributeError` rows in r11/r12/r13. Existing traces/results are left on disk, but those rows must be retried for usable coverage.
+- Rebuilt a repaired overlay at `/wbl-fast/usrs/ee/code-swe-data/runtime/pydeps-mimo-requests-fixed-20260609T023148Z` by replacing `requests` and `requests-2.34.2.dist-info` from the intact `/wbl-fast/usrs/ee/code-swe-data/runtime/pydeps-datagen` package.
+- Replaced the hard-coded path used by already-submitted Slurm scripts, `/wbl-fast/usrs/ee/code-swe-data/runtime/pydeps-mimo-complete-fixed-20260608T232518Z`, with a symlink to the repaired overlay. Also repointed the manual dependency aliases to the repaired overlay.
+- Validation with `python3 -S` now passes at the hard-coded path: `requests.post=True`, `requests.exceptions=True`, `requests.__version__=2.34.2`, plus `certifi`, `jinja2.StrictUndefined`, `pydantic.BaseModel`, and `OpenRouterModel`.
+- Post-repair monitor at 02:40 UTC: r13 has begun producing `Submitted` rows (`1` so far), while many rows that started before the repair are still finishing as `AttributeError`. Queue remains active with `203` visible elements, `200` running, `3` configuring, `0` pending, `JobArrayTaskLimit=0`.
+
+Next action: hold r14 until post-repair r13 rows show sustained `Submitted` growth and no new dependency error mode. Then submit r14 with the repaired overlay path and safe two-way packing.
