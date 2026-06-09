@@ -2529,3 +2529,25 @@ MiMo/OpenRouter first-pass completion monitor:
 - I am intentionally deferring the full all-reasoning coverage scan until fewer active task directories are writing; previous broad scans over active trace paths stalled on shared storage.
 
 Next action: continue completion monitoring. When the active tail is small, compute actual task coverage by difficulty/model and create retry manifests for rows without saved all-reasoning trajectories.
+
+## 2026-06-09 09:34 UTC
+
+MiMo/OpenRouter post-first-pass retry submission:
+
+- All first-pass r08-r20 jobs finished. The packed queue was empty before submitting retries.
+- Completed a post-run all-reasoning trajectory scan and wrote artifacts under `runs/swerebench-v2/datagen-20260608-pyxis-mimo-reasoning1/analysis/`:
+  - `allreason_scan_summary_json_20260609.json`
+  - `allreason_scan_cache_json_20260609.jsonl`
+  - `allreason_uncovered_ids_20260609.txt`
+- Current all-reasoning task coverage against the full high-quality target:
+  - easy: `5,320 / 5,518` (`96.41%`)
+  - medium: `8,215 / 9,443` (`87.00%`)
+  - hard: `327 / 335` (`97.61%`)
+  - total: `13,862 / 15,296`
+- Retry set needed for full all-reasoning coverage: `1,434` tasks (`easy=198`, `medium=1,228`, `hard=8`). Most are from the pre-repair/malformed reasoning region; only `42` first-pass rows had no trajectory at all.
+- Staged and submitted retry manifests:
+  - r21 job `358778`: `1,024` rows (`easy=169`, `medium=847`, `hard=8`)
+  - r22 job `358779`: `410` rows (`easy=29`, `medium=381`)
+- Queue snapshot after retry submission: `121` visible packed elements, `0` running, `121` pending, all CPU-only `m7i-cpu2`, `JobArrayTaskLimit=0`.
+
+Next action: monitor r21/r22 startup, validate reasoning capture, and rerun the cached coverage scan after retries finish.
