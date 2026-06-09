@@ -2399,3 +2399,15 @@ MiMo/OpenRouter r12 submission checkpoint:
 - Live progress at this checkpoint: r10b `803` results / `896` trajectories / `203` passes, r11 `105` results / `207` trajectories / `22` passes. r12 accepted but not yet producing trajectories.
 
 Next action: stage r13 from the remaining easy/medium uncovered tasks, hold submission until r12 starts or pending drains, and continue filtering/retrying rows with completed trajectories missing reasoning turns.
+
+## 2026-06-09 02:10 UTC
+
+MiMo/OpenRouter r13 submission checkpoint:
+
+- r12 started cleanly under the safe two-way packed settings with no sampled Docker/Pyxis/dependency/API errors, so r13 was submitted as job `354113`.
+- r13 manifest: `1,024` unique uncovered tasks (`easy=124`, `medium=900`), no hard tasks.
+- Current submitted packed waves r08/r09/r10b/r11/r12/r13 represent `5,127` unique missing-task rows beyond the prior unique dataset/current traces: `easy=948`, `medium=4,053`, `hard=126`.
+- Queue snapshot after r13 submission: `283` visible packed elements, `197` running and `86` pending, all CPU-only `m7i-cpu2`, `JobArrayTaskLimit=0`.
+- Live progress at this checkpoint: r10b `966` results / `1,003` trajectories / `240` passes, r11 `387` results / `515` trajectories / `84` passes, r12 `39` results / `102` trajectories / `9` passes. r13 accepted but not yet producing trajectories.
+
+Next action: stage r14 from remaining easy/medium tasks and hold it until r13 starts or the pending queue drains. Continue requiring non-empty reasoning in every assistant turn for usable coverage.
