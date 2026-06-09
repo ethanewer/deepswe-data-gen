@@ -40,7 +40,11 @@ export KIMI_MODEL_PATH="${KIMI_MODEL_PATH:-$LOCAL_MODEL_SERVING_ROOT/models/moon
 export MIMO_MODEL_PATH="${MIMO_MODEL_PATH:-$LOCAL_MODEL_SERVING_ROOT/models/XiaomiMiMo_MiMo-V2.5.snapshot}"
 
 if [[ -d "$SGLANG_VENV/lib/python3.12/site-packages/torch/lib" ]]; then
-  export LD_LIBRARY_PATH="$SGLANG_VENV/lib/python3.12/site-packages/torch/lib:$SGLANG_VENV/lib/python3.12/site-packages/nvidia/cuda_runtime/lib:$SGLANG_VENV/lib/python3.12/site-packages/nvidia/cuda_nvrtc/lib:$SGLANG_VENV/lib/python3.12/site-packages/nvidia/cublas/lib:${LD_LIBRARY_PATH:-}"
+  sglang_ld_paths=("$SGLANG_VENV/lib/python3.12/site-packages/torch/lib")
+  for nvidia_lib_dir in "$SGLANG_VENV"/lib/python3.12/site-packages/nvidia/*/lib; do
+    [[ -d "$nvidia_lib_dir" ]] && sglang_ld_paths+=("$nvidia_lib_dir")
+  done
+  export LD_LIBRARY_PATH="$(IFS=:; echo "${sglang_ld_paths[*]}"):${LD_LIBRARY_PATH:-}"
 fi
 
 mkdir -p \

@@ -17,6 +17,12 @@ The scripts set Hugging Face, PyTorch, Triton, FlashInfer, TVM, CUDA, temp, and
 Python bytecode cache paths under this root. Keeping these caches off `/home`
 avoids slow NFS-backed kernel compilation during SGLang startup.
 
+Slurm compute nodes should use the shared runtime root instead:
+
+```bash
+/wbl-fast/usrs/ee/code-swe-data/runtime/local_model_serving
+```
+
 Run:
 
 ```bash
@@ -109,6 +115,32 @@ attention. FlashInfer attention failed for MiMo because the local backend does
 not accept MiMo's attention `sinks` argument; FA3 in this SGLang build requires
 newer CUDA-13-linked kernels on this node.
 
+MiMo V2.5 on Slurm:
+
+```bash
+sbatch scripts/local_model_serving/serve_mimo_slurm.sbatch
+```
+
+The Slurm script defaults to 4x RTX PRO 6000 with TP4/DP1 and a 32K context.
+For an 8x L40S node, override the Slurm resources and SGLang layout:
+
+```bash
+sbatch \
+  --partition=l40s-8gpu \
+  --gres=gpu:l40s:8 \
+  --cpus-per-task=96 \
+  --mem=1200G \
+  --job-name=serve-mimo-v2.5-l40s \
+  --output=/wbl-fast/usrs/ee/code-swe-data/runtime/local_model_serving/logs/slurm-mimo-l40s-%j.out \
+  --error=/wbl-fast/usrs/ee/code-swe-data/runtime/local_model_serving/logs/slurm-mimo-l40s-%j.err \
+  --export=ALL,TP_SIZE=8,DP_SIZE=2,ENABLE_DP_ATTENTION=1,MEM_FRACTION_STATIC=0.94,CONTEXT_LENGTH=8192,MAX_RUNNING_REQUESTS=8,CHUNKED_PREFILL_SIZE=4096,PORT=19001 \
+  scripts/local_model_serving/serve_mimo_slurm.sbatch
+```
+
+The Slurm launcher uses the shared model and venv under
+`/wbl-fast/usrs/ee/code-swe-data/runtime/local_model_serving`, while keeping
+mutable caches on node-local `/scratch/${USER}/local_model_serving`.
+
 ## Datagen Smoke Commands
 
 Kimi:
@@ -181,6 +213,8 @@ latency_s={"mean": 4.645947013108525, "p50": 4.367954423185438, "p95": 8.7222095
 - MiMo `/v1/models` served `mimo-v2.5` with `max_model_len=262144`.
 - MiMo smoke chat returned `local mimo ok` with reasoning content.
 - MiMo high-concurrency benchmark completed with zero errors.
+- Slurm MiMo on 8x L40S served `mimo-v2.5` with `max_model_len=8192`.
+- Slurm MiMo smoke chat returned `local slurm mimo ok`.
 - `bash -n` passed for the local model serving scripts after the launcher
   updates.
 
