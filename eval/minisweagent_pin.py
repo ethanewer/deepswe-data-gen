@@ -9,7 +9,7 @@ from eval.paths import REPO_ROOT
 
 
 MINI_SWE_AGENT_GIT_URL = "https://github.com/SWE-agent/mini-swe-agent.git"
-MINI_SWE_AGENT_GIT_SHA = "11ec55dd2e39d5374cbad456294206c19c94e896"
+MINI_SWE_AGENT_GIT_SHA = "a85bf5eedb3a557715038a00e43a92e7831462e3"
 MINI_SWE_AGENT_REQUIREMENT = (
     f"mini-swe-agent @ git+{MINI_SWE_AGENT_GIT_URL}@{MINI_SWE_AGENT_GIT_SHA}"
 )

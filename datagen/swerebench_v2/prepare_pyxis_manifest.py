@@ -43,6 +43,12 @@ MODEL_SETTINGS: dict[str, dict[str, Any]] = {
         "api_base": "",
         "extra_body": {"reasoning": {"effort": "high", "exclude": False}},
     },
+    "local qwen3.6-35b-a3b-fp8": {
+        "litellm_model": "openai/qwen3.6-35b-a3b-fp8",
+        "api_key_env": "OPENAI_API_KEY",
+        "api_base": "http://l40s-8gpu-dy-l40s-8gpu-cr-0-2.integrated.pcluster:20010/v1",
+        "extra_body": {"chat_template_kwargs": {"enable_thinking": True}},
+    },
 }
 
 

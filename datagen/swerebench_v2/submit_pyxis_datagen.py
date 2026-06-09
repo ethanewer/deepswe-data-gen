@@ -108,15 +108,10 @@ def write_array_script(args: argparse.Namespace, n_rows: int) -> Path:
     repo_root = REPO_ROOT
     shared_root = REPO_ROOT.parent
     pydeps_overlay = require_pinned_minisweagent_overlay()
-    pydantic_stack = shared_root / "runtime" / "manual-pydeps" / "pydantic-stack-clean"
-    pythonpath_parts = []
-    if pydantic_stack.exists() and pydantic_stack.resolve() != pydeps_overlay.resolve():
-        pythonpath_parts.append(pydantic_stack)
-    pythonpath_parts.extend([
+    pythonpath_parts = [
         pydeps_overlay,
-        repo_root / ".venv" / "lib" / "python3.12" / "site-packages",
         repo_root,
-    ])
+    ]
     pythonpath = ":".join(str(path) for path in pythonpath_parts)
     ca_bundle = pydeps_overlay / "certifi" / "cacert.pem"
 

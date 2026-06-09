@@ -167,6 +167,11 @@ def build_agent(args: argparse.Namespace, workdir: str, trajectory_path: Path) -
         and isinstance(extra_body.get("thinking"), dict)
         and extra_body["thinking"].get("type") == "enabled"
     )
+    qwen_thinking_enabled = (
+        isinstance(extra_body, dict)
+        and isinstance(extra_body.get("chat_template_kwargs"), dict)
+        and extra_body["chat_template_kwargs"].get("enable_thinking") is True
+    )
     reasoning_config = extra_body.get("reasoning") if isinstance(extra_body, dict) else None
     openrouter_reasoning_enabled = (
         isinstance(reasoning_config, dict)
@@ -177,7 +182,7 @@ def build_agent(args: argparse.Namespace, workdir: str, trajectory_path: Path) -
             or bool(reasoning_config.get("max_tokens"))
         )
     )
-    reasoning_enabled = thinking_enabled or openrouter_reasoning_enabled
+    reasoning_enabled = thinking_enabled or qwen_thinking_enabled or openrouter_reasoning_enabled
     use_native_openrouter = args.litellm_model.startswith("openrouter/")
     model_kwargs: dict[str, Any] = {"max_tokens": args.max_tokens}
     if use_native_openrouter:
@@ -186,7 +191,7 @@ def build_agent(args: argparse.Namespace, workdir: str, trajectory_path: Path) -
         model_kwargs["timeout"] = args.model_timeout
     if thinking_enabled:
         model_kwargs["reasoning_effort"] = args.reasoning_effort
-    if not reasoning_enabled:
+    if qwen_thinking_enabled or not reasoning_enabled:
         model_kwargs["temperature"] = args.temperature
     if args.api_base:
         model_kwargs["api_base"] = args.api_base

@@ -2582,3 +2582,15 @@ MiMo/OpenRouter retry completion blocker:
 - Remaining uncovered set: `1,434` tasks (`easy=198`, `medium=1,228`, `hard=8`), recorded in `allreason_uncovered_after_retry_ids_20260609.txt`.
 
 Blocked state: further MiMo/OpenRouter retry generation cannot proceed until the provided OpenRouter key limit is raised/replenished or a new usable key is provided. After that, resubmit the uncovered set; separately investigate the `dhi-mikeio` container image availability.
+
+## 2026-06-09 22:25 UTC
+
+Local Qwen reasoning coverage restart:
+
+- New local server in use: `http://l40s-8gpu-dy-l40s-8gpu-cr-0-2.integrated.pcluster:20010/v1`, model `qwen3.6-35b-a3b-fp8`. The GPU node is only serving the model; generation jobs are on CPU-only `m7i-cpu2`.
+- Updated future datagen to mini-swe-agent upstream commit `a85bf5e` / version `2.3.1`, installed at `/wbl-fast/usrs/ee/code-swe-data/runtime/pydeps-miniswe-upstream-a85bf5e`. Removed stale `.venv` and `manual-pydeps/pydantic-stack-clean` entries from generated Slurm `PYTHONPATH`; the earlier Qwen probe failed because that stale layer imported a broken `click`/LiteLLM stack before the agent could make any model calls.
+- All new Qwen manifests explicitly enable hybrid reasoning with `extra_body_json={"chat_template_kwargs":{"enable_thinking":true}}`, `temperature=0.6`, `max_tokens=16384`, and `model_timeout=1200`.
+- Corrected probe `swere-qwen36-probe2` job `368015` is running. First inspected trajectories are real mini-swe-agent 2.3.1 traces with parsed bash tool calls and `0` assistant messages missing `reasoning_content` across the first `49` assistant turns checked.
+- Started wave 1 `swere-qwen36-w01` job `368035`: `256` unique uncovered tasks, split `easy=111`, `medium=112`, `hard=33`, with broad language coverage. The job uses packed CPU nodes (`rows_per_job=16`, `parallel_rows=2`) and no Slurm array throttle, so it should not create `JobArrayTaskLimit` queue states.
+
+Next action: keep monitoring `probe2` and `w01` startup, inspect early wave trajectories for reasoning/tool-call integrity, then submit the next unique-task wave if the Qwen server queue remains healthy.

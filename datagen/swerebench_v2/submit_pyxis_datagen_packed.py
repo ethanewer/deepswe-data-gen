@@ -80,17 +80,10 @@ def write_array_script(args: argparse.Namespace, n_rows: int) -> Path:
     shared_root = REPO_ROOT.parent
     cache_root = Path("/wbl-fast/usrs/ee/code-swe-data/cache")
     pydeps_overlay = require_pinned_minisweagent_overlay().resolve()
-    pydantic_stack = shared_root / "runtime" / "manual-pydeps" / "pydantic-stack-clean"
-    pythonpath_parts: list[Path] = []
-    if pydantic_stack.exists() and pydantic_stack.resolve() != pydeps_overlay:
-        pythonpath_parts.append(pydantic_stack)
-    pythonpath_parts.extend(
-        [
-            pydeps_overlay,
-            repo_root / ".venv" / "lib" / "python3.12" / "site-packages",
-            repo_root,
-        ]
-    )
+    pythonpath_parts: list[Path] = [
+        pydeps_overlay,
+        repo_root,
+    ]
     pythonpath = ":".join(str(path) for path in pythonpath_parts)
     ca_bundle = pydeps_overlay / "certifi" / "cacert.pem"
     array_size = math.ceil(n_rows / args.rows_per_job)
