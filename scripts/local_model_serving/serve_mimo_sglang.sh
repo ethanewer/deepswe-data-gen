@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=env.sh
 source "$SCRIPT_DIR/env.sh"
 
-PYTHON_BIN="${PYTHON_BIN:-$LOCAL_MODEL_SERVING_ROOT/venv-sglang/bin/python}"
+PYTHON_BIN="${PYTHON_BIN:-$SGLANG_VENV/bin/python}"
 HOST="${HOST:-0.0.0.0}"
 PORT="${PORT:-19001}"
 ENABLE_DEEPEP="${ENABLE_DEEPEP:-0}"
@@ -49,13 +49,6 @@ exec "$PYTHON_BIN" -m sglang.launch_server \
   --skip-server-warmup \
   --enable-dp-lm-head \
   --disable-tokenizer-batch-decode \
-  --mm-enable-dp-encoder \
-  --attention-backend fa3 \
-  --mm-attention-backend fa3 \
-  --speculative-algorithm EAGLE \
-  --speculative-num-steps "${SPECULATIVE_NUM_STEPS:-3}" \
-  --speculative-eagle-topk "${SPECULATIVE_EAGLE_TOPK:-1}" \
-  --speculative-num-draft-tokens "${SPECULATIVE_NUM_DRAFT_TOKENS:-4}" \
-  --enable-multi-layer-eagle \
+  --attention-backend "${ATTENTION_BACKEND:-triton}" \
   "${deepep_args[@]}" \
   "$@"

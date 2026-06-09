@@ -21,17 +21,19 @@ create_venv "$LOCAL_MODEL_SERVING_ROOT/venv-vllm"
 "$LOCAL_MODEL_SERVING_ROOT/venv-vllm/bin/python" -m pip install \
   "transformers>=4.57.1,<5.0.0"
 
-create_venv "$LOCAL_MODEL_SERVING_ROOT/venv-sglang"
-"$LOCAL_MODEL_SERVING_ROOT/venv-sglang/bin/python" -m pip install \
-  --pre "sglang[all]" decord
-"$LOCAL_MODEL_SERVING_ROOT/venv-sglang/bin/python" -m pip install \
-  --force-reinstall torch==2.11.0 torchaudio==2.11.0 torchvision \
+create_venv "$SGLANG_VENV"
+"$SGLANG_VENV/bin/python" -m pip install \
+  "sglang[all]==0.5.12.post1" decord
+"$SGLANG_VENV/bin/python" -m pip install \
+  --force-reinstall torch==2.9.1 torchvision==0.24.1 torchaudio==2.9.1 \
   --index-url https://download.pytorch.org/whl/cu128
-"$LOCAL_MODEL_SERVING_ROOT/venv-sglang/bin/python" -m pip install \
-  "transformers==5.6.0" "huggingface-hub>=1.10.0" "kernels<0.15" \
-  "numpy<2.4,>=1.25" "setuptools<82,>=80" "cuda-pathfinder>=1.4.2"
+"$SGLANG_VENV/bin/python" -m pip install \
+  "sgl-kernel==0.3.21" "transformers==5.6.0" "huggingface-hub>=1.10.0" \
+  "kernels==0.14.1" "numpy<2.4,>=1.25" "setuptools<82,>=80" \
+  "cuda-pathfinder>=1.4.2" "compressed-tensors==0.17.1a20260604"
+"$SGLANG_VENV/bin/python" -m pip uninstall -y sglang-kernel || true
 
 if [[ "${INSTALL_DEEPEP:-0}" == "1" ]]; then
-  "$LOCAL_MODEL_SERVING_ROOT/venv-sglang/bin/python" -m pip install \
+  "$SGLANG_VENV/bin/python" -m pip install \
     --no-build-isolation deep_ep
 fi

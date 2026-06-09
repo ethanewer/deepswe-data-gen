@@ -1,26 +1,21 @@
 # Local Model Serving Handoff
 
-This documents the local model setup for SWE-RBench synthetic data generation. The reusable code lives in this repo under `scripts/local_model_serving/`. Large model snapshots, caches, logs, and virtual environments live outside the repo under `/wbl-fast/usrs/ee/code-swe-data/runtime/local_model_serving`.
+This documents the verified local model setup for SWE-RBench synthetic data
+generation on the 8x H200 node. Reusable scripts live under
+`scripts/local_model_serving/`. Large model snapshots, caches, logs, and the
+serving venv live outside the repo under `/scratch/local_model_serving`.
 
 ## Runtime Root
 
 Default runtime root:
 
 ```bash
-/wbl-fast/usrs/ee/code-swe-data/runtime/local_model_serving
+/scratch/local_model_serving
 ```
 
-The scripts set these paths so downloads and caches stay under `/wbl-fast` and do not fall back to `/home`:
-
-- `HF_HOME`
-- `HUGGINGFACE_HUB_CACHE`
-- `HF_XET_CACHE`
-- `TRANSFORMERS_CACHE`
-- `XDG_CACHE_HOME`
-- `PIP_CACHE_DIR`
-- `TORCH_HOME`
-- `TRITON_CACHE_DIR`
-- `TMPDIR`
+The scripts set Hugging Face, PyTorch, Triton, FlashInfer, TVM, CUDA, temp, and
+Python bytecode cache paths under this root. Keeping these caches off `/home`
+avoids slow NFS-backed kernel compilation during SGLang startup.
 
 Run:
 
@@ -35,16 +30,14 @@ Kimi K2.6:
 - Hub repo: `moonshotai/Kimi-K2.6`
 - Quantization: official Moonshot native INT4/QAT checkpoint
 - Snapshot revision: `7eb5002f6aadc958aed6a9177b7ed26bb94011bb`
-- Stable local path: `/wbl-fast/usrs/ee/code-swe-data/runtime/local_model_serving/models/moonshotai_Kimi-K2.6.snapshot`
-- Snapshot target: `/wbl-fast/usrs/ee/code-swe-data/runtime/local_model_serving/hf_cache/models--moonshotai--Kimi-K2.6/snapshots/7eb5002f6aadc958aed6a9177b7ed26bb94011bb`
+- Local path: `/scratch/local_model_serving/models/moonshotai_Kimi-K2.6.snapshot`
 
 MiMo V2.5:
 
 - Hub repo: `XiaomiMiMo/MiMo-V2.5`
-- Quantization: official FP8 checkpoint, recommended for 8x H200 serving
+- Quantization: official FP8 checkpoint
 - Snapshot revision: `2fd4f899a491de2fb0beeafe32b5d700b251f593`
-- Stable local path: `/wbl-fast/usrs/ee/code-swe-data/runtime/local_model_serving/models/XiaomiMiMo_MiMo-V2.5.snapshot`
-- Snapshot target: `/wbl-fast/usrs/ee/code-swe-data/runtime/local_model_serving/hf_cache/models--XiaomiMiMo--MiMo-V2.5/snapshots/2fd4f899a491de2fb0beeafe32b5d700b251f593`
+- Local path: `/scratch/local_model_serving/models/XiaomiMiMo_MiMo-V2.5.snapshot`
 
 Resume or repair downloads with:
 
@@ -52,44 +45,56 @@ Resume or repair downloads with:
 /wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/scripts/local_model_serving/download_models.sh
 ```
 
-The downloader uses `huggingface_hub.snapshot_download` and refreshes stable symlinks only after a snapshot completes.
+## Python Environment
 
-## Python Environments
+Verified serving env:
 
-The runtime uses separate venvs to avoid vLLM/SGLang dependency conflicts:
+```text
+/scratch/local_model_serving/venvs/venv-sglang
+```
 
-- Download helper env: `/wbl-fast/usrs/ee/code-swe-data/runtime/local_model_serving/venv`
-- Kimi/vLLM env: `/wbl-fast/usrs/ee/code-swe-data/runtime/local_model_serving/venv-vllm`
-- MiMo/SGLang env: `/wbl-fast/usrs/ee/code-swe-data/runtime/local_model_serving/venv-sglang`
+Verified package pins:
 
-Install or repair them with:
+- `sglang==0.5.12.post1`
+- `torch==2.9.1+cu128`
+- `torchvision==0.24.1+cu128`
+- `torchaudio==2.9.1+cu128`
+- `sgl-kernel==0.3.21`
+- `flashinfer-python==0.6.11.post1`
+- `transformers==5.6.0`
+- `kernels==0.14.1`
+- `compressed-tensors==0.17.1a20260604`
+
+Install or repair the env with:
 
 ```bash
 /wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/scripts/local_model_serving/install_serving_envs.sh
 ```
 
-Verified versions after setup:
+SGLang notes:
 
-- vLLM env: `vllm==0.19.1`, `torch==2.10.0+cu128`, `transformers==4.57.6`
-- SGLang env: `sglang==0.5.12.post1`, `torch==2.11.0+cu128`, `transformers==5.6.0`, `kernels==0.14.1`
-
-Important SGLang notes:
-
-- The default SGLang package pulled CUDA 13 packages, which cannot run on this node's CUDA 12.8 driver. The installer force-reinstalls CUDA 12.8 PyTorch wheels.
-- `kernels>=0.15` breaks this SGLang/Transformers combo with `Either a revision or a version must be specified`, so the installer pins `kernels<0.15`.
-- `deep_ep` failed to build without a working NVSHMEM stack. The MiMo launcher defaults to no DeepEP; set `ENABLE_DEEPEP=1` only after NVSHMEM/DeepEP is repaired.
+- `sglang-kernel==0.4.2.post2` pulls CUDA 13 runtime libraries and does not run
+  on this node's CUDA 12.8/driver 570 stack.
+- `sgl-kernel==0.3.21` works with `torch==2.9.1+cu128`, but SGLang's kernel
+  version check must be skipped. `env.sh` exports
+  `SGLANG_SKIP_SGL_KERNEL_VERSION_CHECK=1`.
+- `deep_gemm` imports a CUDA 13 linked dependency in this environment, so
+  DeepGEMM JIT/precompile is disabled by default.
 
 ## Serving
 
 Run one 8-GPU model server at a time unless GPUs are intentionally partitioned.
 
-Kimi K2.6 via vLLM:
+Kimi K2.6 via SGLang:
 
 ```bash
-/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/scripts/local_model_serving/serve_kimi_vllm.sh
+/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/scripts/local_model_serving/serve_kimi_sglang.sh
 ```
 
 Default OpenAI-compatible base URL: `http://localhost:18000/v1`
+
+Kimi uses TP8, `compressed-tensors`, Kimi reasoning/tool parsers, 128K context,
+FlashInfer attention, and disables FlashInfer all-reduce fusion/autotune.
 
 MiMo V2.5 via SGLang:
 
@@ -98,6 +103,11 @@ MiMo V2.5 via SGLang:
 ```
 
 Default OpenAI-compatible base URL: `http://localhost:19001/v1`
+
+MiMo uses TP8/DP2, DP attention, FP8, 256K context, DP LM head, and Triton
+attention. FlashInfer attention failed for MiMo because the local backend does
+not accept MiMo's attention `sinks` argument; FA3 in this SGLang build requires
+newer CUDA-13-linked kernels on this node.
 
 ## Datagen Smoke Commands
 
@@ -131,22 +141,49 @@ python -m datagen.swerebench_v2.run_all \
   --disable-verification
 ```
 
-## Throughput Notes
+## Throughput Results
 
-- For real throughput measurements, wait until all 8 H200s are free.
-- Kimi defaults: TP8, 256K context, prefix caching, Kimi reasoning/tool parsers, data-parallel multimodal encoder.
-- Kimi startup with `GPU_MEMORY_UTILIZATION=0.92` requires roughly 129 GiB free per GPU at initialization. If other processes occupy GPU memory, vLLM will fail before loading.
-- MiMo defaults: TP8/DP2, FP8, 256K context, DP attention, multi-threaded loading, FA3 attention, and multi-layer EAGLE speculative decoding.
-- Start synthetic data clients around 64-128 concurrent requests and tune from generated-token throughput, queueing, and TTFT.
-- For shared-GPU smoke tests only, lower Kimi cache reservation, for example `GPU_MEMORY_UTILIZATION=0.70 scripts/local_model_serving/serve_kimi_vllm.sh`. Do not use reduced reservation for final throughput runs.
+Benchmark shape: OpenAI `/v1/chat/completions`, 64 concurrent clients, 128 total
+requests, `max_tokens=1024`, real SWE-RBench task instructions from this repo,
+and a bash tool schema matching SWE-agent style data generation.
+
+Kimi K2.6:
+
+```text
+success=128/128
+output_tps=629.2214841355657
+completion_tokens=5000
+prompt_tokens=107420
+elapsed_s=7.946327527053654
+tool_call_responses=128
+finish_reasons={"tool_calls": 128}
+latency_s={"mean": 3.7851073426827497, "p50": 3.843026545830071, "p95": 6.093388921115547, "max": 7.567593679297715}
+```
+
+MiMo V2.5:
+
+```text
+success=128/128
+output_tps=600.5453881237946
+completion_tokens=10876
+prompt_tokens=138123
+elapsed_s=18.110204848926514
+tool_call_responses=127
+finish_reasons={"length": 1, "tool_calls": 127}
+latency_s={"mean": 4.645947013108525, "p50": 4.367954423185438, "p95": 8.722209536936134, "max": 18.085793481674045}
+```
 
 ## Last Verification
 
-The setup scripts passed shell syntax checks. The runtime imports were verified:
+- Kimi `/v1/models` served `kimi-k2.6` with `max_model_len=128000`.
+- Kimi smoke chat returned `local kimi ok`.
+- Kimi high-concurrency benchmark completed with zero errors.
+- MiMo `/v1/models` served `mimo-v2.5` with `max_model_len=262144`.
+- MiMo smoke chat returned `local mimo ok` with reasoning content.
+- MiMo high-concurrency benchmark completed with zero errors.
+- `bash -n` passed for the local model serving scripts after the launcher
+  updates.
 
-```text
-vllm_check 2.10.0+cu128 True 8 4.57.6 0.19.1
-sglang_check 2.11.0+cu128 True 8 5.6.0 0.14.1 0.5.12.post1
-```
-
-Kimi server launch was attempted while another user's retrieval servers occupied about 34 GiB on every H200, so vLLM refused startup because only about 105 GiB/GPU was free. No local model server was left running after the attempt.
+Kimi vLLM was not the working path. It loaded far enough to expose a WNA16
+MoE/Marlin group-size kernel incompatibility for the official Kimi INT4/QAT
+checkpoint. Use the SGLang launcher above for local Kimi serving.
