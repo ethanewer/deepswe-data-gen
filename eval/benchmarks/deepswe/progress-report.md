@@ -2606,3 +2606,19 @@ Local Qwen two-server expansion:
 - Added `api_base` to future per-row metadata/result records so later dataset builds can distinguish which local Qwen server produced each trace.
 
 Next action: monitor `w02` and `w03c3` startup, check both server queues and first `w03c3` trajectories for reasoning/tool-call integrity before submitting any additional shards.
+
+## 2026-06-09 22:52 UTC
+
+Local Qwen second-server throughput increase:
+
+- `w03c3` first trace quality sample is clean: `7` sampled trajectories, `74` assistant turns, `0` missing reasoning, `0` toolless assistant turns, all mini-swe-agent `2.3.1`.
+- Server load split: first endpoint `cr-0-2` is backed up (`#queue-req` in the high 60s), so no new work is being routed there. Second endpoint `cr-0-3` remains healthy with `#queue-req=0`.
+- Submitted wave 4 `swere-qwen36-w04c3` job `368290`: `512` additional unique uncovered tasks routed only to `cr-0-3`, split `easy=69`, `medium=443`. It uses CPU-only `m7i-cpu2`, `rows_per_job=16`, `parallel_rows=2`, and no Slurm array throttle.
+- Live Qwen job snapshot after wave 4 submission: `probe2=2 R`, `w01=16 R`, `w02=32 R`, `w03c3=16 R`, `w04c3=32 CF`. The `w04c3` elements have assigned CPU nodes and are in Slurm `CONFIGURING` with `Reason=None`, so the current bottleneck is startup/container configuration, not model inference.
+- Current accounting against the full high-quality target (`15,296` tasks):
+  - existing uploaded unique90 coverage: `13,407` tasks (`easy=5,041`, `medium=8,065`, `hard=301`)
+  - newly saved local-Qwen trajectories in this run so far: `112` unique tasks (`easy=53`, `medium=54`, `hard=5`)
+  - queued local-Qwen unique missing tasks including wave 4: `1,544` (`easy=477`, `medium=1,033`, `hard=34`)
+  - coverage if all queued tasks save usable reasoning traces: `easy=100.00%`, `medium=96.35%`, `hard=100.00%`
+
+Next action: wait for `w04c3` to leave `CONFIGURING`, inspect its first saved traces for reasoning completeness, then submit the remaining `345` medium missing tasks to `cr-0-3` if server queue and CPU queue remain healthy.
