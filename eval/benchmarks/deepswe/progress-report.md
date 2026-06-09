@@ -2634,4 +2634,6 @@ Local Qwen dependency fix and full-missing-set queueing:
 - Made the fix durable in the repo by adding `click>=8.1,<9` to `requirements.txt` and `MINI_SWE_AGENT_PIER_EXTRA_PACKAGES`.
 - Prepared retry manifest `qwen36-clickfix-retry220-cr03-thinking.{jsonl,tsv}` with rollout ID `qwen36r02clickfix`, preserving the failed `qwen36r01` records. Not submitted yet because `m7i-cpu2` currently has no idle nodes and `w05c3` still has pending elements; submitting now would add scheduler pressure.
 
-Next action: wait for current CPU capacity to free, submit the `220` click-fix retry rows to `cr-0-3`, and continue checking that post-fix rows save full reasoning trajectories.
+Update: submitted the `220` click-fix retry rows as job `368482` / `swere-qwen36-clickfix` with rollout ID `qwen36r02clickfix`. It is a compact `14`-element CPU-only array on `m7i-cpu2`, currently pending behind the already-running waves. No datagen job is pending on `JobArrayTaskLimit`.
+
+Next action: wait for current CPU capacity to free so `w05c3` and `swere-qwen36-clickfix` can start, then inspect the first retry traces for reasoning completeness and absence of the prior `click` startup failure.
