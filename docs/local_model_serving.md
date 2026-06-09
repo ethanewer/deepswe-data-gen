@@ -52,11 +52,33 @@ Qwen3.6-27B:
 - Snapshot revision: `6a9e13bd6fc8f0983b9b99948120bc37f49c13e9`
 - Local path: `/scratch/local_model_serving/models/Qwen_Qwen3.6-27B.snapshot`
 
+Qwen3.6-35B-A3B-FP8:
+
+- Hub repo: `Qwen/Qwen3.6-35B-A3B-FP8`
+- Quantization: official fine-grained FP8 checkpoint, 128x128 block size
+- Snapshot revision: `95a723d08a9490559dae23d0cff1d9466213d989`
+- Local path: `/scratch/local_model_serving/models/Qwen_Qwen3.6-35B-A3B-FP8.snapshot`
+
 Resume or repair downloads with:
 
 ```bash
 /wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/scripts/local_model_serving/download_models.sh
 ```
+
+## Official Guide Notes
+
+- The Qwen3.6-35B-A3B-FP8 model card documents 128-block FP8 weights and
+  lists SGLang and vLLM as supported serving stacks:
+  <https://huggingface.co/Qwen/Qwen3.6-35B-A3B-FP8>
+- Qwen's recommended SGLang command uses TP8, 262K context,
+  `--reasoning-parser qwen3`, and `--tool-call-parser qwen3_coder`. On L40S,
+  TP8 is not usable with this FP8 checkpoint in the installed SGLang because
+  one shared-expert projection is partitioned to width 64, below the 128-wide
+  FP8 block size.
+- vLLM's Qwen3.5/Qwen3.6 recipe recommends `--language-model-only` for maximum
+  text throughput under high concurrency because it skips the vision encoder
+  and frees memory for KV cache:
+  <https://docs.vllm.ai/projects/recipes/en/latest/Qwen/Qwen3.5.html>
 
 ## Python Environment
 
@@ -182,6 +204,49 @@ sbatch \
   scripts/local_model_serving/serve_qwen36_slurm.sbatch
 ```
 
+Qwen3.6-35B-A3B-FP8 via SGLang:
+
+```bash
+/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/scripts/local_model_serving/serve_qwen36_moe_fp8_sglang.sh
+```
+
+Default OpenAI-compatible base URL: `http://localhost:20010/v1`
+
+The verified 8x L40S config uses TP4/DP2, 131,072 context, Qwen3 reasoning,
+Qwen3 Coder tool parsing, FlashInfer full attention, Triton linear attention,
+and the Triton MoE runner. The server allocates 600K cache tokens per DP replica,
+or about 1.2M aggregate scheduled tokens across the two replicas.
+
+Qwen3.6-35B-A3B-FP8 on Slurm:
+
+```bash
+sbatch scripts/local_model_serving/serve_qwen36_moe_fp8_slurm.sbatch
+```
+
+The Slurm script defaults to 8x L40S with TP4/DP2 and port `20010`.
+
+Saved but not yet verified: vLLM text-only launcher with the vision encoder
+disabled:
+
+```bash
+sbatch scripts/local_model_serving/serve_qwen36_moe_fp8_vllm_slurm.sbatch
+```
+
+The vLLM script uses `--language-model-only`, `--reasoning-parser qwen3`,
+`--tool-call-parser qwen3_coder`, prefix caching, TP8, and port `20011`.
+Two Slurm attempts on idle L40S nodes stayed in `CONFIGUR` without starting the
+batch script, so the vLLM path was not benchmarked.
+
+L40S SGLang backend notes for Qwen3.6-35B-A3B-FP8:
+
+- `TP_SIZE=8` fails during model construction because the official FP8 block
+  size is 128 and one shared-expert partition becomes width 64.
+- `MOE_RUNNER_BACKEND=flashinfer_trtllm` loads weights but fails during CUDA
+  graph capture on L40S by trying to build an unsupported SM100/SM120 path.
+- `MOE_RUNNER_BACKEND=cutlass` asserts that FP8 MoE requires SM90/SM100/SM120;
+  L40S is SM89.
+- `MOE_RUNNER_BACKEND=triton` is the verified L40S backend.
+
 ## Datagen Smoke Commands
 
 Kimi:
@@ -222,6 +287,21 @@ python -m datagen.swerebench_v2.run_all \
   --model qwen3.6-27b \
   --litellm-model openai/qwen3.6-27b \
   --api-base http://127.0.0.1:20000/v1 \
+  --no-require-api-key \
+  --max-tokens 16384 \
+  --extra-body-json '{"chat_template_kwargs":{"enable_thinking":true,"preserve_thinking":true}}' \
+  --limit 1 \
+  --disable-verification
+```
+
+Qwen3.6 MoE FP8:
+
+```bash
+cd /wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen
+python -m datagen.swerebench_v2.run_all \
+  --model qwen3.6-35b-a3b-fp8 \
+  --litellm-model openai/qwen3.6-35b-a3b-fp8 \
+  --api-base http://l40s-8gpu-dy-l40s-8gpu-cr-0-2.integrated.pcluster:20010/v1 \
   --no-require-api-key \
   --max-tokens 16384 \
   --extra-body-json '{"chat_template_kwargs":{"enable_thinking":true,"preserve_thinking":true}}' \
@@ -274,6 +354,43 @@ finish_reasons={"tool_calls": 128}
 latency_s={"mean": 77.64255335546841, "p50": 85.20868428656831, "p95": 106.3105297437869, "max": 115.62520491797477}
 ```
 
+Qwen3.6-35B-A3B-FP8, SGLang TP4/DP2 on 8x L40S:
+
+```text
+success=128/128
+output_tps=268.7941482152726
+completion_tokens=5789
+prompt_tokens=201146
+elapsed_s=21.536927192937583
+tool_call_responses=128
+finish_reasons={"tool_calls": 128}
+latency_s={"mean": 8.652216484995733, "p50": 9.171103690285236, "p95": 17.412013965751974, "max": 20.552074189763516}
+```
+
+The first post-start benchmark pass was also clean but included more warmup/JIT
+overhead:
+
+```text
+success=128/128
+output_tps=214.87024914585265
+completion_tokens=5780
+prompt_tokens=201146
+elapsed_s=26.899954847060144
+tool_call_responses=128
+finish_reasons={"tool_calls": 128}
+```
+
+Long-context Qwen3.6-35B-A3B-FP8 check:
+
+```text
+parallel_requests=8
+prompt_tokens_each=130800
+aggregate_prompt_tokens=1046400
+success=8/8
+elapsed_s=48.84757383586839
+responses=["long context ok", "long context ok", "long context ok", "long context ok", "long context ok", "long context ok", "long context ok", "long context ok"]
+```
+
 ## Last Verification
 
 - Kimi `/v1/models` served `kimi-k2.6` with `max_model_len=128000`.
@@ -293,6 +410,18 @@ latency_s={"mean": 77.64255335546841, "p50": 85.20868428656831, "p95": 106.31052
 - Slurm Qwen3.6-27B high-concurrency benchmark completed with zero errors.
 - Slurm Qwen3.6-27B accepted four parallel 130,804-token prompts and all four
   returned `long context ok` in 178.83 s.
+- Slurm Qwen3.6-35B-A3B-FP8 SGLang on 8x L40S served
+  `qwen3.6-35b-a3b-fp8` with `max_model_len=131072`.
+- Slurm Qwen3.6-35B-A3B-FP8 TP4/DP2 allocated
+  `max_total_num_tokens=600000` per DP replica with about 14.01 GB GPU memory
+  left after CUDA graph capture.
+- Slurm Qwen3.6-35B-A3B-FP8 smoke chat returned
+  `local slurm qwen moe ok`.
+- Slurm Qwen3.6-35B-A3B-FP8 emitted valid `bash` tool calls.
+- Slurm Qwen3.6-35B-A3B-FP8 high-concurrency benchmark completed with zero
+  errors at 268.79 output TPS on the warmed pass.
+- Slurm Qwen3.6-35B-A3B-FP8 accepted eight parallel 130,800-token prompts and
+  all eight returned `long context ok` in 48.85 s.
 - `bash -n` passed for the local model serving scripts after the launcher
   updates.
 

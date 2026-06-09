@@ -27,7 +27,9 @@ export HF_HUB_ENABLE_HF_TRANSFER="${HF_HUB_ENABLE_HF_TRANSFER:-1}"
 export HF_XET_HIGH_PERFORMANCE="${HF_XET_HIGH_PERFORMANCE:-1}"
 export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"
 
+export SERVING_BACKEND="${SERVING_BACKEND:-sglang}"
 export SGLANG_VENV="${SGLANG_VENV:-$LOCAL_MODEL_SERVING_ROOT/venvs/venv-sglang}"
+export VLLM_VENV="${VLLM_VENV:-$LOCAL_MODEL_SERVING_ROOT/venvs/venv-vllm}"
 
 export SGLANG_SKIP_SGL_KERNEL_VERSION_CHECK="${SGLANG_SKIP_SGL_KERNEL_VERSION_CHECK:-1}"
 export SGLANG_ENABLE_JIT_DEEPGEMM="${SGLANG_ENABLE_JIT_DEEPGEMM:-0}"
@@ -39,13 +41,24 @@ export TORCHINDUCTOR_COMPILE_THREADS="${TORCHINDUCTOR_COMPILE_THREADS:-1}"
 export KIMI_MODEL_PATH="${KIMI_MODEL_PATH:-$LOCAL_MODEL_SERVING_ROOT/models/moonshotai_Kimi-K2.6.snapshot}"
 export MIMO_MODEL_PATH="${MIMO_MODEL_PATH:-$LOCAL_MODEL_SERVING_ROOT/models/XiaomiMiMo_MiMo-V2.5.snapshot}"
 export QWEN36_MODEL_PATH="${QWEN36_MODEL_PATH:-$LOCAL_MODEL_SERVING_ROOT/models/Qwen_Qwen3.6-27B.snapshot}"
+export QWEN36_MOE_FP8_MODEL_PATH="${QWEN36_MOE_FP8_MODEL_PATH:-$LOCAL_MODEL_SERVING_ROOT/models/Qwen_Qwen3.6-35B-A3B-FP8.snapshot}"
 
-if [[ -d "$SGLANG_VENV/lib/python3.12/site-packages/torch/lib" ]]; then
-  sglang_ld_paths=("$SGLANG_VENV/lib/python3.12/site-packages/torch/lib")
-  for nvidia_lib_dir in "$SGLANG_VENV"/lib/python3.12/site-packages/nvidia/*/lib; do
-    [[ -d "$nvidia_lib_dir" ]] && sglang_ld_paths+=("$nvidia_lib_dir")
+serving_venv_for_ld=""
+case "$SERVING_BACKEND" in
+  sglang)
+    serving_venv_for_ld="$SGLANG_VENV"
+    ;;
+  vllm)
+    serving_venv_for_ld="$VLLM_VENV"
+    ;;
+esac
+
+if [[ -n "$serving_venv_for_ld" && -d "$serving_venv_for_ld/lib/python3.12/site-packages/torch/lib" ]]; then
+  serving_ld_paths=("$serving_venv_for_ld/lib/python3.12/site-packages/torch/lib")
+  for nvidia_lib_dir in "$serving_venv_for_ld"/lib/python3.12/site-packages/nvidia/*/lib; do
+    [[ -d "$nvidia_lib_dir" ]] && serving_ld_paths+=("$nvidia_lib_dir")
   done
-  export LD_LIBRARY_PATH="$(IFS=:; echo "${sglang_ld_paths[*]}"):${LD_LIBRARY_PATH:-}"
+  export LD_LIBRARY_PATH="$(IFS=:; echo "${serving_ld_paths[*]}"):${LD_LIBRARY_PATH:-}"
 fi
 
 mkdir -p \
