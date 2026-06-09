@@ -2424,3 +2424,16 @@ MiMo/OpenRouter dependency repair during r11-r13:
 - Post-repair monitor at 02:40 UTC: r13 has begun producing `Submitted` rows (`1` so far), while many rows that started before the repair are still finishing as `AttributeError`. Queue remains active with `203` visible elements, `200` running, `3` configuring, `0` pending, `JobArrayTaskLimit=0`.
 
 Next action: hold r14 until post-repair r13 rows show sustained `Submitted` growth and no new dependency error mode. Then submit r14 with the repaired overlay path and safe two-way packing.
+
+## 2026-06-09 02:58 UTC
+
+MiMo/OpenRouter r15 submission checkpoint:
+
+- Post-repair r12/r13 rows showed sustained `Submitted` growth and no new dependency error mode, so r14 was submitted and then r15 was submitted after r14 startup checked clean.
+- r14 manifest: `1,024` unique uncovered tasks (`easy=124`, `medium=900`), no hard tasks.
+- r15 manifest: `1,024` unique uncovered tasks (`easy=700`, `medium=324`), no hard tasks. This shifts selection toward easy because easy is now the lower selected-coverage difficulty.
+- r16 has been staged and validated but not submitted: `1,024` unique tasks (`easy=700`, `medium=324`).
+- Current submitted packed waves r08/r09/r10b/r11/r12/r13/r14/r15 represent `7,175` unique missing-task rows beyond the prior unique dataset/current traces: `easy=1,772`, `medium=5,277`, `hard=126`.
+- Queue snapshot: `256` visible packed elements, `178` running and `78` pending for normal `Resources`, all CPU-only `m7i-cpu2`, `JobArrayTaskLimit=0`.
+
+Next action: hold r16 until r15 starts or pending drains. Continue retry planning for rows lost to the pre-repair `requests` `AttributeError` failure and rows with completed trajectories missing reasoning turns.
