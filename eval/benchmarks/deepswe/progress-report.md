@@ -2637,3 +2637,15 @@ Local Qwen dependency fix and full-missing-set queueing:
 Update: submitted the `220` click-fix retry rows as job `368482` / `swere-qwen36-clickfix` with rollout ID `qwen36r02clickfix`. It is a compact `14`-element CPU-only array on `m7i-cpu2`, currently pending behind the already-running waves. No datagen job is pending on `JobArrayTaskLimit`.
 
 Next action: wait for current CPU capacity to free so `w05c3` and `swere-qwen36-clickfix` can start, then inspect the first retry traces for reasoning completeness and absence of the prior `click` startup failure.
+
+## 2026-06-09 23:20 UTC
+
+Local Qwen monitoring update:
+
+- Made failure capture stricter in `pyxis_miniswe_agent_driver.py`: if setup fails before a mini-swe-agent object exists, the driver now writes an explicit `mini-swe-agent.trajectory.json` failure trace instead of only `result.json`. This protects future failed rows from missing trace artifacts.
+- Post-`click` fix quality remains clean. Latest checked `qwen36r01` sample: `100` recent trajectories, `1,617` assistant turns, `0` missing reasoning, `0` toolless assistant turns.
+- Current rollout counts: `qwen36r01` has `379` trajectories and `470` result files. The original pre-fix `click` failure count remains fixed at `220`; no new `click` failures have appeared after the overlay fix.
+- `w05c3` tail state: `13` running, `9` pending for `Resources`. `swere-qwen36-clickfix` is submitted but still pending on `Priority` behind the `w05c3` tail; it has not produced outputs yet.
+- `cr-0-3` server load is acceptable for the active waves: recent queue was around `10` requests with roughly `20` active decodes. No new jobs are being submitted while the server and CPU queue are carrying this load.
+
+Next action: keep monitoring until the click-fix retry starts, then inspect first retry row logs and trajectories for reasoning completeness and absence of setup failures.
