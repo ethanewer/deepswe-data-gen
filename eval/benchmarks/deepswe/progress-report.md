@@ -2468,3 +2468,16 @@ MiMo/OpenRouter packed coverage expansion:
 - Current queued/running snapshot after r18 submission: `514` visible packed elements, `291` running, `1` configuring, `222` pending; all are CPU-only `m7i-cpu2`, and `JobArrayTaskLimit=0`.
 
 Next action: hold r19 until r18 starts or pending drops materially, then submit r19 and later r20 with the same safe packing. After first-pass reserved coverage completes, build targeted retry manifests for rows lost to pre-repair `requests` failures, transient container failures, and any completed trajectories missing assistant-turn reasoning.
+
+## 2026-06-09 04:41 UTC
+
+MiMo/OpenRouter r19 submission checkpoint:
+
+- r16 continued cleanly after the previous checkpoint. The latest full r16 quality spot check saw `248` trajectories, `149` result files, `57` passes, and `0` missing-reasoning/JSON issues. A controller-log scan found no sampled Docker, auth, quota, Pyxis, or `requests` overlay errors.
+- r17 began running once r16 was mostly resident on nodes. Before submitting r19, the compact queue snapshot was `328` visible packed elements, `189` running, `139` pending, and `JobArrayTaskLimit=0`; r17 had `33` running elements and `53` pending.
+- r19 was submitted as job `355949` with the same CPU-only packed settings (`rows_per_job=12`, `parallel_rows=2`, `cpus_per_row=8`, `m7i-cpu2`, reasoning high, `max_tokens=16384`).
+- r19 manifest: `1,024` unique remaining tasks (`easy=378`, `medium=646`), no hard tasks.
+- r20 remains staged and validated but held as the final tail (`524` rows: `easy=193`, `medium=331`) to avoid unnecessary queue depth.
+- Queue snapshot after r19 submission: `411` visible packed elements, `189` running, `222` pending, all CPU-only `m7i-cpu2`, `JobArrayTaskLimit=0`. Pending is scheduler `Resources`/`Priority`, not Docker or API failure.
+
+Next action: keep r20 held until r18 or r19 starts draining; then submit the `524`-row tail. Continue using compact scheduler checks and targeted spot checks rather than broad scans over active trace directories, which can stall on shared storage.
