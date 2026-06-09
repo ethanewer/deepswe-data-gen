@@ -38,6 +38,7 @@ export TORCHINDUCTOR_COMPILE_THREADS="${TORCHINDUCTOR_COMPILE_THREADS:-1}"
 
 export KIMI_MODEL_PATH="${KIMI_MODEL_PATH:-$LOCAL_MODEL_SERVING_ROOT/models/moonshotai_Kimi-K2.6.snapshot}"
 export MIMO_MODEL_PATH="${MIMO_MODEL_PATH:-$LOCAL_MODEL_SERVING_ROOT/models/XiaomiMiMo_MiMo-V2.5.snapshot}"
+export QWEN36_MODEL_PATH="${QWEN36_MODEL_PATH:-$LOCAL_MODEL_SERVING_ROOT/models/Qwen_Qwen3.6-27B.snapshot}"
 
 if [[ -d "$SGLANG_VENV/lib/python3.12/site-packages/torch/lib" ]]; then
   sglang_ld_paths=("$SGLANG_VENV/lib/python3.12/site-packages/torch/lib")

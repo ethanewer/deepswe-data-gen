@@ -45,6 +45,13 @@ MiMo V2.5:
 - Snapshot revision: `2fd4f899a491de2fb0beeafe32b5d700b251f593`
 - Local path: `/scratch/local_model_serving/models/XiaomiMiMo_MiMo-V2.5.snapshot`
 
+Qwen3.6-27B:
+
+- Hub repo: `Qwen/Qwen3.6-27B`
+- Quantization: official BF16 checkpoint
+- Snapshot revision: `6a9e13bd6fc8f0983b9b99948120bc37f49c13e9`
+- Local path: `/scratch/local_model_serving/models/Qwen_Qwen3.6-27B.snapshot`
+
 Resume or repair downloads with:
 
 ```bash
@@ -143,6 +150,38 @@ mutable caches on node-local `/scratch/${USER}/local_model_serving`.
 The verified 8x L40S setup has a KV pool of about 47.8K total tokens with
 about 2.37 GB GPU memory left after CUDA graph capture, so 32K context fits.
 
+Qwen3.6-27B via SGLang:
+
+```bash
+/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/scripts/local_model_serving/serve_qwen36_sglang.sh
+```
+
+Default OpenAI-compatible base URL: `http://localhost:20000/v1`
+
+Qwen3.6-27B uses TP8/DP1, 131,072 context, Qwen3 reasoning, Qwen3 Coder
+tool parsing, FlashInfer full attention, Triton linear attention, and an 800K
+token pool for multiple long sequences. DP attention is off by default:
+TP8/DP2 loaded, but the first generation crashed in FlashInfer paged prefill on
+the hybrid-attention path.
+
+Qwen3.6-27B on Slurm:
+
+```bash
+sbatch scripts/local_model_serving/serve_qwen36_slurm.sbatch
+```
+
+The Slurm script defaults to 8x L40S with TP8/DP1. For more memory per GPU,
+override the Slurm resources to an 8x RTX PRO 6000 node:
+
+```bash
+sbatch \
+  --partition=rtx6000pro-8gpu \
+  --gres=gpu:rtxproserver6000:8 \
+  --cpus-per-task=96 \
+  --mem=1200G \
+  scripts/local_model_serving/serve_qwen36_slurm.sbatch
+```
+
 ## Datagen Smoke Commands
 
 Kimi:
@@ -171,6 +210,21 @@ python -m datagen.swerebench_v2.run_all \
   --no-require-api-key \
   --max-tokens 16384 \
   --extra-body-json '{"chat_template_kwargs":{"thinking":true}}' \
+  --limit 1 \
+  --disable-verification
+```
+
+Qwen3.6:
+
+```bash
+cd /wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen
+python -m datagen.swerebench_v2.run_all \
+  --model qwen3.6-27b \
+  --litellm-model openai/qwen3.6-27b \
+  --api-base http://127.0.0.1:20000/v1 \
+  --no-require-api-key \
+  --max-tokens 16384 \
+  --extra-body-json '{"chat_template_kwargs":{"enable_thinking":true,"preserve_thinking":true}}' \
   --limit 1 \
   --disable-verification
 ```
@@ -207,6 +261,19 @@ finish_reasons={"length": 1, "tool_calls": 127}
 latency_s={"mean": 4.645947013108525, "p50": 4.367954423185438, "p95": 8.722209536936134, "max": 18.085793481674045}
 ```
 
+Qwen3.6-27B:
+
+```text
+success=128/128
+output_tps=37.35589745655711
+completion_tokens=6830
+prompt_tokens=166076
+elapsed_s=182.83592324191704
+tool_call_responses=128
+finish_reasons={"tool_calls": 128}
+latency_s={"mean": 77.64255335546841, "p50": 85.20868428656831, "p95": 106.3105297437869, "max": 115.62520491797477}
+```
+
 ## Last Verification
 
 - Kimi `/v1/models` served `kimi-k2.6` with `max_model_len=128000`.
@@ -218,6 +285,14 @@ latency_s={"mean": 4.645947013108525, "p50": 4.367954423185438, "p95": 8.7222095
 - Slurm MiMo on 8x L40S served `mimo-v2.5` with `max_model_len=32768`.
 - Slurm MiMo smoke chat returned `local slurm mimo 32k ok`.
 - Slurm MiMo accepted a 12,036-token prompt and returned `long context ok`.
+- Slurm Qwen3.6-27B on 8x L40S served `qwen3.6-27b` with
+  `max_model_len=131072`.
+- Slurm Qwen3.6-27B TP8/DP1 allocated `max_total_num_tokens=800000` with
+  about 8.57 GB GPU memory left after CUDA graph capture.
+- Slurm Qwen3.6-27B smoke chat returned `local slurm qwen ok`.
+- Slurm Qwen3.6-27B high-concurrency benchmark completed with zero errors.
+- Slurm Qwen3.6-27B accepted four parallel 130,804-token prompts and all four
+  returned `long context ok` in 178.83 s.
 - `bash -n` passed for the local model serving scripts after the launcher
   updates.
 
