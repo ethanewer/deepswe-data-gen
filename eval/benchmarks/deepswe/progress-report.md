@@ -2343,3 +2343,20 @@ MiMo/OpenRouter packed CPU coverage restart:
 - Current visible packed MiMo queue: `88` elements total (`2` running probe elements, `86` configuring r09 elements), all on CPU-only `m7i-cpu2`, with `JobArrayTaskLimit=0`.
 
 Next action: monitor r09 startup and first trajectories for Docker/Pyxis/import/API failures; if clean, prepare the next non-overlapping packed wave from the remaining uncovered easy/medium tasks while r09 runs.
+
+## 2026-06-09 00:01 UTC
+
+MiMo/OpenRouter packed throughput follow-up:
+
+- r09 startup exposed a new Docker bottleneck rather than a model/API or Python dependency issue: several early rows failed before trajectory creation because `docker pull` hit CloudFront/layer-download `EOF` errors. There are still no observed `pydantic`, `jinja2`, `certifi`, auth, or `JobArrayTaskLimit` failures in the packed scripts.
+- Patched and pushed commit `442dc33` so future submissions retry plain `EOF` / `failed to do request` Docker pull failures and serialize Docker pulls within each packed array element using `flock`. This keeps four task containers per CPU node for generation while reducing per-node simultaneous image pulls.
+- Submitted r10 after that patch: `swere-mimo-pack-r10` job `350923`, `1,024` unique easy/medium tasks (`easy=224`, `medium=800`), `86` packed array elements, `12` rows per element, `4` concurrent task containers per element.
+- Prepared but did not submit r11: `mimo-packed-wave-r11-1024.tsv`, `1,024` unique easy/medium tasks (`easy=174`, `medium=850`). Holding this manifest avoids unnecessary queue pressure while r10 is still starting.
+- Current packed queue snapshot: `174` elements total across r08/r09/r10, `91` running, `7` configuring, `76` pending for `BeginTime`, all on CPU-only `m7i-cpu2`, `JobArrayTaskLimit=0`.
+- Current saved/in-flight trace snapshot:
+  - r08 probe: `8 / 8` trajectories, `8` all-reasoning, `6` result files, `1` pass so far.
+  - r09: `252 / 1,024` trajectories, `251` all-reasoning, `1` trajectory with at least one assistant turn missing reasoning, `43` result files, `5` passes so far, `26` early no-trace Docker/Pyxis start failures.
+  - r10: accepted/starting, no trajectories yet.
+- Quality action: do not count the r09 trajectory for `aio-libs__aiohttp-9239` as usable coverage unless a later final trajectory has non-empty reasoning on every assistant turn. Add any such rows to the retry/filter list for full reasoning coverage.
+
+Next action: keep r11 held until r10 is mostly running or r09 drains, then submit the next packed wave. Continue checking trajectory reasoning completeness and Docker pull failure rates before expanding further.
