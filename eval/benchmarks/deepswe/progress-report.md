@@ -2481,3 +2481,15 @@ MiMo/OpenRouter r19 submission checkpoint:
 - Queue snapshot after r19 submission: `411` visible packed elements, `189` running, `222` pending, all CPU-only `m7i-cpu2`, `JobArrayTaskLimit=0`. Pending is scheduler `Resources`/`Priority`, not Docker or API failure.
 
 Next action: keep r20 held until r18 or r19 starts draining; then submit the `524`-row tail. Continue using compact scheduler checks and targeted spot checks rather than broad scans over active trace directories, which can stall on shared storage.
+
+## 2026-06-09 04:56 UTC
+
+MiMo/OpenRouter r20 tail submission checkpoint:
+
+- r17 became mostly resident on CPU nodes (`85` running, `1` pending) with no scheduler throttle pressure, so the final first-pass tail was submitted.
+- r20 was submitted as job `356041` with the same packed CPU-only settings.
+- r20 manifest: `524` unique tasks (`easy=193`, `medium=331`), no hard tasks.
+- All rows in the current high-quality missing manifests are now submitted or already running across r08-r20. First-pass selected coverage beyond the prior unique dataset is `easy=3,857`, `medium=7,809`, `hard=129`.
+- Queue snapshot after r20 submission: `400` visible packed elements, `189` running, `211` pending, all CPU-only `m7i-cpu2`, `JobArrayTaskLimit=0`.
+
+Next action: monitor r17-r20 startup and completion using compact scheduler checks plus targeted quality spot checks. Once first-pass waves finish, generate retry manifests for tasks without an all-reasoning trajectory, especially pre-repair `requests` failures and any malformed/missing-reasoning traces.
