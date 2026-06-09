@@ -2562,3 +2562,23 @@ MiMo/OpenRouter retry monitor:
 - An early retry trajectory sample touched active files too soon; many active trajectories had no assistant messages yet because they were still being written. I am not counting those as quality failures. The definitive all-reasoning scan will run only after r21/r22 complete.
 
 Next action: wait for retry jobs to finish, rerun the cached all-reasoning coverage scan, and generate a final small retry or blocked-image list from the remaining uncovered IDs.
+
+## 2026-06-09 11:35 UTC
+
+MiMo/OpenRouter retry completion blocker:
+
+- r21/r22 retry jobs finished and there are no remaining packed MiMo jobs in Slurm (`0` running, `0` pending).
+- Post-retry scan artifacts:
+  - `allreason_retry_scan_cache_json_20260609.jsonl`
+  - `allreason_scan_summary_after_retry_json_20260609.json`
+  - `allreason_uncovered_after_retry_ids_20260609.txt`
+- The retry wave did not add usable all-reasoning coverage because OpenRouter returned HTTP `403` `Key limit exceeded` for `1,428` retry rows. The failed result files and partial trajectories are preserved.
+- The remaining `6` retry failures were `PyxisContainerStartError`, including confirmed Docker pull denial for `swerebenchv2/dhi-mikeio`.
+- Current all-reasoning coverage therefore remains:
+  - easy: `5,320 / 5,518` (`96.41%`)
+  - medium: `8,215 / 9,443` (`87.00%`)
+  - hard: `327 / 335` (`97.61%`)
+  - total: `13,862 / 15,296`
+- Remaining uncovered set: `1,434` tasks (`easy=198`, `medium=1,228`, `hard=8`), recorded in `allreason_uncovered_after_retry_ids_20260609.txt`.
+
+Blocked state: further MiMo/OpenRouter retry generation cannot proceed until the provided OpenRouter key limit is raised/replenished or a new usable key is provided. After that, resubmit the uncovered set; separately investigate the `dhi-mikeio` container image availability.
