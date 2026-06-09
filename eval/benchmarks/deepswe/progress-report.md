@@ -2360,3 +2360,17 @@ MiMo/OpenRouter packed throughput follow-up:
 - Quality action: do not count the r09 trajectory for `aio-libs__aiohttp-9239` as usable coverage unless a later final trajectory has non-empty reasoning on every assistant turn. Add any such rows to the retry/filter list for full reasoning coverage.
 
 Next action: keep r11 held until r10 is mostly running or r09 drains, then submit the next packed wave. Continue checking trajectory reasoning completeness and Docker pull failure rates before expanding further.
+
+## 2026-06-09 00:13 UTC
+
+MiMo/OpenRouter packed concurrency adjustment:
+
+- r10 exposed a second Pyxis bottleneck: Docker pulls succeeded, but concurrent Pyxis image imports on the same node could fail while creating `/run/pyxis/...squashfs` with `No space left on device`.
+- Canceled r10 job `350923` before the failure mode spread across the full wave. Existing r10 artifacts were left in place. One r10 row already had a completed all-reasoning trajectory, so it was excluded from the retry.
+- Patched and pushed commit `9223090` to make the packed submitter default to the safer full-node shape: `parallel_rows=2`, `cpus_per_row=8`, `rows_per_job=12`.
+- Submitted replacement r10b job `351254`: `1,023` retry rows (`easy=224`, `medium=799`), `86` packed array elements, `2` concurrent task containers per node, `8` CPUs per task container, serialized Docker pulls.
+- r10b startup health check: `19` trajectories saved so far, all `19` with reasoning on every assistant turn; no r10b result/failure files yet and no observed Docker EOF, `/run/pyxis` space, dependency import, auth, or API errors.
+- r09 continues to run: `560` trajectories saved, `559` all-reasoning, `343` result files, `75` passes so far. Known unusable reasoning row remains `aio-libs__aiohttp-9239`.
+- Current packed queue snapshot: `172` visible elements across r08/r09/r10b, `100` running, `72` pending for normal `Resources`, all CPU-only `m7i-cpu2`, `JobArrayTaskLimit=0`.
+
+Next action: keep r11 held until r10b has taken more of the freed CPU capacity and remains clean; then submit r11 with the safer 2-way packed defaults.
