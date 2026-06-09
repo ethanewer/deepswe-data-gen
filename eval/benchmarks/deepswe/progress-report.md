@@ -2437,3 +2437,15 @@ MiMo/OpenRouter r15 submission checkpoint:
 - Queue snapshot: `256` visible packed elements, `178` running and `78` pending for normal `Resources`, all CPU-only `m7i-cpu2`, `JobArrayTaskLimit=0`.
 
 Next action: hold r16 until r15 starts or pending drains. Continue retry planning for rows lost to the pre-repair `requests` `AttributeError` failure and rows with completed trajectories missing reasoning turns.
+
+## 2026-06-09 03:12 UTC
+
+MiMo/OpenRouter r16 submission checkpoint:
+
+- r15 startup checked clean (`38` sampled trajectories all with reasoning and no sampled Docker/Pyxis/dependency/API errors), so r16 was submitted as job `355555`.
+- r16 manifest: `1,024` unique uncovered tasks (`easy=700`, `medium=324`), no hard tasks.
+- r17 has been staged and validated but not submitted: `1,024` unique tasks (`easy=600`, `medium=424`).
+- Current submitted packed waves r08/r09/r10b/r11/r12/r13/r14/r15/r16 represent `8,199` unique missing-task rows beyond the prior unique dataset/current traces: `easy=2,472`, `medium=5,601`, `hard=126`.
+- Queue snapshot after r16 submission: `258` visible packed elements across the active tail, `160` running and `98` pending, all CPU-only `m7i-cpu2`, `JobArrayTaskLimit=0`.
+
+Next action: hold r17 until r16 starts or pending drains. Continue monitoring post-repair rows for sustained `Submitted` results and no recurrence of the `requests` overlay failure.
