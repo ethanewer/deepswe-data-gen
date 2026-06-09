@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import fcntl
+import importlib.metadata
 import json
 import os
 import shlex
@@ -346,6 +347,48 @@ def append_result_index(workspace: Path, result: dict[str, Any]) -> None:
         fcntl.flock(handle, fcntl.LOCK_UN)
 
 
+def write_setup_failure_trajectory(
+    args: argparse.Namespace,
+    result: dict[str, Any],
+    instruction: str,
+) -> None:
+    """Record a trace artifact even when setup fails before the agent exists."""
+    trajectory_path = Path(result["trajectory_path"])
+    if trajectory_path.exists():
+        return
+    try:
+        mini_version = importlib.metadata.version("mini-swe-agent")
+    except importlib.metadata.PackageNotFoundError:
+        mini_version = "unknown"
+    trajectory_path.parent.mkdir(parents=True, exist_ok=True)
+    failure = {
+        "info": {
+            "mini_version": mini_version,
+            "model_stats": {
+                "api_calls": result.get("api_calls", 0),
+                "instance_cost": result.get("cost_usd", 0.0),
+            },
+            "setup_failure": result.get("agent_exception"),
+            "config": {
+                "model": {
+                    "model_name": args.litellm_model,
+                    "api_base": args.api_base,
+                    "max_tokens": args.max_tokens,
+                    "reasoning_effort": args.reasoning_effort,
+                    "extra_body_json": args.extra_body_json,
+                },
+                "agent": {
+                    "output_path": str(trajectory_path),
+                    "wall_time_limit_seconds": args.agent_wall_time_limit,
+                },
+            },
+        },
+        "messages": [{"role": "user", "content": instruction}],
+        "trajectory_format": "mini-swe-agent-v2-setup-failure",
+    }
+    trajectory_path.write_text(json.dumps(failure, indent=2) + "\n", encoding="utf-8")
+
+
 def main() -> None:
     args = parse_args()
     args.workspace.mkdir(parents=True, exist_ok=True)
@@ -430,6 +473,7 @@ def main() -> None:
             "message": str(exc),
             "traceback": traceback.format_exc(),
         }
+        write_setup_failure_trajectory(args, result, instruction)
     finally:
         result["finished_at"] = utc_now()
         (args.workspace / "result.json").write_text(json.dumps(result, indent=2) + "\n")
