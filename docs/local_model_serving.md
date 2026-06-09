@@ -130,16 +130,18 @@ sbatch \
   --gres=gpu:l40s:8 \
   --cpus-per-task=96 \
   --mem=1200G \
-  --job-name=serve-mimo-v2.5-l40s \
-  --output=/wbl-fast/usrs/ee/code-swe-data/runtime/local_model_serving/logs/slurm-mimo-l40s-%j.out \
-  --error=/wbl-fast/usrs/ee/code-swe-data/runtime/local_model_serving/logs/slurm-mimo-l40s-%j.err \
-  --export=ALL,TP_SIZE=8,DP_SIZE=2,ENABLE_DP_ATTENTION=1,MEM_FRACTION_STATIC=0.94,CONTEXT_LENGTH=8192,MAX_RUNNING_REQUESTS=8,CHUNKED_PREFILL_SIZE=4096,PORT=19001 \
+  --job-name=serve-mimo-v2.5-l40s-32k \
+  --output=/wbl-fast/usrs/ee/code-swe-data/runtime/local_model_serving/logs/slurm-mimo-l40s-32k-%j.out \
+  --error=/wbl-fast/usrs/ee/code-swe-data/runtime/local_model_serving/logs/slurm-mimo-l40s-32k-%j.err \
+  --export=ALL,TP_SIZE=8,DP_SIZE=2,ENABLE_DP_ATTENTION=1,MEM_FRACTION_STATIC=0.94,CONTEXT_LENGTH=32768,MAX_RUNNING_REQUESTS=8,CHUNKED_PREFILL_SIZE=4096,PORT=19001 \
   scripts/local_model_serving/serve_mimo_slurm.sbatch
 ```
 
 The Slurm launcher uses the shared model and venv under
 `/wbl-fast/usrs/ee/code-swe-data/runtime/local_model_serving`, while keeping
 mutable caches on node-local `/scratch/${USER}/local_model_serving`.
+The verified 8x L40S setup has a KV pool of about 47.8K total tokens with
+about 2.37 GB GPU memory left after CUDA graph capture, so 32K context fits.
 
 ## Datagen Smoke Commands
 
@@ -213,8 +215,9 @@ latency_s={"mean": 4.645947013108525, "p50": 4.367954423185438, "p95": 8.7222095
 - MiMo `/v1/models` served `mimo-v2.5` with `max_model_len=262144`.
 - MiMo smoke chat returned `local mimo ok` with reasoning content.
 - MiMo high-concurrency benchmark completed with zero errors.
-- Slurm MiMo on 8x L40S served `mimo-v2.5` with `max_model_len=8192`.
-- Slurm MiMo smoke chat returned `local slurm mimo ok`.
+- Slurm MiMo on 8x L40S served `mimo-v2.5` with `max_model_len=32768`.
+- Slurm MiMo smoke chat returned `local slurm mimo 32k ok`.
+- Slurm MiMo accepted a 12,036-token prompt and returned `long context ok`.
 - `bash -n` passed for the local model serving scripts after the launcher
   updates.
 
