@@ -299,7 +299,7 @@ docker_pull_image() {{
       echo "docker_pull_retry_after_auth=1" | tee -a "$WORKSPACE/docker-pull.log"
       continue
     fi
-    if [[ "$attempt" -lt 6 ]] && grep -Eiq '429|Too Many Requests|rate limit|TLS handshake timeout|connection reset|unexpected EOF|EOF|failed to do request|temporarily unavailable|timeout' "$WORKSPACE/docker-pull.log"; then
+    if [[ "$attempt" -lt 6 ]] && grep -Eiq '429|502|Bad Gateway|Too Many Requests|rate limit|TLS handshake timeout|connection reset|unexpected EOF|EOF|failed to do request|temporarily unavailable|timeout' "$WORKSPACE/docker-pull.log"; then
       sleep_seconds=$((20 * attempt + RANDOM % 20))
       echo "docker_pull_retry_sleep=$sleep_seconds" | tee -a "$WORKSPACE/docker-pull.log"
       sleep "$sleep_seconds"
