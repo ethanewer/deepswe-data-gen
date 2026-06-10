@@ -15,10 +15,15 @@ from eval.paths import REPO_ROOT
 
 
 DEFAULT_PYTHON = Path("/wbl-fast/usrs/ee/code-swe-data/runtime/cpython-3.12.13-linux-x86_64-gnu/bin/python3.12")
-DEFAULT_CONFIG = REPO_ROOT / "datagen" / "swerebench_v2" / "minisweagent_datagen_strict.yaml"
+DEFAULT_DATAGEN_STRICT_CONFIG = REPO_ROOT / "datagen" / "swerebench_v2" / "minisweagent_datagen_strict.yaml"
+DEFAULT_SWEBENCH_MULTILINGUAL_CONFIG = (
+    REPO_ROOT / "datagen" / "swerebench_v2" / "minisweagent_swebench_multilingual.yaml"
+)
+DEFAULT_DEEPSWE_CONFIG = REPO_ROOT / "datagen" / "swerebench_v2" / "minisweagent_deepswe_pier.yaml"
 DEFAULT_ENV_FILE = Path("/wbl-fast/usrs/ee/code-swe-data/.env")
 DRIVER = REPO_ROOT / "datagen" / "swerebench_v2" / "pyxis_miniswe_agent_driver.py"
 FAILURE_WRITER = REPO_ROOT / "datagen" / "swerebench_v2" / "write_pyxis_failure_result.py"
+BENCHMARK_PROFILE_CHOICES = ("auto", "swebench-multilingual", "deepswe", "datagen-strict")
 
 
 def parse_args() -> argparse.Namespace:
@@ -35,7 +40,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tmp", default="")
     parser.add_argument("--time", default="04:00:00")
     parser.add_argument("--python", type=Path, default=DEFAULT_PYTHON)
-    parser.add_argument("--config-file", type=Path, default=DEFAULT_CONFIG)
+    parser.add_argument(
+        "--config-file",
+        type=Path,
+        help=(
+            "Mini-swe-agent config to use for every row. By default the launcher "
+            "selects the benchmark-matching config from instruction_style."
+        ),
+    )
+    parser.add_argument(
+        "--benchmark-profile",
+        choices=BENCHMARK_PROFILE_CHOICES,
+        default="auto",
+        help=(
+            "Model-class/profile behavior to match. 'auto' maps original/swe_rebench "
+            "rows to SWE-bench Multilingual and deepswe/rewritten/planned rows to DeepSWE."
+        ),
+    )
     parser.add_argument("--env-file", type=Path, default=DEFAULT_ENV_FILE)
     parser.add_argument("--enroot-config-path", type=Path)
     parser.add_argument("--docker-user", default="")
@@ -47,7 +68,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--reasoning-effort", default="high")
     parser.add_argument("--model-timeout", type=int, default=600)
     parser.add_argument("--agent-wall-time-limit", type=int, default=2700)
-    parser.add_argument("--command-timeout", type=int, default=180)
+    parser.add_argument(
+        "--command-timeout",
+        type=int,
+        help="Override the command timeout from the selected mini-swe-agent config.",
+    )
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
 
@@ -86,6 +111,11 @@ def write_array_script(args: argparse.Namespace, n_rows: int) -> Path:
     ]
     pythonpath = ":".join(str(path) for path in pythonpath_parts)
     ca_bundle = pydeps_overlay / "certifi" / "cacert.pem"
+    command_timeout_arg = (
+        f" \\\n          --command-timeout {args.command_timeout}"
+        if args.command_timeout is not None
+        else ""
+    )
     array_size = math.ceil(n_rows / args.rows_per_job)
     if args.array_concurrency and args.array_concurrency < array_size:
         array_spec = f"0-{array_size - 1}%{args.array_concurrency}"
@@ -125,7 +155,11 @@ DOCKER_LOGIN_FROM_ENROOT={1 if args.docker_login_from_enroot else 0}
 PYTHON_BIN={shell_quote(args.python)}
 DRIVER={shell_quote(DRIVER)}
 FAILURE_WRITER={shell_quote(FAILURE_WRITER)}
-CONFIG_FILE={shell_quote(args.config_file)}
+CUSTOM_CONFIG_FILE={shell_quote(str(args.config_file) if args.config_file else "")}
+SWEBENCH_MULTILINGUAL_CONFIG={shell_quote(DEFAULT_SWEBENCH_MULTILINGUAL_CONFIG)}
+DEEPSWE_CONFIG={shell_quote(DEFAULT_DEEPSWE_CONFIG)}
+DATAGEN_STRICT_CONFIG={shell_quote(DEFAULT_DATAGEN_STRICT_CONFIG)}
+BENCHMARK_PROFILE_OVERRIDE={shell_quote(args.benchmark_profile)}
 ENV_FILE={shell_quote(args.env_file)}
 
 export HF_HOME={shell_quote(cache_root / "hf")}
@@ -185,6 +219,40 @@ run_row() {{
     if [[ "$EXTRA_BODY_JSON" == "-" ]]; then
       EXTRA_BODY_JSON=""
     fi
+    local BENCHMARK_PROFILE="$BENCHMARK_PROFILE_OVERRIDE"
+    if [[ "$BENCHMARK_PROFILE" == "auto" ]]; then
+      case "$STYLE" in
+        original|swe_rebench)
+          BENCHMARK_PROFILE="swebench-multilingual"
+          ;;
+        deepswe|rewritten|planned)
+          BENCHMARK_PROFILE="deepswe"
+          ;;
+        *)
+          BENCHMARK_PROFILE="datagen-strict"
+          ;;
+      esac
+    fi
+    local CONFIG_FILE
+    if [[ -n "$CUSTOM_CONFIG_FILE" ]]; then
+      CONFIG_FILE="$CUSTOM_CONFIG_FILE"
+    else
+      case "$BENCHMARK_PROFILE" in
+        swebench-multilingual)
+          CONFIG_FILE="$SWEBENCH_MULTILINGUAL_CONFIG"
+          ;;
+        deepswe)
+          CONFIG_FILE="$DEEPSWE_CONFIG"
+          ;;
+        datagen-strict)
+          CONFIG_FILE="$DATAGEN_STRICT_CONFIG"
+          ;;
+        *)
+          echo "unknown benchmark profile: $BENCHMARK_PROFILE" >&2
+          return 2
+          ;;
+      esac
+    fi
 
     local PYXIS_IMAGE_REF="${{IMAGE#docker.io/}}"
     PYXIS_IMAGE_REF="${{PYXIS_IMAGE_REF#docker://}}"
@@ -221,6 +289,9 @@ run_row() {{
     echo "rollout_id=$ROLLOUT_ID"
     echo "model=$MODEL"
     echo "image=$IMAGE"
+    echo "instruction_style=$STYLE"
+    echo "benchmark_profile=$BENCHMARK_PROFILE"
+    echo "mini_swe_agent_config=$CONFIG_FILE"
     echo "container_source=$CONTAINER_SOURCE"
     echo "workspace=$WORKSPACE"
     echo "ssl_cert_file=$SSL_CERT_FILE"
@@ -332,6 +403,7 @@ JSON
           --task-dir "$TASK_DIR" \\
           --workspace /workspace \\
           --config-file "$CONFIG_FILE" \\
+          --benchmark-profile "$BENCHMARK_PROFILE" \\
           --instance-id "$INSTANCE_ID" \\
           --rollout-id "$ROLLOUT_ID" \\
           --model "$MODEL" \\
@@ -348,8 +420,7 @@ JSON
           --max-tokens {args.max_tokens} \\
           --reasoning-effort {shell_quote(args.reasoning_effort)} \\
           --model-timeout {args.model_timeout} \\
-          --agent-wall-time-limit {args.agent_wall_time_limit} \\
-          --command-timeout {args.command_timeout}
+          --agent-wall-time-limit {args.agent_wall_time_limit}{command_timeout_arg}
     }}
 
     set +e
@@ -397,6 +468,7 @@ JSON
         --model "$MODEL" \\
         --litellm-model "$LITELLM_MODEL" \\
         --instruction-style "$STYLE" \\
+        --benchmark-profile "$BENCHMARK_PROFILE" \\
         --difficulty "$DIFFICULTY" \\
         --language "$LANGUAGE" \\
         --repo "$REPO" \\

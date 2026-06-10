@@ -93,6 +93,61 @@ def resolve_model_class_and_name(profile: str, litellm_model: str) -> tuple[str,
     return "litellm", litellm_model
 
 
+def build_model_kwargs(
+    args: argparse.Namespace,
+    *,
+    benchmark_profile: str,
+    extra_body: dict[str, Any] | None,
+    use_native_openrouter: bool,
+) -> dict[str, Any]:
+    model_kwargs: dict[str, Any] = {
+        "temperature": args.temperature,
+        "max_tokens": args.max_tokens,
+    }
+    if args.api_base:
+        model_kwargs["api_base"] = args.api_base
+
+    if benchmark_profile == "datagen-strict":
+        if use_native_openrouter:
+            model_kwargs["request_timeout"] = args.model_timeout
+        else:
+            model_kwargs["timeout"] = args.model_timeout
+        thinking_enabled = (
+            isinstance(extra_body, dict)
+            and isinstance(extra_body.get("thinking"), dict)
+            and extra_body["thinking"].get("type") == "enabled"
+        )
+        qwen_thinking_enabled = (
+            isinstance(extra_body, dict)
+            and isinstance(extra_body.get("chat_template_kwargs"), dict)
+            and extra_body["chat_template_kwargs"].get("enable_thinking") is True
+        )
+        reasoning_config = extra_body.get("reasoning") if isinstance(extra_body, dict) else None
+        openrouter_reasoning_enabled = (
+            isinstance(reasoning_config, dict)
+            and not reasoning_config.get("exclude", False)
+            and (
+                reasoning_config.get("enabled") is True
+                or bool(reasoning_config.get("effort"))
+                or bool(reasoning_config.get("max_tokens"))
+            )
+        )
+        reasoning_enabled = thinking_enabled or qwen_thinking_enabled or openrouter_reasoning_enabled
+        if thinking_enabled:
+            model_kwargs["reasoning_effort"] = args.reasoning_effort
+        if reasoning_enabled and not qwen_thinking_enabled:
+            model_kwargs.pop("temperature", None)
+        if extra_body and use_native_openrouter:
+            model_kwargs.update(extra_body)
+        elif extra_body:
+            model_kwargs["extra_body"] = extra_body
+        return model_kwargs
+
+    if extra_body:
+        model_kwargs["extra_body"] = extra_body
+    return model_kwargs
+
+
 def run_shell(
     command: str,
     *,
@@ -229,44 +284,14 @@ def build_agent(args: argparse.Namespace, workdir: str, trajectory_path: Path) -
     benchmark_profile = resolve_benchmark_profile(args)
     environment_config = config.get("environment", {}) if isinstance(config.get("environment"), dict) else {}
 
-    thinking_enabled = (
-        isinstance(extra_body, dict)
-        and isinstance(extra_body.get("thinking"), dict)
-        and extra_body["thinking"].get("type") == "enabled"
-    )
-    qwen_thinking_enabled = (
-        isinstance(extra_body, dict)
-        and isinstance(extra_body.get("chat_template_kwargs"), dict)
-        and extra_body["chat_template_kwargs"].get("enable_thinking") is True
-    )
-    reasoning_config = extra_body.get("reasoning") if isinstance(extra_body, dict) else None
-    openrouter_reasoning_enabled = (
-        isinstance(reasoning_config, dict)
-        and not reasoning_config.get("exclude", False)
-        and (
-            reasoning_config.get("enabled") is True
-            or bool(reasoning_config.get("effort"))
-            or bool(reasoning_config.get("max_tokens"))
-        )
-    )
-    reasoning_enabled = thinking_enabled or qwen_thinking_enabled or openrouter_reasoning_enabled
     model_class, model_name = resolve_model_class_and_name(benchmark_profile, args.litellm_model)
     use_native_openrouter = model_class == "openrouter"
-    model_kwargs: dict[str, Any] = {"max_tokens": args.max_tokens}
-    if use_native_openrouter:
-        model_kwargs["request_timeout"] = args.model_timeout
-    else:
-        model_kwargs["timeout"] = args.model_timeout
-    if thinking_enabled:
-        model_kwargs["reasoning_effort"] = args.reasoning_effort
-    if qwen_thinking_enabled or not reasoning_enabled:
-        model_kwargs["temperature"] = args.temperature
-    if args.api_base:
-        model_kwargs["api_base"] = args.api_base
-    if extra_body and use_native_openrouter:
-        model_kwargs.update(extra_body)
-    elif extra_body:
-        model_kwargs["extra_body"] = extra_body
+    model_kwargs = build_model_kwargs(
+        args,
+        benchmark_profile=benchmark_profile,
+        extra_body=extra_body,
+        use_native_openrouter=use_native_openrouter,
+    )
     model_config = recursive_merge(
         config.get("model", {}),
         {

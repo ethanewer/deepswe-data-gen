@@ -26,10 +26,15 @@ from eval.paths import REPO_ROOT
 
 
 DEFAULT_PYTHON = Path("/wbl-fast/usrs/ee/code-swe-data/runtime/cpython-3.12.13-linux-x86_64-gnu/bin/python3.12")
-DEFAULT_CONFIG = REPO_ROOT / "datagen" / "swerebench_v2" / "minisweagent_datagen_strict.yaml"
+DEFAULT_DATAGEN_STRICT_CONFIG = REPO_ROOT / "datagen" / "swerebench_v2" / "minisweagent_datagen_strict.yaml"
+DEFAULT_SWEBENCH_MULTILINGUAL_CONFIG = (
+    REPO_ROOT / "datagen" / "swerebench_v2" / "minisweagent_swebench_multilingual.yaml"
+)
+DEFAULT_DEEPSWE_CONFIG = REPO_ROOT / "datagen" / "swerebench_v2" / "minisweagent_deepswe_pier.yaml"
 DEFAULT_ENV_FILE = Path("/wbl-fast/usrs/ee/code-swe-data/.env")
 DRIVER = REPO_ROOT / "datagen" / "swerebench_v2" / "pyxis_miniswe_agent_driver.py"
 FAILURE_WRITER = REPO_ROOT / "datagen" / "swerebench_v2" / "write_pyxis_failure_result.py"
+BENCHMARK_PROFILE_CHOICES = ("auto", "swebench-multilingual", "deepswe", "datagen-strict")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -64,14 +69,34 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--api-base-filter", default="")
     parser.add_argument("--skip-existing-result", action="store_true")
     parser.add_argument("--python", type=Path, default=DEFAULT_PYTHON)
-    parser.add_argument("--config-file", type=Path, default=DEFAULT_CONFIG)
+    parser.add_argument(
+        "--config-file",
+        type=Path,
+        help=(
+            "Mini-swe-agent config to use for every row. By default the runner "
+            "selects the benchmark-matching config from instruction_style."
+        ),
+    )
+    parser.add_argument(
+        "--benchmark-profile",
+        choices=BENCHMARK_PROFILE_CHOICES,
+        default="auto",
+        help=(
+            "Model-class/profile behavior to match. 'auto' maps original/swe_rebench "
+            "rows to SWE-bench Multilingual and deepswe/rewritten/planned rows to DeepSWE."
+        ),
+    )
     parser.add_argument("--env-file", type=Path, default=DEFAULT_ENV_FILE)
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--max-tokens", type=int, default=16384)
     parser.add_argument("--reasoning-effort", default="high")
     parser.add_argument("--model-timeout", type=int, default=600)
     parser.add_argument("--agent-wall-time-limit", type=int, default=2700)
-    parser.add_argument("--command-timeout", type=int, default=180)
+    parser.add_argument(
+        "--command-timeout",
+        type=int,
+        help="Override the command timeout from the selected mini-swe-agent config.",
+    )
     parser.add_argument("--pull-retries", type=int, default=3)
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
@@ -136,6 +161,26 @@ def docker_image_ref(image: str) -> str:
 
 def safe_name(value: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_.-]+", "-", value).strip("-").lower()[:80]
+
+
+def resolve_benchmark_profile(style: str, override: str = "auto") -> str:
+    if override != "auto":
+        return override
+    if style in {"original", "swe_rebench"}:
+        return "swebench-multilingual"
+    if style in {"deepswe", "rewritten", "planned"}:
+        return "deepswe"
+    return "datagen-strict"
+
+
+def selected_config_file(args: argparse.Namespace, profile: str) -> Path:
+    if args.config_file is not None:
+        return args.config_file
+    if profile == "swebench-multilingual":
+        return DEFAULT_SWEBENCH_MULTILINGUAL_CONFIG
+    if profile == "deepswe":
+        return DEFAULT_DEEPSWE_CONFIG
+    return DEFAULT_DATAGEN_STRICT_CONFIG
 
 
 def run_command(command: list[str], stdout: Path, stderr: Path, timeout: int | None = None) -> int:
@@ -283,6 +328,8 @@ def base_environment(args: argparse.Namespace, workspace: Path, row: ManifestRow
 def docker_run_command(args: argparse.Namespace, row: ManifestRow) -> list[str]:
     shared_root = REPO_ROOT.parent
     env = base_environment(args, row.workspace, row)
+    benchmark_profile = resolve_benchmark_profile(row.instruction_style, args.benchmark_profile)
+    config_file = selected_config_file(args, benchmark_profile)
     command = [
         "docker",
         "run",
@@ -312,7 +359,9 @@ def docker_run_command(args: argparse.Namespace, row: ManifestRow) -> list[str]:
             "--workspace",
             "/workspace",
             "--config-file",
-            str(args.config_file),
+            str(config_file),
+            "--benchmark-profile",
+            benchmark_profile,
             "--instance-id",
             row.instance_id,
             "--rollout-id",
@@ -347,15 +396,16 @@ def docker_run_command(args: argparse.Namespace, row: ManifestRow) -> list[str]:
             str(args.model_timeout),
             "--agent-wall-time-limit",
             str(args.agent_wall_time_limit),
-            "--command-timeout",
-            str(args.command_timeout),
         ]
     )
+    if args.command_timeout is not None:
+        command.extend(["--command-timeout", str(args.command_timeout)])
     return command
 
 
 def write_failure(args: argparse.Namespace, row: ManifestRow, status: int, stdout_log: Path, stderr_log: Path, message: str) -> None:
     error_type = "DockerContainerStartError" if status == 125 else "TaskContainerRunError"
+    benchmark_profile = resolve_benchmark_profile(row.instruction_style, args.benchmark_profile)
     command = [
         str(args.python),
         str(FAILURE_WRITER),
@@ -371,6 +421,8 @@ def write_failure(args: argparse.Namespace, row: ManifestRow, status: int, stdou
         row.litellm_model,
         "--instruction-style",
         row.instruction_style,
+        "--benchmark-profile",
+        benchmark_profile,
         "--difficulty",
         row.difficulty,
         "--language",
