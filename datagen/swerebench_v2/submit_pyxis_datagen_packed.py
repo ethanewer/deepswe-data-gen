@@ -89,6 +89,21 @@ def shell_quote(value: str | Path) -> str:
     return shlex.quote(str(value))
 
 
+def datagen_code_commit() -> str:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+            check=True,
+        )
+        return result.stdout.strip()
+    except Exception:
+        return ""
+
+
 def write_array_script(args: argparse.Namespace, n_rows: int) -> Path:
     if args.rows_per_job < 1:
         raise SystemExit("--rows-per-job must be positive")
@@ -114,6 +129,7 @@ def write_array_script(args: argparse.Namespace, n_rows: int) -> Path:
     ]
     pythonpath = ":".join(str(path) for path in pythonpath_parts)
     ca_bundle = pydeps_overlay / "certifi" / "cacert.pem"
+    code_commit = datagen_code_commit()
     command_timeout_arg = (
         f" \\\n          --command-timeout {args.command_timeout}"
         if args.command_timeout is not None
@@ -179,6 +195,7 @@ export UV_CACHE_DIR={shell_quote(cache_root / "uv")}
 export PIP_CACHE_DIR={shell_quote(cache_root / "pip")}
 export PYDEPS_OVERLAY={shell_quote(pydeps_overlay)}
 export PYTHONPATH={shell_quote(pythonpath)}
+export DATAGEN_CODE_COMMIT={shell_quote(code_commit)}
 export SSL_CERT_FILE={shell_quote(ca_bundle)}
 export REQUESTS_CA_BUNDLE={shell_quote(ca_bundle)}
 export CURL_CA_BUNDLE={shell_quote(ca_bundle)}
@@ -409,7 +426,7 @@ JSON
         --container-remap-root \\
         --no-container-mount-home \\
         --container-mounts="$MOUNTS" \\
-        --container-env=OPENAI_API_KEY,DEEPSEEK_API_KEY,OPENROUTER_API_KEY,OPENAI_BASE_URL,OPENAI_API_BASE,HF_HOME,XDG_CACHE_HOME,UV_CACHE_DIR,PIP_CACHE_DIR,PYTHONPATH,SSL_CERT_FILE,REQUESTS_CA_BUNDLE,CURL_CA_BUNDLE,HOME,MSWEA_COST_TRACKING,MSWEA_SILENT_STARTUP,PYTHONDONTWRITEBYTECODE \\
+        --container-env=OPENAI_API_KEY,DEEPSEEK_API_KEY,OPENROUTER_API_KEY,OPENAI_BASE_URL,OPENAI_API_BASE,HF_HOME,XDG_CACHE_HOME,UV_CACHE_DIR,PIP_CACHE_DIR,PYTHONPATH,DATAGEN_CODE_COMMIT,SSL_CERT_FILE,REQUESTS_CA_BUNDLE,CURL_CA_BUNDLE,HOME,MSWEA_COST_TRACKING,MSWEA_SILENT_STARTUP,PYTHONDONTWRITEBYTECODE \\
         "$PYTHON_BIN" "$DRIVER" \\
           --task-dir "$TASK_DIR" \\
           --workspace /workspace \\

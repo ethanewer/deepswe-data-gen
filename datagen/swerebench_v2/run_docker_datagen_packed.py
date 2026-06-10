@@ -187,6 +187,21 @@ def selected_config_file(args: argparse.Namespace, profile: str) -> Path:
     return DEFAULT_DATAGEN_STRICT_CONFIG
 
 
+def datagen_code_commit() -> str:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+            check=True,
+        )
+        return result.stdout.strip()
+    except Exception:
+        return ""
+
+
 def run_command(command: list[str], stdout: Path, stderr: Path, timeout: int | None = None) -> int:
     stdout.parent.mkdir(parents=True, exist_ok=True)
     stderr.parent.mkdir(parents=True, exist_ok=True)
@@ -302,6 +317,7 @@ def base_environment(args: argparse.Namespace, workspace: Path, row: ManifestRow
         "PIP_CACHE_DIR": str(cache_root / "pip"),
         "PYDEPS_OVERLAY": str(pydeps_overlay),
         "PYTHONPATH": pythonpath,
+        "DATAGEN_CODE_COMMIT": datagen_code_commit(),
         "SSL_CERT_FILE": str(ca_bundle),
         "REQUESTS_CA_BUNDLE": str(ca_bundle),
         "CURL_CA_BUNDLE": str(ca_bundle),

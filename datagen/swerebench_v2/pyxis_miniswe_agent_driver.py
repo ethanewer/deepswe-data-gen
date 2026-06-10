@@ -53,6 +53,9 @@ def str_to_bool(value: str) -> bool:
 
 
 def datagen_code_commit() -> str:
+    from_env = os.environ.get("DATAGEN_CODE_COMMIT", "").strip()
+    if from_env:
+        return from_env
     try:
         result = subprocess.run(
             ["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD"],
