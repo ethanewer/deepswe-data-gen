@@ -260,9 +260,9 @@ def select_assignments(
     for rows in by_bin.values():
         rows.sort(
             key=lambda row: (
-                -row["confidence_value"],
                 row["gold_num_files_changed"],
                 row["gold_patch_bytes"],
+                -row["confidence_value"],
                 row["prompt_chars"],
                 row["random_key"],
                 row["instance_id"],
