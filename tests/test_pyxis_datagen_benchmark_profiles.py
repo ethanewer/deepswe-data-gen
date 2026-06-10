@@ -2,7 +2,9 @@ from argparse import Namespace
 from pathlib import Path
 
 from datagen.swerebench_v2 import submit_pyxis_datagen
+from datagen.swerebench_v2 import pyxis_miniswe_agent_driver
 from datagen.swerebench_v2.pyxis_miniswe_agent_driver import (
+    build_agent,
     resolve_benchmark_profile,
     resolve_model_class_and_name,
 )
@@ -37,7 +39,7 @@ def test_model_class_matches_benchmark_profile():
     )
 
 
-def submit_script(tmp_path, monkeypatch, *, style="original", benchmark_profile="auto"):
+def submit_script(tmp_path, monkeypatch, *, style="original", benchmark_profile="auto", command_timeout=180):
     monkeypatch.setattr(
         submit_pyxis_datagen,
         "require_pinned_minisweagent_overlay",
@@ -75,7 +77,7 @@ def submit_script(tmp_path, monkeypatch, *, style="original", benchmark_profile=
         reasoning_effort="high",
         model_timeout=180,
         agent_wall_time_limit=2700,
-        command_timeout=180,
+        command_timeout=command_timeout,
     )
     return submit_pyxis_datagen.write_array_script(args, 1).read_text(encoding="utf-8")
 
@@ -100,3 +102,51 @@ def test_submit_script_selects_config_from_explicit_profile(tmp_path, monkeypatc
     assert 'BENCHMARK_PROFILE="swebench-multilingual"' in script
     assert 'case "$BENCHMARK_PROFILE" in' in script
     assert 'CONFIG_FILE="$SWEBENCH_MULTILINGUAL_CONFIG"' in script
+
+
+def test_submit_script_omits_command_timeout_when_not_overridden(tmp_path, monkeypatch):
+    script = submit_script(tmp_path, monkeypatch, command_timeout=None)
+
+    assert "--command-timeout None" not in script
+    assert "--command-timeout" not in script
+
+
+def test_driver_uses_selected_config_environment(tmp_path, monkeypatch):
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text(
+        """
+agent:
+  system_template: system
+  instance_template: "{{task}}"
+model:
+  model_kwargs:
+    drop_params: true
+environment:
+  timeout: 60
+  env:
+    PAGER: cat
+    BASH_ENV: /root/.bashrc
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(pyxis_miniswe_agent_driver, "get_model", lambda config: object())
+    monkeypatch.setattr(pyxis_miniswe_agent_driver, "prepare_agent_bin", lambda args: tmp_path / "agent-bin")
+    args = Namespace(
+        config_file=config_file,
+        extra_body_json="",
+        benchmark_profile="swebench-multilingual",
+        instruction_style="original",
+        litellm_model="openai/model",
+        max_tokens=4096,
+        model_timeout=180,
+        reasoning_effort="high",
+        temperature=0.0,
+        api_base="",
+        agent_wall_time_limit=2700,
+        command_timeout=None,
+    )
+
+    agent = build_agent(args, "/testbed", tmp_path / "trajectory.json")
+
+    assert agent.env.config.timeout == 60
+    assert agent.env.config.env["BASH_ENV"] == "/root/.bashrc"

@@ -69,7 +69,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--reasoning-effort", default="high")
     parser.add_argument("--model-timeout", type=int, default=600)
     parser.add_argument("--agent-wall-time-limit", type=int, default=2700)
-    parser.add_argument("--command-timeout", type=int, default=180)
+    parser.add_argument("--command-timeout", type=int)
     return parser.parse_args()
 
 
@@ -227,6 +227,7 @@ def build_agent(args: argparse.Namespace, workdir: str, trajectory_path: Path) -
     config = yaml.safe_load(args.config_file.read_text(encoding="utf-8")) or {}
     extra_body = json.loads(args.extra_body_json) if args.extra_body_json else None
     benchmark_profile = resolve_benchmark_profile(args)
+    environment_config = config.get("environment", {}) if isinstance(config.get("environment"), dict) else {}
 
     thinking_enabled = (
         isinstance(extra_body, dict)
@@ -288,17 +289,24 @@ def build_agent(args: argparse.Namespace, workdir: str, trajectory_path: Path) -
     )
     model = get_model(config=model_config)
     agent_bin = prepare_agent_bin(args)
+    configured_env = environment_config.get("env") if isinstance(environment_config.get("env"), dict) else {}
+    local_env = {
+        "PAGER": "cat",
+        "MANPAGER": "cat",
+        "LESS": "-R",
+        "PIP_PROGRESS_BAR": "off",
+        "TQDM_DISABLE": "1",
+        **configured_env,
+        "PATH": f"{agent_bin}:{os.environ.get('PATH', '')}",
+    }
+    command_timeout = args.command_timeout
+    if command_timeout is None:
+        configured_timeout = environment_config.get("timeout")
+        command_timeout = int(configured_timeout) if configured_timeout is not None else 30
     env = LocalEnvironment(
         cwd=workdir,
-        timeout=args.command_timeout,
-        env={
-            "PATH": f"{agent_bin}:{os.environ.get('PATH', '')}",
-            "PAGER": "cat",
-            "MANPAGER": "cat",
-            "LESS": "-R",
-            "PIP_PROGRESS_BAR": "off",
-            "TQDM_DISABLE": "1",
-        },
+        timeout=command_timeout,
+        env=local_env,
     )
     return DefaultAgent(model, env, **agent_config)
 

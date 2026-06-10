@@ -107,7 +107,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--reasoning-effort", default="high")
     parser.add_argument("--model-timeout", type=int, default=600)
     parser.add_argument("--agent-wall-time-limit", type=int, default=2700)
-    parser.add_argument("--command-timeout", type=int, default=180)
+    parser.add_argument(
+        "--command-timeout",
+        type=int,
+        help="Override the command timeout from the selected mini-swe-agent config.",
+    )
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
 
@@ -136,6 +140,11 @@ def write_array_script(args: argparse.Namespace, n_rows: int) -> Path:
     ]
     pythonpath = ":".join(str(path) for path in pythonpath_parts)
     ca_bundle = pydeps_overlay / "certifi" / "cacert.pem"
+    command_timeout_arg = (
+        f" \\\n    --command-timeout {args.command_timeout}"
+        if args.command_timeout is not None
+        else ""
+    )
 
     script = f"""#!/usr/bin/env bash
 #SBATCH -J {args.job_name}
@@ -413,8 +422,7 @@ run_agent_attempt() {{
     --max-tokens {args.max_tokens} \\
     --reasoning-effort {shell_quote(args.reasoning_effort)} \\
     --model-timeout {args.model_timeout} \\
-    --agent-wall-time-limit {args.agent_wall_time_limit} \\
-    --command-timeout {args.command_timeout}
+    --agent-wall-time-limit {args.agent_wall_time_limit}{command_timeout_arg}
 }}
 
 set +e
