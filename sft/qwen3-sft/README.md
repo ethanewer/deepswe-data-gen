@@ -53,6 +53,42 @@ Validate template rendering, tokenization, loss masks, and fixed-length packing:
 ./scripts/inspect_online_packer.sh
 ```
 
+## Build Offline Compaction Data
+
+Long OpenAI-style traces can be converted into shorter raw JSONL rows with
+synthetic compaction at Qwen-token boundaries. The builder uses the Qwen3 chat
+template/tokenizer for all boundary and hard-cap checks.
+
+Included compaction mode trains the compaction action itself: the first chunk
+ends with a compaction prompt and an assistant summary, and the next chunk
+starts with that summary as context.
+
+```bash
+MODE=included \
+MAX_SEQUENCE_LENGTH=65536 \
+BOUNDARY_TOKENS=49152 \
+OUTPUT_ROOT=$PWD/data/agent_traces_included_compaction \
+./scripts/build_offline_compaction_dataset.sh
+```
+
+Excluded compaction mode omits the prompt/summary generation from the previous
+chunk: the previous row is just truncated at the boundary, and the next row
+starts with the synthetic summary.
+
+```bash
+MODE=excluded \
+MAX_SEQUENCE_LENGTH=65536 \
+BOUNDARY_TOKENS=49152 \
+OUTPUT_ROOT=$PWD/data/agent_traces_excluded_compaction \
+./scripts/build_offline_compaction_dataset.sh
+```
+
+The wrapper defaults to `eewer/agent-traces-openai-style-all` and reads its
+`all_traces_openai_style.jsonl` file directly from Hugging Face, which avoids
+materializing mixed-schema metadata columns through Arrow. Outputs are written
+as raw-root compatible JSONL under `OUTPUT_ROOT/<source-name>/data.jsonl` with a
+`summary.json` next to it.
+
 ## Run The 4B Throughput Recipe
 
 ```bash
