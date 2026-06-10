@@ -2663,3 +2663,14 @@ Local Qwen all-reasoning retry restart:
 - No current `swere` datagen queue entries are pending on `JobArrayTaskLimit`.
 
 Next action: keep batch-01 running, monitor result/error mix, and submit the next unthrottled `200+200` row batch when active retry jobs fall enough to keep queue pressure stable.
+
+## 2026-06-10 00:09 UTC
+
+Automated Qwen all-reasoning retry monitor:
+
+- Run root: `/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/runs/swerebench-v2/datagen-20260609-local-qwen36-hq-allreason-retry1`
+- Submitted retry batch job files: `2`
+- Current retry result files: `2`
+- Active retry array tasks: `50`
+- Retry jobs pending on `JobArrayTaskLimit`: `0`
+- Batch policy: submit the next unthrottled original+DeepSWE batch only when active retry array tasks are below `10`.
