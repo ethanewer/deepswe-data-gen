@@ -2674,3 +2674,15 @@ Automated Qwen all-reasoning retry monitor:
 - Active retry array tasks: `50`
 - Retry jobs pending on `JobArrayTaskLimit`: `0`
 - Batch policy: submit the next unthrottled original+DeepSWE batch only when active retry array tasks are below `10`.
+
+## 2026-06-10 00:21 UTC
+
+Local Qwen retry dependency follow-up:
+
+- Found another overlay dependency gap from early batch-01 setup failures: LiteLLM imports `aiohttp`, which imports `attr`; the shared mini-swe-agent overlay lacked `attrs`, so some task images without their own `attrs` package failed before the first assistant turn.
+- Installed `attrs>=23,<27` into the live overlay `/wbl-fast/usrs/ee/code-swe-data/runtime/pydeps-miniswe-upstream-a85bf5e` and added it to durable repo dependency pins.
+- Verified live overlay imports for `attr`, `attrs`, `aiohttp`, `litellm`, and `minisweagent.models.litellm_model`.
+- Restarted the tmux retry monitor `qwen_hqar1_monitor`; latest monitor status: `50` active retry array tasks, `0` `JobArrayTaskLimit`, `9` result files.
+- Current valid all-reasoning sample remains clean for the completed agent traces; the setup-failure traces are saved but do not count toward all-reasoning coverage and will be retried by the next strict coverage pass.
+
+Next action: let batch-01 continue with the fixed overlay, monitor new results for absence of the `attr` setup failure, then allow the tmux monitor to submit batch-02 when active retry array tasks drop below `10`.
