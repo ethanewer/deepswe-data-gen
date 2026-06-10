@@ -33,6 +33,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source-manifest", type=Path, required=True)
     parser.add_argument("--poll-seconds", type=int, default=300)
     parser.add_argument("--workers", type=int, default=8)
+    parser.add_argument("--cpus-per-worker", type=float, default=2.0)
+    parser.add_argument("--memory-per-worker", default="24g")
     parser.add_argument("--low-active", type=int, default=7)
     parser.add_argument("--max-queue-sum", type=float, default=0.0)
     parser.add_argument("--max-token-usage", type=float, default=0.72)
@@ -240,7 +242,7 @@ def launch_parent(args: argparse.Namespace, node: Node, manifest: Path, log_file
             f"--manifest-tsv {manifest} "
             f"--job-name {job} "
             f"--workers {args.workers} "
-            "--cpus-per-worker 4 --memory-per-worker 48g "
+            f"--cpus-per-worker {args.cpus_per_worker} --memory-per-worker {shlex.quote(args.memory_per_worker)} "
             f"--api-base-filter {node.api_filter} "
             "--skip-existing-result --pull-retries 3 "
             "--temperature 0.6 --max-tokens 16000 --reasoning-effort high "
