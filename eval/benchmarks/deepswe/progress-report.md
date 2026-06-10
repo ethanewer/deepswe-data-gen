@@ -2649,3 +2649,17 @@ Local Qwen monitoring update:
 - `cr-0-3` server load is acceptable for the active waves: recent queue was around `10` requests with roughly `20` active decodes. No new jobs are being submitted while the server and CPU queue are carrying this load.
 
 Next action: keep monitoring until the click-fix retry starts, then inspect first retry row logs and trajectories for reasoning completeness and absence of setup failures.
+
+## 2026-06-09 23:58 UTC
+
+Local Qwen all-reasoning retry restart:
+
+- Found the failed local-Qwen wave root cause: local OpenAI-compatible serving does not require auth, but the OpenAI client requires a nonempty `OPENAI_API_KEY`. After OpenRouter was deactivated, many Qwen rows failed before the first assistant turn with a missing-credentials client error.
+- Fixed `pyxis_miniswe_agent_driver.py` to set a dummy local key only for cluster-local OpenAI-compatible endpoints, then canceled the bad Qwen arrays. The fix is committed and pushed as `78bb7f1`.
+- Strict all-assistant-reasoning coverage before retry: `12,334 / 15,296` high-quality tasks. Missing retry set: `2,962` tasks (`easy=984`, `medium=1,852`, `hard=126`), all from the original high-quality set.
+- Materialized fresh retry task dirs for both prompt styles under `runs/swerebench-v2/datagen-20260609-local-qwen36-hq-allreason-retry1`: `2,962` original and `2,962` DeepSWE task dirs.
+- Submitted unthrottled batch-01 arrays to avoid `JobArrayTaskLimit`: `369225` original and `369226` DeepSWE, `200` rows each, `rows_per_job=8`, `parallel_rows=2`, CPU-only `m7i-cpu2`. Per-row API bases alternate evenly between the two local Qwen servers.
+- First completed retry traces are valid all-reasoning traces: `2` results, `160/160` assistant messages with reasoning, no missing-key errors. Current pass count in this retry sample is `0/2`; failed traces are still saved.
+- No current `swere` datagen queue entries are pending on `JobArrayTaskLimit`.
+
+Next action: keep batch-01 running, monitor result/error mix, and submit the next unthrottled `200+200` row batch when active retry jobs fall enough to keep queue pressure stable.
