@@ -32,6 +32,16 @@ from minisweagent.models import get_model
 from minisweagent.utils.serialize import recursive_merge
 
 
+BENCHMARK_PROFILE_BY_STYLE = {
+    "original": "swebench-multilingual",
+    "swe_rebench": "swebench-multilingual",
+    "deepswe": "deepswe",
+    "rewritten": "deepswe",
+    "planned": "deepswe",
+}
+BENCHMARK_PROFILE_CHOICES = ("auto", "swebench-multilingual", "deepswe", "datagen-strict")
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -41,6 +51,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--task-dir", type=Path, required=True)
     parser.add_argument("--workspace", type=Path, required=True)
     parser.add_argument("--config-file", type=Path, required=True)
+    parser.add_argument("--benchmark-profile", choices=BENCHMARK_PROFILE_CHOICES, default="auto")
     parser.add_argument("--instance-id", required=True)
     parser.add_argument("--model", required=True)
     parser.add_argument("--litellm-model", required=True)
@@ -60,6 +71,26 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--agent-wall-time-limit", type=int, default=2700)
     parser.add_argument("--command-timeout", type=int, default=180)
     return parser.parse_args()
+
+
+def resolve_benchmark_profile(args: argparse.Namespace) -> str:
+    if args.benchmark_profile != "auto":
+        return args.benchmark_profile
+    return BENCHMARK_PROFILE_BY_STYLE.get(args.instruction_style, "datagen-strict")
+
+
+def resolve_model_class_and_name(profile: str, litellm_model: str) -> tuple[str, str]:
+    if profile == "swebench-multilingual":
+        return "litellm", litellm_model
+    if profile == "deepswe":
+        if litellm_model.startswith("openai/"):
+            return "litellm_response", litellm_model
+        if litellm_model.startswith("openrouter/"):
+            return "openrouter", litellm_model.removeprefix("openrouter/")
+        return "litellm", litellm_model
+    if litellm_model.startswith("openrouter/"):
+        return "openrouter", litellm_model.removeprefix("openrouter/")
+    return "litellm", litellm_model
 
 
 def run_shell(
@@ -195,6 +226,7 @@ exec /usr/bin/find "$@"
 def build_agent(args: argparse.Namespace, workdir: str, trajectory_path: Path) -> DefaultAgent:
     config = yaml.safe_load(args.config_file.read_text(encoding="utf-8")) or {}
     extra_body = json.loads(args.extra_body_json) if args.extra_body_json else None
+    benchmark_profile = resolve_benchmark_profile(args)
 
     thinking_enabled = (
         isinstance(extra_body, dict)
@@ -217,7 +249,8 @@ def build_agent(args: argparse.Namespace, workdir: str, trajectory_path: Path) -
         )
     )
     reasoning_enabled = thinking_enabled or qwen_thinking_enabled or openrouter_reasoning_enabled
-    use_native_openrouter = args.litellm_model.startswith("openrouter/")
+    model_class, model_name = resolve_model_class_and_name(benchmark_profile, args.litellm_model)
+    use_native_openrouter = model_class == "openrouter"
     model_kwargs: dict[str, Any] = {"max_tokens": args.max_tokens}
     if use_native_openrouter:
         model_kwargs["request_timeout"] = args.model_timeout
@@ -233,9 +266,6 @@ def build_agent(args: argparse.Namespace, workdir: str, trajectory_path: Path) -
         model_kwargs.update(extra_body)
     elif extra_body:
         model_kwargs["extra_body"] = extra_body
-    model_name = args.litellm_model.removeprefix("openrouter/") if use_native_openrouter else args.litellm_model
-    model_class = "openrouter" if use_native_openrouter else "litellm"
-
     model_config = recursive_merge(
         config.get("model", {}),
         {
@@ -245,12 +275,16 @@ def build_agent(args: argparse.Namespace, workdir: str, trajectory_path: Path) -
             "cost_tracking": "ignore_errors",
         },
     )
+    agent_overrides: dict[str, Any] = {
+        "output_path": trajectory_path,
+        "wall_time_limit_seconds": args.agent_wall_time_limit,
+    }
+    if benchmark_profile == "deepswe":
+        agent_overrides["cost_limit"] = 0
+
     agent_config = recursive_merge(
         config.get("agent", {}),
-        {
-            "output_path": trajectory_path,
-            "wall_time_limit_seconds": args.agent_wall_time_limit,
-        },
+        agent_overrides,
     )
     model = get_model(config=model_config)
     agent_bin = prepare_agent_bin(args)
@@ -361,6 +395,7 @@ def append_result_index(workspace: Path, result: dict[str, Any]) -> None:
         "model": result.get("model"),
         "litellm_model": result.get("litellm_model"),
         "instruction_style": result.get("instruction_style"),
+        "benchmark_profile": result.get("benchmark_profile"),
         "difficulty": result.get("difficulty"),
         "language": result.get("language"),
         "repo": result.get("repo"),
@@ -438,6 +473,7 @@ def main() -> None:
     started_at = utc_now()
     configure_runtime_env(args)
     prepare_aliases(args)
+    benchmark_profile = resolve_benchmark_profile(args)
 
     task_data = load_task_toml(args.task_dir)
     metadata = task_data["metadata"]
@@ -453,6 +489,8 @@ def main() -> None:
         "litellm_model": args.litellm_model,
         "api_base": args.api_base,
         "instruction_style": args.instruction_style,
+        "benchmark_profile": benchmark_profile,
+        "mini_swe_agent_config_file": str(args.config_file),
         "difficulty": args.difficulty,
         "language": args.language,
         "repo": args.repo,

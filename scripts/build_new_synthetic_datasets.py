@@ -275,6 +275,11 @@ def build_record(item: dict[str, Any]) -> dict[str, Any] | None:
             "difficulty": difficulty,
             "language": language,
             "instruction_style": instruction_style,
+            "benchmark_profile": first_nonempty(result.get("benchmark_profile"), metadata.get("benchmark_profile")),
+            "mini_swe_agent_config_file": first_nonempty(
+                result.get("mini_swe_agent_config_file"),
+                metadata.get("mini_swe_agent_config_file"),
+            ),
             "model": model,
             "litellm_model": litellm_model,
             "passed": passed,

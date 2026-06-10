@@ -19,10 +19,16 @@ from eval.paths import REPO_ROOT
 
 
 DEFAULT_PYTHON = Path("/wbl-fast/usrs/ee/code-swe-data/runtime/cpython-3.12.13-linux-x86_64-gnu/bin/python3.12")
-DEFAULT_CONFIG = REPO_ROOT / "datagen" / "swerebench_v2" / "minisweagent_datagen_strict.yaml"
+DEFAULT_DATAGEN_STRICT_CONFIG = REPO_ROOT / "datagen" / "swerebench_v2" / "minisweagent_datagen_strict.yaml"
+DEFAULT_SWEBENCH_MULTILINGUAL_CONFIG = (
+    REPO_ROOT / "datagen" / "swerebench_v2" / "minisweagent_swebench_multilingual.yaml"
+)
+DEFAULT_DEEPSWE_CONFIG = REPO_ROOT / "datagen" / "swerebench_v2" / "minisweagent_deepswe_pier.yaml"
 DEFAULT_ENV_FILE = Path("/wbl-fast/usrs/ee/code-swe-data/.env")
 DRIVER = REPO_ROOT / "datagen" / "swerebench_v2" / "pyxis_miniswe_agent_driver.py"
 FAILURE_WRITER = REPO_ROOT / "datagen" / "swerebench_v2" / "write_pyxis_failure_result.py"
+
+BENCHMARK_PROFILE_CHOICES = ("auto", "swebench-multilingual", "deepswe", "datagen-strict")
 
 
 def parse_args() -> argparse.Namespace:
@@ -44,7 +50,23 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--time", default="04:00:00")
     parser.add_argument("--python", type=Path, default=DEFAULT_PYTHON)
-    parser.add_argument("--config-file", type=Path, default=DEFAULT_CONFIG)
+    parser.add_argument(
+        "--config-file",
+        type=Path,
+        help=(
+            "Mini-swe-agent config to use for every row. By default the launcher "
+            "selects the benchmark-matching config from instruction_style."
+        ),
+    )
+    parser.add_argument(
+        "--benchmark-profile",
+        choices=BENCHMARK_PROFILE_CHOICES,
+        default="auto",
+        help=(
+            "Model-class/profile behavior to match. 'auto' maps original/swe_rebench "
+            "rows to SWE-bench Multilingual and deepswe/rewritten/planned rows to DeepSWE."
+        ),
+    )
     parser.add_argument("--env-file", type=Path, default=DEFAULT_ENV_FILE)
     parser.add_argument(
         "--enroot-config-path",
@@ -153,6 +175,44 @@ fi
 if [[ "$EXTRA_BODY_JSON" == "-" ]]; then
   EXTRA_BODY_JSON=""
 fi
+CUSTOM_CONFIG_FILE={shell_quote(str(args.config_file) if args.config_file else "")}
+SWEBENCH_MULTILINGUAL_CONFIG={shell_quote(DEFAULT_SWEBENCH_MULTILINGUAL_CONFIG)}
+DEEPSWE_CONFIG={shell_quote(DEFAULT_DEEPSWE_CONFIG)}
+DATAGEN_STRICT_CONFIG={shell_quote(DEFAULT_DATAGEN_STRICT_CONFIG)}
+BENCHMARK_PROFILE={shell_quote(args.benchmark_profile)}
+if [[ "$BENCHMARK_PROFILE" == "auto" ]]; then
+  case "$STYLE" in
+    original|swe_rebench)
+      BENCHMARK_PROFILE="swebench-multilingual"
+      ;;
+    deepswe|rewritten|planned)
+      BENCHMARK_PROFILE="deepswe"
+      ;;
+    *)
+      BENCHMARK_PROFILE="datagen-strict"
+      ;;
+  esac
+fi
+if [[ -n "$CUSTOM_CONFIG_FILE" ]]; then
+  CONFIG_FILE="$CUSTOM_CONFIG_FILE"
+else
+  case "$BENCHMARK_PROFILE" in
+    swebench-multilingual)
+      CONFIG_FILE="$SWEBENCH_MULTILINGUAL_CONFIG"
+      ;;
+    deepswe)
+      CONFIG_FILE="$DEEPSWE_CONFIG"
+      ;;
+    datagen-strict)
+      BENCHMARK_PROFILE="datagen-strict"
+      CONFIG_FILE="$DATAGEN_STRICT_CONFIG"
+      ;;
+    *)
+      echo "unknown benchmark profile: $BENCHMARK_PROFILE" >&2
+      exit 2
+      ;;
+  esac
+fi
 PYXIS_IMAGE_REF="${{IMAGE#docker.io/}}"
 PYXIS_IMAGE_REF="${{PYXIS_IMAGE_REF#docker://}}"
 DOCKER_PULL_REF="$PYXIS_IMAGE_REF"
@@ -212,6 +272,9 @@ echo "instance_id=$INSTANCE_ID"
 echo "rollout_id=$ROLLOUT_ID"
 echo "model=$MODEL"
 echo "image=$IMAGE"
+echo "instruction_style=$STYLE"
+echo "benchmark_profile=$BENCHMARK_PROFILE"
+echo "mini_swe_agent_config=$CONFIG_FILE"
 echo "container_source=$CONTAINER_SOURCE"
 echo "auth_first=$AUTH_FIRST"
 echo "mini_swe_agent_git_sha={MINI_SWE_AGENT_GIT_SHA}"
@@ -332,7 +395,8 @@ run_agent_attempt() {{
   {shell_quote(args.python)} {shell_quote(DRIVER)} \\
     --task-dir "$TASK_DIR" \\
     --workspace /workspace \\
-    --config-file {shell_quote(args.config_file)} \\
+    --config-file "$CONFIG_FILE" \\
+    --benchmark-profile "$BENCHMARK_PROFILE" \\
     --instance-id "$INSTANCE_ID" \\
     --rollout-id "$ROLLOUT_ID" \\
     --model "$MODEL" \\
@@ -389,6 +453,7 @@ if [[ "$STATUS" -ne 0 && ! -f "$WORKSPACE/result.json" ]]; then
     --model "$MODEL" \\
     --litellm-model "$LITELLM_MODEL" \\
     --instruction-style "$STYLE" \\
+    --benchmark-profile "$BENCHMARK_PROFILE" \\
     --difficulty "$DIFFICULTY" \\
     --language "$LANGUAGE" \\
     --repo "$REPO" \\

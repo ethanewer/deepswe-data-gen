@@ -57,3 +57,15 @@ Generate Harbor task directories:
 
 The generated Harbor tasks are written under `runs/swerebench-v2/harbor-tasks`
 by default.
+
+Pyxis mini-swe-agent trace generation now selects benchmark-matching prompt
+configs from `instruction_style` by default:
+
+- `original`/`swe_rebench` -> SWE-bench Multilingual `swebench.yaml`-style
+  prompt and submission flow.
+- `deepswe`/`rewritten`/`planned` -> DeepSWE/Pier `mini.yaml`-style prompt
+  and submission flow.
+
+Pass `--config-file` or `--benchmark-profile` to
+`datagen.swerebench_v2.submit_pyxis_datagen` only when intentionally running a
+custom or legacy prompt contract.

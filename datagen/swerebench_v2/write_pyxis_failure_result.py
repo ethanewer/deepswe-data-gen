@@ -23,6 +23,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", required=True)
     parser.add_argument("--litellm-model", required=True)
     parser.add_argument("--instruction-style", required=True)
+    parser.add_argument("--benchmark-profile", default="")
     parser.add_argument("--difficulty", required=True)
     parser.add_argument("--language", required=True)
     parser.add_argument("--repo", default="")
@@ -60,6 +61,7 @@ def append_result_index(workspace: Path, result: dict) -> None:
         "model": result.get("model"),
         "litellm_model": result.get("litellm_model"),
         "instruction_style": result.get("instruction_style"),
+        "benchmark_profile": result.get("benchmark_profile"),
         "difficulty": result.get("difficulty"),
         "language": result.get("language"),
         "repo": result.get("repo"),
@@ -117,6 +119,7 @@ def main() -> None:
         "model": args.model,
         "litellm_model": args.litellm_model,
         "instruction_style": args.instruction_style,
+        "benchmark_profile": args.benchmark_profile,
         "difficulty": args.difficulty,
         "language": args.language,
         "repo": args.repo,
