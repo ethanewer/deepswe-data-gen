@@ -2713,3 +2713,19 @@ Direct L40S CPU datagen changeover:
 - Started detached tmux monitor `qwen_direct_l40s_monitor`. It checks every `300s`, launches only direct-L40S packed runners with `workers=8`, and waits until active containers are `<=7`, queue sum is `0`, and token max is `<=0.72` before starting more work.
 
 Next action: let the active direct containers drain, allow the tmux monitor to restart conservative `8`-worker parents only when queue/KV pressure is low, and continue checking that all new traces preserve reasoning.
+
+## 2026-06-10 16:13 UTC
+
+Direct L40S Qwen production update:
+
+- Active serving nodes: `cr-0-1` and `cr-0-2`, both running Qwen3.6-35B-A3B-FP8. `cr-0-4` is idle and intentionally left free; `cr-0-3` is allocated but not a healthy serving target for this run.
+- No m7i datagen jobs are active. Datagen CPU work is running directly on the two L40S serving nodes.
+- Docker credentials from `/wbl-fast/usrs/ee/code-swe-data/.env` are now explicitly used by the direct runner via `DOCKER_USERNAME` and `DOCKER_PAT`. Both active L40S nodes were logged in using password-stdin; no credential values were printed or stored in logs.
+- Patched `run_docker_datagen_packed.py` so future parent runners authenticate once before pulling Docker images when those env vars are present. The patch compiled successfully.
+- Current direct run root: `/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/runs/swerebench-v2/datagen-20260610-local-qwen36-direct-docker-hq-retry2`.
+- Current valid model-trace results in this run: `18`, with `4` passed. Failed and incomplete traces are still saved; several live rows already have large `mini-swe-agent.trajectory.json` files before scoring completes.
+- Current visible task containers: `8` on `cr-0-1`, `7` on `cr-0-2`. The second wave is in Docker startup with roughly `24` and `23` `docker run` clients respectively, and no active Docker pulls.
+- Current Qwen server pressure remains low: recent queue sum `0` on both nodes, token usage under about `0.15`. The bottleneck is Docker cold-image pull/startup and long task horizons, not model-server queueing or Docker auth.
+- Current monitor session: `qwen_direct_l40s_monitor_v3`, using direct Docker on L40S CPUs with `16` workers per node, hidden `60s` command timeout, `high` reasoning effort, `16000` max tokens, and no prompt-visible guard text.
+
+Next action: keep monitoring until the second Docker-start wave becomes visible as containers, then decide whether to raise or lower worker depth based on actual completion rate and SGLang queue/KV metrics.

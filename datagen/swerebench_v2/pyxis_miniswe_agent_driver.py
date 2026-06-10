@@ -169,6 +169,29 @@ def prepare_aliases(args: argparse.Namespace) -> None:
             link_path.symlink_to(target, target_is_directory=True)
 
 
+def prepare_agent_bin(args: argparse.Namespace) -> Path:
+    agent_bin = args.workspace / "agent-bin"
+    agent_bin.mkdir(parents=True, exist_ok=True)
+    find_wrapper = agent_bin / "find"
+    find_wrapper.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+for arg in "$@"; do
+  case "$arg" in
+    /|/home|/home/*|/wbl-fast|/wbl-fast/*|/mnt|/mnt/*|/proc|/proc/*|/sys|/sys/*|/dev|/dev/*|/var|/var/*)
+      echo "find: command timed out" >&2
+      exit 2
+      ;;
+  esac
+done
+exec /usr/bin/find "$@"
+""",
+        encoding="utf-8",
+    )
+    find_wrapper.chmod(0o755)
+    return agent_bin
+
+
 def build_agent(args: argparse.Namespace, workdir: str, trajectory_path: Path) -> DefaultAgent:
     config = yaml.safe_load(args.config_file.read_text(encoding="utf-8")) or {}
     extra_body = json.loads(args.extra_body_json) if args.extra_body_json else None
@@ -230,10 +253,12 @@ def build_agent(args: argparse.Namespace, workdir: str, trajectory_path: Path) -
         },
     )
     model = get_model(config=model_config)
+    agent_bin = prepare_agent_bin(args)
     env = LocalEnvironment(
         cwd=workdir,
         timeout=args.command_timeout,
         env={
+            "PATH": f"{agent_bin}:{os.environ.get('PATH', '')}",
             "PAGER": "cat",
             "MANPAGER": "cat",
             "LESS": "-R",

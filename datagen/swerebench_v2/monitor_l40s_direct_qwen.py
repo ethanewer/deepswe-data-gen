@@ -16,6 +16,7 @@ from pathlib import Path
 
 REPO_ROOT = Path("/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen")
 PYTHON = Path("/wbl-fast/usrs/ee/code-swe-data/runtime/cpython-3.12.13-linux-x86_64-gnu/bin/python3.12")
+PYDEPS = Path("/wbl-fast/usrs/ee/code-swe-data/runtime/pydeps-miniswe-upstream-a85bf5e")
 RUNNER = REPO_ROOT / "datagen" / "swerebench_v2" / "run_docker_datagen_packed.py"
 
 
@@ -38,6 +39,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--container-prefix", default="hq-")
     parser.add_argument("--job-prefix", default="hq-direct-auto")
     parser.add_argument("--log-file", type=Path, default=None)
+    parser.add_argument(
+        "--servers-file",
+        type=Path,
+        default=None,
+        help="Optional JSON file with server entries containing node/api_filter/metrics_url or base_url.",
+    )
     return parser.parse_args()
 
 
@@ -58,8 +65,16 @@ def ssh(node: Node, remote: str, *, timeout: int = 60) -> subprocess.CompletedPr
     return run(["ssh", node.name, remote], timeout=timeout)
 
 
-def metrics(node: Node) -> dict[str, float]:
-    text = urllib.request.urlopen(node.metrics_url, timeout=10).read().decode("utf-8", errors="replace")
+def metrics(node: Node) -> dict[str, float | str]:
+    try:
+        text = urllib.request.urlopen(node.metrics_url, timeout=10).read().decode("utf-8", errors="replace")
+    except Exception as exc:
+        return {
+            "running_sum": 0.0,
+            "queue_sum": 999.0,
+            "token_max": 999.0,
+            "metrics_error": repr(exc),
+        }
     values: dict[str, list[float]] = {
         "num_running_reqs": [],
         "num_queue_reqs": [],
@@ -89,9 +104,62 @@ def read_rows(path: Path) -> list[list[str]]:
     return rows
 
 
+def load_nodes(path: Path | None) -> list[Node]:
+    if path is None:
+        return [
+            Node(
+                "l40s-8gpu-dy-l40s-8gpu-cr-0-2.integrated.pcluster",
+                "cr-0-2",
+                "http://l40s-8gpu-dy-l40s-8gpu-cr-0-2.integrated.pcluster:20010/metrics",
+            ),
+            Node(
+                "l40s-8gpu-dy-l40s-8gpu-cr-0-3.integrated.pcluster",
+                "cr-0-3",
+                "http://l40s-8gpu-dy-l40s-8gpu-cr-0-3.integrated.pcluster:20010/metrics",
+            ),
+        ]
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(raw, dict):
+        raw = raw.get("servers", [])
+    nodes: list[Node] = []
+    for item in raw:
+        base_url = str(item.get("base_url", "")).rstrip("/")
+        node_name = item.get("node") or item.get("host")
+        if not node_name and base_url.startswith("http://"):
+            node_name = base_url.removeprefix("http://").split("/", 1)[0].split(":", 1)[0]
+        if not node_name:
+            raise ValueError(f"server entry is missing node/host/base_url: {item}")
+        api_filter = str(item.get("api_filter") or node_name)
+        metrics_url = item.get("metrics_url")
+        if not metrics_url:
+            if base_url.endswith("/v1"):
+                metrics_url = base_url[:-3] + "/metrics"
+            elif base_url:
+                metrics_url = base_url + "/metrics"
+            else:
+                metrics_url = f"http://{node_name}:20010/metrics"
+        nodes.append(Node(str(node_name), api_filter, str(metrics_url)))
+    if not nodes:
+        raise ValueError(f"no servers found in {path}")
+    return nodes
+
+
+def result_has_model_trace(workspace: Path) -> bool:
+    result_path = workspace / "result.json"
+    if not result_path.exists():
+        return False
+    try:
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    return int(result.get("api_calls") or 0) > 0
+
+
 def active_container_names(node: Node, prefix: str) -> list[str]:
     command = f"docker ps --format '{{{{.Names}}}}' | grep -E {shlex.quote('^' + prefix)} || true"
     result = ssh(node, command, timeout=60)
+    if result.returncode != 0:
+        return []
     return [line.strip() for line in result.stdout.splitlines() if line.strip()]
 
 
@@ -147,7 +215,7 @@ def write_manifest(
             continue
         if instance_id in active_ids:
             continue
-        if (workspace / "result.json").exists():
+        if result_has_model_trace(workspace):
             continue
         kept.append("\t".join(parts))
     out.write_text("\n".join(kept) + ("\n" if kept else ""), encoding="utf-8")
@@ -164,7 +232,10 @@ def launch_parent(args: argparse.Namespace, node: Node, manifest: Path, log_file
         "nohup bash -lc "
         + shlex.quote(
             "cd /wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen && "
-            f"PYTHONPATH={REPO_ROOT} {PYTHON} {RUNNER} "
+            f"PYTHONPATH={PYDEPS}:{REPO_ROOT} "
+            "OPENAI_API_KEY=local-model-no-auth-required "
+            "MSWEA_SILENT_STARTUP=1 MSWEA_COST_TRACKING=ignore_errors "
+            f"{PYTHON} {RUNNER} "
             f"--run-root {args.run_root} "
             f"--manifest-tsv {manifest} "
             f"--job-name {job} "
@@ -172,8 +243,8 @@ def launch_parent(args: argparse.Namespace, node: Node, manifest: Path, log_file
             "--cpus-per-worker 4 --memory-per-worker 48g "
             f"--api-base-filter {node.api_filter} "
             "--skip-existing-result --pull-retries 3 "
-            "--temperature 0.0 --max-tokens 16384 --reasoning-effort high "
-            "--model-timeout 600 --agent-wall-time-limit 2700 --command-timeout 180"
+            "--temperature 0.6 --max-tokens 16000 --reasoning-effort high "
+            "--model-timeout 1800 --agent-wall-time-limit 2700 --command-timeout 60"
         )
         + f" > {shlex.quote(str(remote_log_dir / (job + '.out')))}"
         + f" 2> {shlex.quote(str(remote_log_dir / (job + '.err')))}"
@@ -188,18 +259,7 @@ def main() -> None:
     args.run_root = args.run_root.resolve()
     args.source_manifest = args.source_manifest.resolve()
     log_file = args.log_file or (args.run_root / "remote" / "monitor-l40s-direct-qwen.log")
-    nodes = [
-        Node(
-            "l40s-8gpu-dy-l40s-8gpu-cr-0-2.integrated.pcluster",
-            "cr-0-2",
-            "http://l40s-8gpu-dy-l40s-8gpu-cr-0-2.integrated.pcluster:20010/metrics",
-        ),
-        Node(
-            "l40s-8gpu-dy-l40s-8gpu-cr-0-3.integrated.pcluster",
-            "cr-0-3",
-            "http://l40s-8gpu-dy-l40s-8gpu-cr-0-3.integrated.pcluster:20010/metrics",
-        ),
-    ]
+    nodes = load_nodes(args.servers_file)
     source_rows = read_rows(args.source_manifest)
     instance_ids = {row[2] for row in source_rows}
     log(
@@ -243,8 +303,8 @@ def main() -> None:
                 log_file,
             )
             overloaded = (
-                current_metrics["queue_sum"] > args.max_queue_sum
-                or current_metrics["token_max"] > args.max_token_usage
+                float(current_metrics["queue_sum"]) > args.max_queue_sum
+                or float(current_metrics["token_max"]) > args.max_token_usage
             )
             if overloaded and running_parent:
                 stop_parent(node, pid_file, log_file)

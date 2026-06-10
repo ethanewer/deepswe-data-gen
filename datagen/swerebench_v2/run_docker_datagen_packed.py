@@ -14,6 +14,7 @@ import dataclasses
 import json
 import os
 import re
+import shutil
 import shlex
 import subprocess
 import threading
@@ -145,13 +146,69 @@ def run_command(command: list[str], stdout: Path, stderr: Path, timeout: int | N
     return process.returncode
 
 
+def result_has_model_trace(workspace: Path) -> bool:
+    result_path = workspace / "result.json"
+    if not result_path.exists():
+        return False
+    try:
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    return int(result.get("api_calls") or 0) > 0
+
+
+def archive_retryable_result(workspace: Path) -> None:
+    result_path = workspace / "result.json"
+    trajectory_path = workspace / "agent" / "mini-swe-agent.trajectory.json"
+    if not result_path.exists() and not trajectory_path.exists():
+        return
+    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    history_dir = workspace / "retry-history" / stamp
+    history_dir.mkdir(parents=True, exist_ok=True)
+    if result_path.exists():
+        shutil.copy2(result_path, history_dir / "result.json")
+    if trajectory_path.exists():
+        (history_dir / "agent").mkdir(parents=True, exist_ok=True)
+        shutil.copy2(trajectory_path, history_dir / "agent" / "mini-swe-agent.trajectory.json")
+
+
 pull_locks: dict[str, threading.Lock] = {}
 pull_locks_guard = threading.Lock()
+docker_login_lock = threading.Lock()
+docker_login_attempted = False
 
 
 def pull_lock(image: str) -> threading.Lock:
     with pull_locks_guard:
         return pull_locks.setdefault(image, threading.Lock())
+
+
+def ensure_docker_login(log_path: Path) -> None:
+    global docker_login_attempted
+    username = os.environ.get("DOCKER_USERNAME", "")
+    password = os.environ.get("DOCKER_PAT", "")
+    if not username or not password:
+        return
+    with docker_login_lock:
+        if docker_login_attempted:
+            return
+        docker_login_attempted = True
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            result = subprocess.run(
+                ["docker", "login", "--username", username, "--password-stdin"],
+                input=password,
+                text=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=60,
+                check=False,
+            )
+            with log_path.open("ab") as log:
+                log.write(f"docker_login_status={result.returncode}\n".encode())
+        except Exception as exc:
+            with log_path.open("ab") as log:
+                log.write(f"docker_login_error={type(exc).__name__}\n".encode())
 
 
 def ensure_image(image: str, log_path: Path, retries: int) -> tuple[bool, str]:
@@ -171,6 +228,7 @@ def ensure_image(image: str, log_path: Path, retries: int) -> tuple[bool, str]:
         )
         if inspect.returncode == 0:
             return True, "present"
+        ensure_docker_login(log_path)
         log_path.parent.mkdir(parents=True, exist_ok=True)
         for attempt in range(1, retries + 1):
             with log_path.open("ab") as log:
@@ -297,6 +355,7 @@ def docker_run_command(args: argparse.Namespace, row: ManifestRow) -> list[str]:
 
 
 def write_failure(args: argparse.Namespace, row: ManifestRow, status: int, stdout_log: Path, stderr_log: Path, message: str) -> None:
+    error_type = "DockerContainerStartError" if status == 125 else "TaskContainerRunError"
     command = [
         str(args.python),
         str(FAILURE_WRITER),
@@ -327,7 +386,7 @@ def write_failure(args: argparse.Namespace, row: ManifestRow, status: int, stdou
         "--pyxis-image",
         docker_image_ref(row.image),
         "--error-type",
-        "DockerContainerStartError",
+        error_type,
         "--error-message",
         message,
         "--exit-status",
@@ -347,8 +406,9 @@ def run_row(args: argparse.Namespace, row: ManifestRow, log_dir: Path) -> dict[s
     stdout_log = log_dir / f"{args.job_name}.{row_id}.out"
     stderr_log = log_dir / f"{args.job_name}.{row_id}.err"
     pull_log = log_dir / f"{args.job_name}.{row_id}.docker-pull.log"
-    if args.skip_existing_result and (row.workspace / "result.json").exists():
+    if args.skip_existing_result and result_has_model_trace(row.workspace):
         return {"instance_id": row.instance_id, "status": 0, "state": "skipped_existing"}
+    archive_retryable_result(row.workspace)
     ok, pull_state = ensure_image(row.image, pull_log, args.pull_retries)
     if not ok:
         write_failure(args, row, 125, stdout_log, stderr_log, pull_state)
@@ -367,7 +427,7 @@ def main() -> None:
     load_env_file(args.env_file)
     rows = parse_manifest(args.manifest_tsv, args.api_base_filter, args.limit)
     if args.skip_existing_result:
-        rows = [row for row in rows if not (row.workspace / "result.json").exists()]
+        rows = [row for row in rows if not result_has_model_trace(row.workspace)]
     if not rows:
         print("rows=0")
         return
