@@ -6,13 +6,38 @@ from __future__ import annotations
 import argparse
 import fcntl
 import json
+import subprocess
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
+from eval.minisweagent_pin import MINI_SWE_AGENT_GIT_SHA
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def str_to_bool(value: str) -> bool:
+    return str(value).lower() in {"1", "true", "yes"}
+
+
+def datagen_code_commit() -> str:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+            check=True,
+        )
+        return result.stdout.strip()
+    except Exception:
+        return ""
 
 
 def parse_args() -> argparse.Namespace:
@@ -28,6 +53,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--language", required=True)
     parser.add_argument("--repo", default="")
     parser.add_argument("--outside-original-high-quality-set", default="false")
+    parser.add_argument("--mini-swe-agent-config-file", default="")
+    parser.add_argument("--uses-updated-alignment", choices=("true", "false"), default="true")
+    parser.add_argument("--eligible-for-controlled-comparison", choices=("true", "false"), default="false")
+    parser.add_argument("--reason-excluded-from-comparison", default="")
     parser.add_argument("--task-dir", required=True)
     parser.add_argument("--image", required=True)
     parser.add_argument("--pyxis-image", required=True)
@@ -66,6 +95,12 @@ def append_result_index(workspace: Path, result: dict) -> None:
         "language": result.get("language"),
         "repo": result.get("repo"),
         "outside_original_high_quality_set": result.get("outside_original_high_quality_set", False),
+        "datagen_code_commit": result.get("datagen_code_commit", ""),
+        "mini_swe_agent_git_sha": result.get("mini_swe_agent_git_sha", ""),
+        "mini_swe_agent_config_file": result.get("mini_swe_agent_config_file", ""),
+        "uses_updated_alignment": result.get("uses_updated_alignment", False),
+        "eligible_for_controlled_comparison": result.get("eligible_for_controlled_comparison", False),
+        "reason_excluded_from_comparison": result.get("reason_excluded_from_comparison", ""),
         "finished_at": result.get("finished_at"),
         "agent_exit_status": result.get("agent_exit_status"),
         "agent_exception_type": (result.get("agent_exception") or {}).get("type"),
@@ -101,6 +136,12 @@ def write_setup_failure_trajectory(args: argparse.Namespace, result: dict) -> No
             "runtime_image": args.pyxis_image,
             "stdout_log": args.stdout_log,
             "stderr_log": args.stderr_log,
+            "datagen_code_commit": result.get("datagen_code_commit", ""),
+            "mini_swe_agent_git_sha": result.get("mini_swe_agent_git_sha", ""),
+            "mini_swe_agent_config_file": result.get("mini_swe_agent_config_file", ""),
+            "uses_updated_alignment": result.get("uses_updated_alignment", False),
+            "eligible_for_controlled_comparison": result.get("eligible_for_controlled_comparison", False),
+            "reason_excluded_from_comparison": result.get("reason_excluded_from_comparison", ""),
         },
         "messages": [{"role": "user", "content": instruction}],
         "trajectory_format": "mini-swe-agent-v2-setup-failure",
@@ -125,6 +166,12 @@ def main() -> None:
         "repo": args.repo,
         "outside_original_high_quality_set": str(args.outside_original_high_quality_set).lower()
         in {"1", "true", "yes"},
+        "datagen_code_commit": datagen_code_commit(),
+        "mini_swe_agent_git_sha": MINI_SWE_AGENT_GIT_SHA,
+        "mini_swe_agent_config_file": args.mini_swe_agent_config_file,
+        "uses_updated_alignment": str_to_bool(args.uses_updated_alignment),
+        "eligible_for_controlled_comparison": str_to_bool(args.eligible_for_controlled_comparison),
+        "reason_excluded_from_comparison": args.reason_excluded_from_comparison,
         "task_dir": args.task_dir,
         "docker_image": args.image,
         "pyxis_image": args.pyxis_image,

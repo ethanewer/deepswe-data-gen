@@ -26,12 +26,14 @@ from typing import Any
 
 import yaml
 
+from eval.minisweagent_pin import MINI_SWE_AGENT_GIT_SHA
 from minisweagent.agents.default import DefaultAgent
 from minisweagent.environments.local import LocalEnvironment
 from minisweagent.models import get_model
 from minisweagent.utils.serialize import recursive_merge
 
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
 BENCHMARK_PROFILE_BY_STYLE = {
     "original": "swebench-multilingual",
     "swe_rebench": "swebench-multilingual",
@@ -44,6 +46,25 @@ BENCHMARK_PROFILE_CHOICES = ("auto", "swebench-multilingual", "deepswe", "datage
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def str_to_bool(value: str) -> bool:
+    return str(value).lower() in {"1", "true", "yes"}
+
+
+def datagen_code_commit() -> str:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+            check=True,
+        )
+        return result.stdout.strip()
+    except Exception:
+        return ""
 
 
 def parse_args() -> argparse.Namespace:
@@ -69,6 +90,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--reasoning-effort", default="high")
     parser.add_argument("--model-timeout", type=int, default=600)
     parser.add_argument("--agent-wall-time-limit", type=int, default=2700)
+    parser.add_argument("--uses-updated-alignment", choices=("true", "false"), default="true")
+    parser.add_argument("--eligible-for-controlled-comparison", choices=("true", "false"), default="false")
+    parser.add_argument("--reason-excluded-from-comparison", default="")
     parser.add_argument("--command-timeout", type=int)
     return parser.parse_args()
 
@@ -443,6 +467,12 @@ def append_result_index(workspace: Path, result: dict[str, Any]) -> None:
         "max_tokens": result.get("max_tokens"),
         "reasoning_effort": result.get("reasoning_effort"),
         "extra_body_json": result.get("extra_body_json", ""),
+        "datagen_code_commit": result.get("datagen_code_commit", ""),
+        "mini_swe_agent_git_sha": result.get("mini_swe_agent_git_sha", ""),
+        "mini_swe_agent_config_file": result.get("mini_swe_agent_config_file", ""),
+        "uses_updated_alignment": result.get("uses_updated_alignment", False),
+        "eligible_for_controlled_comparison": result.get("eligible_for_controlled_comparison", False),
+        "reason_excluded_from_comparison": result.get("reason_excluded_from_comparison", ""),
         "trajectory_saved": trajectory_saved,
         "result_path": str(host_workspace_path(workspace) / "result.json"),
         "trajectory_path": str(trajectory_record_path),
@@ -477,6 +507,11 @@ def write_setup_failure_trajectory(
                 "instance_cost": result.get("cost_usd", 0.0),
             },
             "setup_failure": result.get("agent_exception"),
+            "datagen_code_commit": result.get("datagen_code_commit", ""),
+            "mini_swe_agent_git_sha": result.get("mini_swe_agent_git_sha", ""),
+            "uses_updated_alignment": result.get("uses_updated_alignment", False),
+            "eligible_for_controlled_comparison": result.get("eligible_for_controlled_comparison", False),
+            "reason_excluded_from_comparison": result.get("reason_excluded_from_comparison", ""),
             "config": {
                 "model": {
                     "model_name": args.litellm_model,
@@ -524,6 +559,11 @@ def main() -> None:
         "instruction_style": args.instruction_style,
         "benchmark_profile": benchmark_profile,
         "mini_swe_agent_config_file": str(args.config_file),
+        "mini_swe_agent_git_sha": MINI_SWE_AGENT_GIT_SHA,
+        "datagen_code_commit": datagen_code_commit(),
+        "uses_updated_alignment": str_to_bool(args.uses_updated_alignment),
+        "eligible_for_controlled_comparison": str_to_bool(args.eligible_for_controlled_comparison),
+        "reason_excluded_from_comparison": args.reason_excluded_from_comparison,
         "difficulty": args.difficulty,
         "language": args.language,
         "repo": args.repo,

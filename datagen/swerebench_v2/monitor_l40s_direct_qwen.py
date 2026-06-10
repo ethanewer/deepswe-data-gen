@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-REPO_ROOT = Path("/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen")
+REPO_ROOT = Path(__file__).resolve().parents[2]
 PYTHON = Path("/wbl-fast/usrs/ee/code-swe-data/runtime/cpython-3.12.13-linux-x86_64-gnu/bin/python3.12")
 PYDEPS = Path("/wbl-fast/usrs/ee/code-swe-data/runtime/pydeps-miniswe-upstream-a85bf5e")
 RUNNER = REPO_ROOT / "datagen" / "swerebench_v2" / "run_docker_datagen_packed.py"
@@ -231,7 +231,7 @@ def launch_parent(args: argparse.Namespace, node: Node, manifest: Path, log_file
         f"mkdir -p {shlex.quote(str(remote_log_dir))}; "
         "nohup bash -lc "
         + shlex.quote(
-            "cd /wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen && "
+            f"cd {shlex.quote(str(REPO_ROOT))} && "
             f"PYTHONPATH={PYDEPS}:{REPO_ROOT} "
             "OPENAI_API_KEY=local-model-no-auth-required "
             "MSWEA_SILENT_STARTUP=1 MSWEA_COST_TRACKING=ignore_errors "

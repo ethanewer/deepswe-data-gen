@@ -35,6 +35,7 @@ DEFAULT_ENV_FILE = Path("/wbl-fast/usrs/ee/code-swe-data/.env")
 DRIVER = REPO_ROOT / "datagen" / "swerebench_v2" / "pyxis_miniswe_agent_driver.py"
 FAILURE_WRITER = REPO_ROOT / "datagen" / "swerebench_v2" / "write_pyxis_failure_result.py"
 BENCHMARK_PROFILE_CHOICES = ("auto", "swebench-multilingual", "deepswe", "datagen-strict")
+SECRET_ENV_NAMES = {"OPENAI_API_KEY", "DEEPSEEK_API_KEY", "OPENROUTER_API_KEY", "DOCKER_PAT"}
 
 
 @dataclasses.dataclass(frozen=True)
@@ -92,6 +93,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--reasoning-effort", default="high")
     parser.add_argument("--model-timeout", type=int, default=600)
     parser.add_argument("--agent-wall-time-limit", type=int, default=2700)
+    parser.add_argument("--uses-updated-alignment", choices=("true", "false"), default="true")
+    parser.add_argument("--eligible-for-controlled-comparison", action="store_true")
+    parser.add_argument("--reason-excluded-from-comparison", default="")
     parser.add_argument(
         "--command-timeout",
         type=int,
@@ -330,6 +334,11 @@ def docker_run_command(args: argparse.Namespace, row: ManifestRow) -> list[str]:
     env = base_environment(args, row.workspace, row)
     benchmark_profile = resolve_benchmark_profile(row.instruction_style, args.benchmark_profile)
     config_file = selected_config_file(args, benchmark_profile)
+    uses_updated_alignment = getattr(args, "uses_updated_alignment", "true")
+    eligible_for_controlled_comparison = (
+        "true" if getattr(args, "eligible_for_controlled_comparison", False) else "false"
+    )
+    reason_excluded_from_comparison = getattr(args, "reason_excluded_from_comparison", "")
     command = [
         "docker",
         "run",
@@ -348,7 +357,11 @@ def docker_run_command(args: argparse.Namespace, row: ManifestRow) -> list[str]:
         f"{row.task_dir / 'tests'}:/tests:ro",
     ]
     for key, value in sorted(env.items()):
-        command.extend(["-e", f"{key}={value}"])
+        if key in SECRET_ENV_NAMES:
+            os.environ[key] = value
+            command.extend(["-e", key])
+        else:
+            command.extend(["-e", f"{key}={value}"])
     command.extend(
         [
             docker_image_ref(row.image),
@@ -396,6 +409,12 @@ def docker_run_command(args: argparse.Namespace, row: ManifestRow) -> list[str]:
             str(args.model_timeout),
             "--agent-wall-time-limit",
             str(args.agent_wall_time_limit),
+            "--uses-updated-alignment",
+            uses_updated_alignment,
+            "--eligible-for-controlled-comparison",
+            eligible_for_controlled_comparison,
+            "--reason-excluded-from-comparison",
+            reason_excluded_from_comparison,
         ]
     )
     if args.command_timeout is not None:
@@ -406,6 +425,11 @@ def docker_run_command(args: argparse.Namespace, row: ManifestRow) -> list[str]:
 def write_failure(args: argparse.Namespace, row: ManifestRow, status: int, stdout_log: Path, stderr_log: Path, message: str) -> None:
     error_type = "DockerContainerStartError" if status == 125 else "TaskContainerRunError"
     benchmark_profile = resolve_benchmark_profile(row.instruction_style, args.benchmark_profile)
+    uses_updated_alignment = getattr(args, "uses_updated_alignment", "true")
+    eligible_for_controlled_comparison = (
+        "true" if getattr(args, "eligible_for_controlled_comparison", False) else "false"
+    )
+    reason_excluded_from_comparison = getattr(args, "reason_excluded_from_comparison", "")
     command = [
         str(args.python),
         str(FAILURE_WRITER),
@@ -431,6 +455,14 @@ def write_failure(args: argparse.Namespace, row: ManifestRow, status: int, stdou
         row.repo,
         "--outside-original-high-quality-set",
         row.outside_original_high_quality_set,
+        "--mini-swe-agent-config-file",
+        str(selected_config_file(args, benchmark_profile)),
+        "--uses-updated-alignment",
+        uses_updated_alignment,
+        "--eligible-for-controlled-comparison",
+        eligible_for_controlled_comparison,
+        "--reason-excluded-from-comparison",
+        reason_excluded_from_comparison,
         "--task-dir",
         str(row.task_dir),
         "--image",

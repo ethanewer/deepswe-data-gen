@@ -19,6 +19,12 @@ MODEL_SETTINGS: dict[str, dict[str, Any]] = {
         "api_base": "https://api.deepseek.com",
         "extra_body": {"thinking": {"type": "enabled"}},
     },
+    "deepseek/deepseek-v4-flash": {
+        "litellm_model": "openrouter/deepseek/deepseek-v4-flash",
+        "api_key_env": "OPENROUTER_API_KEY",
+        "api_base": "",
+        "extra_body": {"reasoning": {"effort": "high", "exclude": False}},
+    },
     "deepseek-v4-pro": {
         "litellm_model": "openai/deepseek-v4-pro",
         "api_key_env": "DEEPSEEK_API_KEY",
@@ -30,6 +36,12 @@ MODEL_SETTINGS: dict[str, dict[str, Any]] = {
         "api_key_env": "OPENROUTER_API_KEY",
         "api_base": "",
         "extra_body": {"reasoning": {"effort": "none", "exclude": True}},
+    },
+    "inclusionai/ring-2.6-1t": {
+        "litellm_model": "openrouter/inclusionai/ring-2.6-1t",
+        "api_key_env": "OPENROUTER_API_KEY",
+        "api_base": "",
+        "extra_body": {"reasoning": {"effort": "high", "exclude": False}},
     },
     "xiaomi/mimo-v2.5": {
         "litellm_model": "openrouter/xiaomi/mimo-v2.5",

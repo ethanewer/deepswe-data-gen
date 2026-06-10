@@ -45,7 +45,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--instruction-style",
-        choices=("deepswe", "swe_rebench", "rewritten"),
+        choices=("deepswe", "swe_rebench", "original", "rewritten"),
         default="deepswe",
         help="Prompt style to write to instruction.md.",
     )
@@ -172,7 +172,7 @@ def build_instruction(row: dict, style: str, rewrites: dict[str, str] | None = N
     )
     interface = clean_issue_prompt(row["interface"] or "")
 
-    if style == "swe_rebench":
+    if style in {"swe_rebench", "original"}:
         if interface and interface != "No new interfaces are introduced.":
             return f"{problem}\n\nInterface notes:\n{interface}\n"
         return f"{problem}\n"

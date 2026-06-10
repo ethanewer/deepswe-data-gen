@@ -107,6 +107,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--reasoning-effort", default="high")
     parser.add_argument("--model-timeout", type=int, default=600)
     parser.add_argument("--agent-wall-time-limit", type=int, default=2700)
+    parser.add_argument("--uses-updated-alignment", choices=("true", "false"), default="true")
+    parser.add_argument("--eligible-for-controlled-comparison", action="store_true")
+    parser.add_argument("--reason-excluded-from-comparison", default="")
     parser.add_argument(
         "--command-timeout",
         type=int,
@@ -145,6 +148,11 @@ def write_array_script(args: argparse.Namespace, n_rows: int) -> Path:
         if args.command_timeout is not None
         else ""
     )
+    uses_updated_alignment = getattr(args, "uses_updated_alignment", "true")
+    eligible_for_controlled_comparison = (
+        "true" if getattr(args, "eligible_for_controlled_comparison", False) else "false"
+    )
+    reason_excluded_from_comparison = getattr(args, "reason_excluded_from_comparison", "")
 
     script = f"""#!/usr/bin/env bash
 #SBATCH -J {args.job_name}
@@ -241,6 +249,9 @@ LAST_PYXIS_IMAGE="$PYXIS_IMAGE"
 ANON_ENROOT_CONFIG_PATH="$WORKSPACE/enroot-anonymous"
 STDOUT_LOG={log_dir}/{args.job_name}.${{SLURM_ARRAY_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}.out
 STDERR_LOG={log_dir}/{args.job_name}.${{SLURM_ARRAY_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}.err
+USES_UPDATED_ALIGNMENT={shell_quote(uses_updated_alignment)}
+ELIGIBLE_FOR_CONTROLLED_COMPARISON={shell_quote(eligible_for_controlled_comparison)}
+REASON_EXCLUDED_FROM_COMPARISON={shell_quote(reason_excluded_from_comparison)}
 
 export HF_HOME={shell_quote(cache_root / "hf")}
 export XDG_CACHE_HOME={shell_quote(cache_root / "xdg")}
@@ -422,7 +433,10 @@ run_agent_attempt() {{
     --max-tokens {args.max_tokens} \\
     --reasoning-effort {shell_quote(args.reasoning_effort)} \\
     --model-timeout {args.model_timeout} \\
-    --agent-wall-time-limit {args.agent_wall_time_limit}{command_timeout_arg}
+    --agent-wall-time-limit {args.agent_wall_time_limit} \\
+    --uses-updated-alignment "$USES_UPDATED_ALIGNMENT" \\
+    --eligible-for-controlled-comparison "$ELIGIBLE_FOR_CONTROLLED_COMPARISON" \\
+    --reason-excluded-from-comparison "$REASON_EXCLUDED_FROM_COMPARISON"{command_timeout_arg}
 }}
 
 set +e
@@ -466,6 +480,10 @@ if [[ "$STATUS" -ne 0 && ! -f "$WORKSPACE/result.json" ]]; then
     --language "$LANGUAGE" \\
     --repo "$REPO" \\
     --outside-original-high-quality-set "$OUTSIDE_ORIGINAL_HIGH_QUALITY_SET" \\
+    --mini-swe-agent-config-file "$CONFIG_FILE" \\
+    --uses-updated-alignment "$USES_UPDATED_ALIGNMENT" \\
+    --eligible-for-controlled-comparison "$ELIGIBLE_FOR_CONTROLLED_COMPARISON" \\
+    --reason-excluded-from-comparison "$REASON_EXCLUDED_FROM_COMPARISON" \\
     --task-dir "$TASK_DIR" \\
     --image "$IMAGE" \\
     --pyxis-image "$LAST_PYXIS_IMAGE" \\
