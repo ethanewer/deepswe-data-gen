@@ -30,6 +30,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--task-dir", required=True)
     parser.add_argument("--image", required=True)
     parser.add_argument("--pyxis-image", required=True)
+    parser.add_argument("--error-type", default="PyxisContainerStartError")
+    parser.add_argument("--error-message", default="")
     parser.add_argument("--exit-status", type=int, required=True)
     parser.add_argument("--stdout-log", default="")
     parser.add_argument("--stderr-log", default="")
@@ -80,9 +82,35 @@ def append_result_index(workspace: Path, result: dict) -> None:
         fcntl.flock(handle, fcntl.LOCK_UN)
 
 
+def write_setup_failure_trajectory(args: argparse.Namespace, result: dict) -> None:
+    trajectory_path = Path(result["trajectory_path"])
+    if trajectory_path.exists():
+        return
+    instruction_path = Path(args.task_dir) / "instruction.md"
+    if instruction_path.exists():
+        instruction = instruction_path.read_text(encoding="utf-8", errors="replace")
+    else:
+        instruction = ""
+    trajectory_path.parent.mkdir(parents=True, exist_ok=True)
+    trajectory = {
+        "info": {
+            "setup_failure": result.get("agent_exception"),
+            "container_image": args.image,
+            "runtime_image": args.pyxis_image,
+            "stdout_log": args.stdout_log,
+            "stderr_log": args.stderr_log,
+        },
+        "messages": [{"role": "user", "content": instruction}],
+        "trajectory_format": "mini-swe-agent-v2-setup-failure",
+    }
+    trajectory_path.write_text(json.dumps(trajectory, indent=2) + "\n", encoding="utf-8")
+
+
 def main() -> None:
     args = parse_args()
     args.workspace.mkdir(parents=True, exist_ok=True)
+    (args.workspace / "agent").mkdir(parents=True, exist_ok=True)
+    message = args.error_message or f"srun/Pyxis exited with status {args.exit_status}"
     result = {
         "instance_id": args.instance_id,
         "rollout_id": args.rollout_id,
@@ -98,10 +126,10 @@ def main() -> None:
         "docker_image": args.image,
         "pyxis_image": args.pyxis_image,
         "finished_at": utc_now(),
-        "agent_exit_status": "PyxisContainerStartError",
+        "agent_exit_status": args.error_type,
         "agent_exception": {
-            "type": "PyxisContainerStartError",
-            "message": f"srun/Pyxis exited with status {args.exit_status}",
+            "type": args.error_type,
+            "message": message,
         },
         "api_calls": 0,
         "cost_usd": 0.0,
@@ -112,6 +140,7 @@ def main() -> None:
         "stdout_log": args.stdout_log,
         "stderr_log": args.stderr_log,
     }
+    write_setup_failure_trajectory(args, result)
     (args.workspace / "result.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     try:
         append_result_index(args.workspace, result)

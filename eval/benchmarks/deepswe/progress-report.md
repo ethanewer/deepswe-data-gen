@@ -2686,3 +2686,30 @@ Local Qwen retry dependency follow-up:
 - Current valid all-reasoning sample remains clean for the completed agent traces; the setup-failure traces are saved but do not count toward all-reasoning coverage and will be retried by the next strict coverage pass.
 
 Next action: let batch-01 continue with the fixed overlay, monitor new results for absence of the `attr` setup failure, then allow the tmux monitor to submit batch-02 when active retry array tasks drop below `10`.
+
+## 2026-06-10 01:11 UTC
+
+Automated Qwen all-reasoning retry monitor:
+
+- Run root: `/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/runs/swerebench-v2/datagen-20260609-local-qwen36-hq-allreason-retry1`
+- Submitted retry batch job files: `2`
+- Current retry result files: `120`
+- Active retry array tasks: `50`
+- Retry jobs pending on `JobArrayTaskLimit`: `0`
+- Batch policy: submit the next unthrottled original+DeepSWE batch only when active retry array tasks are below `10`.
+
+## 2026-06-10 02:05 UTC
+
+Direct L40S CPU datagen changeover:
+
+- Canceled the m7i retry arrays and stopped the previous m7i/tmux submitter. Current Slurm queue for this work now contains only the two L40S Qwen serving jobs: `367425` on `cr-0-2` and `367970` on `cr-0-3`.
+- Added and validated a direct Docker runner for the serving nodes. Task containers run on the L40S node CPUs with `--runtime=runc`, `NVIDIA_VISIBLE_DEVICES=none`, host networking to the local Qwen endpoint, and all traces/results under `/wbl-fast`.
+- Direct smoke and production trace quality checks remain clean for reasoning: latest direct-run sample has `3,318 / 3,318` assistant messages with nonempty reasoning.
+- Direct run root: `/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/runs/swerebench-v2/datagen-20260610-local-qwen36-direct-docker-hq-retry2`.
+- Initial direct production manifest: `2,853` retry rows. Refreshed active-safe manifest after stopping parent runners: `2,814` rows (`easy=982`, `medium=1,778`, `hard=54`), balanced `1,407` rows per Qwen server.
+- Current direct results: `21` completed hard-task trials, `3` passed and `18` failed; all failed traces are still saved.
+- Throughput tuning: `12` workers/node was queue-free but still under GPU capacity; `16` workers/node pushed token usage near the KV limit (`token_max` up to about `0.84-0.91`) and briefly created queue pressure, so those parent runners were stopped while active containers continued.
+- Active containers at this update: about `9` per L40S node. No m7i jobs are active or pending.
+- Started detached tmux monitor `qwen_direct_l40s_monitor`. It checks every `300s`, launches only direct-L40S packed runners with `workers=8`, and waits until active containers are `<=7`, queue sum is `0`, and token max is `<=0.72` before starting more work.
+
+Next action: let the active direct containers drain, allow the tmux monitor to restart conservative `8`-worker parents only when queue/KV pressure is low, and continue checking that all new traces preserve reasoning.

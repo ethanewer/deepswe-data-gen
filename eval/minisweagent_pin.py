@@ -17,6 +17,7 @@ MINI_SWE_AGENT_PIER_EXTRA_PACKAGES = [
     MINI_SWE_AGENT_REQUIREMENT,
     "click>=8.1,<9",
     "attrs>=23,<27",
+    "typing_extensions>=4.12,<5",
 ]
 
 MINI_SWE_AGENT_OVERLAY_ENV = "PYDEPS_OVERLAY"
