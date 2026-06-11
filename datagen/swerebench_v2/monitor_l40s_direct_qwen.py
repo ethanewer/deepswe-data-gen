@@ -16,7 +16,12 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PYTHON = Path("/wbl-fast/usrs/ee/code-swe-data/runtime/cpython-3.12.13-linux-x86_64-gnu/bin/python3.12")
-PYDEPS = Path("/wbl-fast/usrs/ee/code-swe-data/runtime/pydeps-miniswe-upstream-a85bf5e")
+PYDEPS = Path(
+    os.environ.get(
+        "PYDEPS_OVERLAY",
+        "/wbl-fast/usrs/ee/code-swe-data/runtime/pydeps-miniswe-upstream-a85bf5e-clean-20260610T2340",
+    )
+)
 RUNNER = REPO_ROOT / "datagen" / "swerebench_v2" / "run_docker_datagen_packed.py"
 
 
@@ -148,13 +153,23 @@ def load_nodes(path: Path | None) -> list[Node]:
 
 def result_has_model_trace(workspace: Path) -> bool:
     result_path = workspace / "result.json"
-    if not result_path.exists():
-        return False
-    try:
-        result = json.loads(result_path.read_text(encoding="utf-8"))
-    except Exception:
-        return False
-    return int(result.get("api_calls") or 0) > 0
+    trajectory_path = workspace / "agent" / "mini-swe-agent.trajectory.json"
+    if result_path.exists():
+        try:
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            if int(result.get("api_calls") or 0) > 0:
+                return True
+        except Exception:
+            pass
+    if trajectory_path.exists():
+        try:
+            trajectory = json.loads(trajectory_path.read_text(encoding="utf-8"))
+        except Exception:
+            return False
+        model_stats = (trajectory.get("info") or {}).get("model_stats") or {}
+        if int(model_stats.get("api_calls") or 0) > 0:
+            return True
+    return False
 
 
 def active_container_names(node: Node, prefix: str) -> list[str]:
@@ -234,6 +249,7 @@ def launch_parent(args: argparse.Namespace, node: Node, manifest: Path, log_file
         "nohup bash -lc "
         + shlex.quote(
             f"cd {shlex.quote(str(REPO_ROOT))} && "
+            f"PYDEPS_OVERLAY={shlex.quote(str(PYDEPS))} "
             f"PYTHONPATH={PYDEPS}:{REPO_ROOT} "
             "OPENAI_API_KEY=local-model-no-auth-required "
             "MSWEA_SILENT_STARTUP=1 MSWEA_COST_TRACKING=ignore_errors "
@@ -246,7 +262,8 @@ def launch_parent(args: argparse.Namespace, node: Node, manifest: Path, log_file
             f"--api-base-filter {node.api_filter} "
             "--skip-existing-result --pull-retries 3 "
             "--temperature 0.6 --max-tokens 16000 --reasoning-effort high "
-            "--model-timeout 1800 --agent-wall-time-limit 2700 --command-timeout 60"
+            "--model-timeout 1800 --agent-wall-time-limit 2700 --command-timeout 60 "
+            "--uses-updated-alignment true"
         )
         + f" > {shlex.quote(str(remote_log_dir / (job + '.out')))}"
         + f" 2> {shlex.quote(str(remote_log_dir / (job + '.err')))}"
