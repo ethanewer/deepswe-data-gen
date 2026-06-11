@@ -21,18 +21,19 @@ export NCCL_DEBUG="${NCCL_DEBUG:-WARN}"
 
 IFS=',' read -r -a visible_gpus <<< "$CUDA_VISIBLE_DEVICES"
 NPROC_PER_NODE="${NPROC_PER_NODE:-${#visible_gpus[@]}}"
-if [ "$NPROC_PER_NODE" -ne 8 ] || [ "${#visible_gpus[@]}" -ne 8 ]; then
-  echo "This recipe must use exactly 8 local GPUs. CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES NPROC_PER_NODE=$NPROC_PER_NODE" >&2
+REQUIRED_LOCAL_GPUS="${REQUIRED_LOCAL_GPUS:-8}"
+if [ "$NPROC_PER_NODE" -ne "$REQUIRED_LOCAL_GPUS" ] || [ "${#visible_gpus[@]}" -ne "$REQUIRED_LOCAL_GPUS" ]; then
+  echo "This recipe must use exactly $REQUIRED_LOCAL_GPUS local GPUs. CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES NPROC_PER_NODE=$NPROC_PER_NODE" >&2
   exit 1
 fi
 
 if command -v nvidia-smi >/dev/null 2>&1; then
   gpu_count="$(nvidia-smi --query-gpu=index --format=csv,noheader,nounits | wc -l)"
-  if [ "$gpu_count" -lt 8 ]; then
-    echo "Expected at least 8 local GPUs from nvidia-smi, saw $gpu_count" >&2
+  if [ "$gpu_count" -lt "$REQUIRED_LOCAL_GPUS" ]; then
+    echo "Expected at least $REQUIRED_LOCAL_GPUS local GPUs from nvidia-smi, saw $gpu_count" >&2
     exit 1
   fi
-  nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv,noheader,nounits | sed -n '1,8p'
+  nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv,noheader,nounits | sed -n "1,${REQUIRED_LOCAL_GPUS}p"
 fi
 
 MODEL_SIZE="${MODEL_SIZE:-4b}"
