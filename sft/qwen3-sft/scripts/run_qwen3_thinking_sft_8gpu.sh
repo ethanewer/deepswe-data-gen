@@ -90,6 +90,9 @@ NUM_WORKERS="${NUM_WORKERS:-2}"
 MULTIPROCESSING_CONTEXT="${MULTIPROCESSING_CONTEXT:-fork}"
 PERSISTENT_WORKERS="${PERSISTENT_WORKERS:-false}"
 PREFETCH_FACTOR="${PREFETCH_FACTOR:-2}"
+OVERLENGTH_STRATEGY="${OVERLENGTH_STRATEGY:-}"
+REQUIRE_ASSISTANT_REASONING_FOR_LOSS="${REQUIRE_ASSISTANT_REASONING_FOR_LOSS:-}"
+REQUIRE_ASSISTANT_TOOL_CALLS_FOR_LOSS="${REQUIRE_ASSISTANT_TOOL_CALLS_FOR_LOSS:-}"
 ENABLE_COMPILE="${ENABLE_COMPILE:-$DEFAULT_ENABLE_COMPILE}"
 ACTIVATION_CHECKPOINTING="${ACTIVATION_CHECKPOINTING:-true}"
 ENABLE_FSDP2_PREFETCH="${ENABLE_FSDP2_PREFETCH:-true}"
@@ -129,6 +132,12 @@ echo "Global packed sequences: $GLOBAL_BATCH_SIZE"
 echo "Global tokens/update: $GLOBAL_TOKENS"
 echo "Compile: $ENABLE_COMPILE"
 echo "FSDP2 prefetch: $ENABLE_FSDP2_PREFETCH B${FSDP2_BACKWARD_PREFETCH_DEPTH}/F${FSDP2_FORWARD_PREFETCH_DEPTH}"
+if [ -n "$OVERLENGTH_STRATEGY" ]; then
+  echo "Overlength strategy: $OVERLENGTH_STRATEGY"
+fi
+if [ -n "$REQUIRE_ASSISTANT_REASONING_FOR_LOSS" ] || [ -n "$REQUIRE_ASSISTANT_TOOL_CALLS_FOR_LOSS" ]; then
+  echo "Assistant loss requirements: reasoning=${REQUIRE_ASSISTANT_REASONING_FOR_LOSS:-config} tool_calls=${REQUIRE_ASSISTANT_TOOL_CALLS_FOR_LOSS:-config}"
+fi
 if [ "$CHAT_TEMPLATE_SOURCE" = "tokenizer" ]; then
   echo "Chat template: tokenizer default"
 else
@@ -189,6 +198,18 @@ args=(
   --checkpoint.v4_compatible "$CHECKPOINT_V4_COMPATIBLE"
 )
 
+if [ -n "$OVERLENGTH_STRATEGY" ]; then
+  args+=(--dataset.overlength_strategy "$OVERLENGTH_STRATEGY")
+fi
+
+if [ -n "$REQUIRE_ASSISTANT_REASONING_FOR_LOSS" ]; then
+  args+=(--dataset.require_assistant_reasoning_for_loss "$REQUIRE_ASSISTANT_REASONING_FOR_LOSS")
+fi
+
+if [ -n "$REQUIRE_ASSISTANT_TOOL_CALLS_FOR_LOSS" ]; then
+  args+=(--dataset.require_assistant_tool_calls_for_loss "$REQUIRE_ASSISTANT_TOOL_CALLS_FOR_LOSS")
+fi
+
 if [ "$CHAT_TEMPLATE_SOURCE" != "tokenizer" ]; then
   args+=(--dataset.chat_template_path "$CHAT_TEMPLATE")
 fi
@@ -202,6 +223,15 @@ if [ "$VALIDATION_ENABLED" = "true" ]; then
     --validation_dataset.raw_root "$VAL_RAW_ROOT"
     --validation_dataset.sequence_length "$PACK_SIZE"
   )
+  if [ -n "$OVERLENGTH_STRATEGY" ]; then
+    args+=(--validation_dataset.overlength_strategy "$OVERLENGTH_STRATEGY")
+  fi
+  if [ -n "$REQUIRE_ASSISTANT_REASONING_FOR_LOSS" ]; then
+    args+=(--validation_dataset.require_assistant_reasoning_for_loss "$REQUIRE_ASSISTANT_REASONING_FOR_LOSS")
+  fi
+  if [ -n "$REQUIRE_ASSISTANT_TOOL_CALLS_FOR_LOSS" ]; then
+    args+=(--validation_dataset.require_assistant_tool_calls_for_loss "$REQUIRE_ASSISTANT_TOOL_CALLS_FOR_LOSS")
+  fi
   if [ "$CHAT_TEMPLATE_SOURCE" != "tokenizer" ]; then
     args+=(--validation_dataset.chat_template_path "$CHAT_TEMPLATE")
   fi

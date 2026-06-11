@@ -71,8 +71,10 @@ dataset:
   max_rows_per_file: 0
   max_examples: 0
   parquet_batch_size: 128
-  overlength_strategy: split
+  overlength_strategy: truncate
   min_label_tokens: 1
+  require_assistant_reasoning_for_loss: true
+  require_assistant_tool_calls_for_loss: true
   shuffle_files: true
   seed: 33333
   repeat: true
@@ -98,8 +100,10 @@ validation_dataset:
   max_rows_per_file: 0
   max_examples: 128
   parquet_batch_size: 128
-  overlength_strategy: split
+  overlength_strategy: truncate
   min_label_tokens: 1
+  require_assistant_reasoning_for_loss: true
+  require_assistant_tool_calls_for_loss: true
   shuffle_files: false
   seed: 33333
   repeat: false

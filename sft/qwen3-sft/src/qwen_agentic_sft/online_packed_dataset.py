@@ -17,7 +17,13 @@ import numpy as np
 import torch
 from torch.utils.data import IterableDataset, get_worker_info
 
-from .data import RAW_ROOT, discover_raw_files, iter_normalized_examples_from_files
+from .data import (
+    RAW_ROOT,
+    assistant_has_reasoning,
+    assistant_has_valid_tool_calls,
+    discover_raw_files,
+    iter_normalized_examples_from_files,
+)
 
 
 IGNORE_INDEX = -100
@@ -75,6 +81,25 @@ def render_chat(tokenizer: Any, messages: list[dict[str, Any]], tools: Any, chat
 
 def encode_text(tokenizer: Any, text: str) -> list[int]:
     return tokenizer(text, add_special_tokens=False)["input_ids"]
+
+
+def apply_assistant_loss_policy(
+    example: dict[str, Any],
+    *,
+    require_assistant_reasoning_for_loss: bool = False,
+    require_assistant_tool_calls_for_loss: bool = False,
+) -> dict[str, Any]:
+    if not require_assistant_reasoning_for_loss and not require_assistant_tool_calls_for_loss:
+        return example
+
+    for message in example.get("messages", []):
+        if message.get("role") != "assistant":
+            continue
+        if require_assistant_reasoning_for_loss and not assistant_has_reasoning(message):
+            message["loss"] = False
+        if require_assistant_tool_calls_for_loss and not assistant_has_valid_tool_calls(message):
+            message["loss"] = False
+    return example
 
 
 def tokenize_chat_example(
@@ -237,6 +262,8 @@ class OnlinePackedChatDataset(IterableDataset):
         log_every_packs: int = 100,
         shard_rank: int | None = None,
         shard_world_size: int | None = None,
+        require_assistant_reasoning_for_loss: bool = False,
+        require_assistant_tool_calls_for_loss: bool = False,
     ):
         super().__init__()
         self.tokenizer = tokenizer
@@ -256,6 +283,8 @@ class OnlinePackedChatDataset(IterableDataset):
         self.log_every_packs = int(log_every_packs)
         self.shard_rank = None if shard_rank is None else int(shard_rank)
         self.shard_world_size = None if shard_world_size is None else int(shard_world_size)
+        self.require_assistant_reasoning_for_loss = bool(require_assistant_reasoning_for_loss)
+        self.require_assistant_tool_calls_for_loss = bool(require_assistant_tool_calls_for_loss)
         self.chat_template = load_chat_template(self.chat_template_path)
         self._configure_tokenizer()
 
@@ -335,6 +364,11 @@ class OnlinePackedChatDataset(IterableDataset):
                 max_examples=self.max_examples,
             ):
                 examples_seen += 1
+                example = apply_assistant_loss_policy(
+                    example,
+                    require_assistant_reasoning_for_loss=self.require_assistant_reasoning_for_loss,
+                    require_assistant_tool_calls_for_loss=self.require_assistant_tool_calls_for_loss,
+                )
                 for input_ids, labels in tokenize_chat_example(
                     example,
                     tokenizer,
@@ -386,6 +420,8 @@ def inspect_packer(args: argparse.Namespace) -> int:
         shuffle_files=False,
         repeat=False,
         log_every_packs=0,
+        require_assistant_reasoning_for_loss=args.require_assistant_reasoning_for_loss,
+        require_assistant_tool_calls_for_loss=args.require_assistant_tool_calls_for_loss,
     )
     stats = {
         "packs": 0,
@@ -417,6 +453,8 @@ def parse_args() -> argparse.Namespace:
     inspect.add_argument("--max-examples", type=int, default=64)
     inspect.add_argument("--max-packs", type=int, default=2)
     inspect.add_argument("--overlength-strategy", choices=["split", "truncate", "drop"], default="split")
+    inspect.add_argument("--require-assistant-reasoning-for-loss", action="store_true")
+    inspect.add_argument("--require-assistant-tool-calls-for-loss", action="store_true")
     inspect.add_argument("--local-files-only", action=argparse.BooleanOptionalAction, default=True)
     return parser.parse_args()
 

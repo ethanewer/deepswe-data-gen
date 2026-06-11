@@ -179,6 +179,20 @@ def normalize_tool_call(call: Any) -> dict[str, Any] | None:
     return {"function": {"name": str(name), "arguments": arguments}}
 
 
+def is_valid_tool_call(call: Any) -> bool:
+    call = parse_jsonish(call)
+    if not isinstance(call, dict):
+        return False
+    function = call.get("function")
+    if not isinstance(function, dict):
+        return False
+    name = function.get("name")
+    if not isinstance(name, str) or not name.strip():
+        return False
+    arguments = parse_jsonish(function.get("arguments", {}))
+    return isinstance(arguments, (dict, list))
+
+
 def normalize_tool_calls(tool_calls: Any) -> list[dict[str, Any]]:
     tool_calls = parse_jsonish(tool_calls)
     if not tool_calls:
@@ -276,6 +290,23 @@ def assistant_has_target(msg: dict[str, Any]) -> bool:
 
 def has_assistant_target(messages: list[dict[str, Any]]) -> bool:
     return any(assistant_has_target(msg) for msg in messages)
+
+
+def assistant_has_reasoning(msg: dict[str, Any]) -> bool:
+    if msg.get("role") != "assistant":
+        return False
+    content = str(msg.get("content") or "")
+    start = content.find(THINK_OPEN)
+    end = content.find(THINK_CLOSE, start + len(THINK_OPEN))
+    if start == -1 or end == -1:
+        return False
+    return bool(content[start + len(THINK_OPEN) : end].strip())
+
+
+def assistant_has_valid_tool_calls(msg: dict[str, Any]) -> bool:
+    if msg.get("role") != "assistant":
+        return False
+    return any(is_valid_tool_call(call) for call in msg.get("tool_calls") or [])
 
 
 def first_value(row: dict[str, Any], keys: Iterable[str]) -> Any:
