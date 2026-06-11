@@ -71,7 +71,12 @@ CONFIG="${CONFIG:-$DEFAULT_CONFIG}"
 MODEL="${MODEL:-$DEFAULT_MODEL}"
 TRAIN_RAW_ROOT="${TRAIN_RAW_ROOT:-/wbl-fast/usrs/ee/code-swe-data/data/code-swe-terminal-agentic-sft}"
 VAL_RAW_ROOT="${VAL_RAW_ROOT:-$ROOT_DIR/data/smoke_raw}"
-CHAT_TEMPLATE="${CHAT_TEMPLATE:-/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/eval/chat_templates/qwen3_thinking_acc.jinja2}"
+CHAT_TEMPLATE_SOURCE="${CHAT_TEMPLATE_SOURCE:-file}"
+if [ "$CHAT_TEMPLATE_SOURCE" = "tokenizer" ]; then
+  CHAT_TEMPLATE="${CHAT_TEMPLATE:-}"
+else
+  CHAT_TEMPLATE="${CHAT_TEMPLATE:-/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/eval/chat_templates/qwen3_thinking_acc.jinja2}"
+fi
 
 PACK_SIZE="${PACK_SIZE:-$DEFAULT_PACK_SIZE}"
 LOCAL_BATCH_SIZE="${LOCAL_BATCH_SIZE:-$DEFAULT_LOCAL_BATCH_SIZE}"
@@ -124,6 +129,11 @@ echo "Global packed sequences: $GLOBAL_BATCH_SIZE"
 echo "Global tokens/update: $GLOBAL_TOKENS"
 echo "Compile: $ENABLE_COMPILE"
 echo "FSDP2 prefetch: $ENABLE_FSDP2_PREFETCH B${FSDP2_BACKWARD_PREFETCH_DEPTH}/F${FSDP2_FORWARD_PREFETCH_DEPTH}"
+if [ "$CHAT_TEMPLATE_SOURCE" = "tokenizer" ]; then
+  echo "Chat template: tokenizer default"
+else
+  echo "Chat template: $CHAT_TEMPLATE"
+fi
 if [ "$MODEL_SIZE" = "8b" ]; then
   echo "8B text memory path: native_rmsnorm=${QWEN3_VL_TEXT_USE_NATIVE_RMSNORM:-0} disable_mlp_compile=${QWEN3_VL_TEXT_DISABLE_MLP_COMPILE:-0} mlp_chunk_tokens=${QWEN3_VL_TEXT_MLP_CHUNK_TOKENS:-0}"
 fi
@@ -154,7 +164,6 @@ args=(
   --model.attn_implementation "$ATTN_IMPLEMENTATION"
   --model.output_hidden_states "$OUTPUT_HIDDEN_STATES"
   --dataset.raw_root "$TRAIN_RAW_ROOT"
-  --dataset.chat_template_path "$CHAT_TEMPLATE"
   --dataset.sequence_length "$PACK_SIZE"
   --step_scheduler.global_batch_size "$GLOBAL_BATCH_SIZE"
   --step_scheduler.local_batch_size "$LOCAL_BATCH_SIZE"
@@ -180,6 +189,10 @@ args=(
   --checkpoint.v4_compatible "$CHECKPOINT_V4_COMPATIBLE"
 )
 
+if [ "$CHAT_TEMPLATE_SOURCE" != "tokenizer" ]; then
+  args+=(--dataset.chat_template_path "$CHAT_TEMPLATE")
+fi
+
 if [ -n "$RESTORE_FROM" ]; then
   args+=(--checkpoint.restore_from "$RESTORE_FROM")
 fi
@@ -187,9 +200,11 @@ fi
 if [ "$VALIDATION_ENABLED" = "true" ]; then
   args+=(
     --validation_dataset.raw_root "$VAL_RAW_ROOT"
-    --validation_dataset.chat_template_path "$CHAT_TEMPLATE"
     --validation_dataset.sequence_length "$PACK_SIZE"
   )
+  if [ "$CHAT_TEMPLATE_SOURCE" != "tokenizer" ]; then
+    args+=(--validation_dataset.chat_template_path "$CHAT_TEMPLATE")
+  fi
 fi
 
 if "$VENV_PYTHON" "$AUTOMODEL_BIN" --help 2>&1 | grep -q -- "--nproc-per-node"; then

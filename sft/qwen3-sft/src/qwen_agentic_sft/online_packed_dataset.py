@@ -32,7 +32,9 @@ def _rank_world() -> tuple[int, int]:
     return int(os.environ.get("RANK", "0")), int(os.environ.get("WORLD_SIZE", "1"))
 
 
-def load_chat_template(path: str | Path) -> str:
+def load_chat_template(path: str | Path | None) -> str | None:
+    if path is None or str(path).strip() == "":
+        return None
     return Path(path).read_text(encoding="utf-8")
 
 
@@ -50,7 +52,7 @@ def tokenizer_name_or_path(tokenizer: Any) -> str:
     return DEFAULT_MODEL
 
 
-def render_chat(tokenizer: Any, messages: list[dict[str, Any]], tools: Any, chat_template: str) -> str:
+def render_chat(tokenizer: Any, messages: list[dict[str, Any]], tools: Any, chat_template: str | None) -> str:
     kwargs: dict[str, Any] = {
         "conversation": messages,
         "tokenize": False,
@@ -58,6 +60,8 @@ def render_chat(tokenizer: Any, messages: list[dict[str, Any]], tools: Any, chat
     }
     if tools is not None:
         kwargs["tools"] = tools
+    if chat_template is None:
+        return tokenizer.apply_chat_template(**kwargs)
     try:
         return tokenizer.apply_chat_template(chat_template=chat_template, **kwargs)
     except TypeError:
@@ -219,7 +223,7 @@ class OnlinePackedChatDataset(IterableDataset):
         tokenizer: Any,
         *,
         raw_root: str | Path = RAW_ROOT,
-        chat_template_path: str | Path = DEFAULT_CHAT_TEMPLATE,
+        chat_template_path: str | Path | None = DEFAULT_CHAT_TEMPLATE,
         sequence_length: int = 65536,
         max_rows_per_file: int = 0,
         max_examples: int = 0,
@@ -238,7 +242,7 @@ class OnlinePackedChatDataset(IterableDataset):
         self.tokenizer = tokenizer
         self.tokenizer_name_or_path = tokenizer_name_or_path(tokenizer)
         self.raw_root = Path(raw_root)
-        self.chat_template_path = Path(chat_template_path)
+        self.chat_template_path = None if chat_template_path is None or str(chat_template_path).strip() == "" else Path(chat_template_path)
         self.sequence_length = int(sequence_length)
         self.max_rows_per_file = int(max_rows_per_file)
         self.max_examples = int(max_examples)

@@ -74,6 +74,46 @@ Default global token batch:
 
 That is inside the requested 1M-5M token range.
 
+## Run The 4B L40S Slurm Recipe
+
+The L40S recipe keeps the newer 8B text-tower data path but uses
+`Qwen/Qwen3-4B-Thinking-2507`: 32,768-token packs, local batch 1, gradient
+accumulation 4, online tokenization/packing, FSDP2, activation checkpointing,
+compile disabled, FSDP2 prefetch disabled, and the shared Qwen3 thinking chat
+template. This keeps the global token batch at 1,048,576 tokens/update while
+remaining stable on 46 GB L40S GPUs.
+
+Submit on an 8-GPU L40S node:
+
+```bash
+sbatch scripts/slurm_qwen3_4b_thinking_l40s_sft_8gpu.sbatch
+```
+
+Smoke run on the local raw smoke data:
+
+```bash
+TRAIN_RAW_ROOT=$PWD/data/smoke_raw \
+MAX_STEPS=25 \
+RUN_NAME=qwen3_4b_thinking_l40s_32k_smoke25 \
+sbatch scripts/slurm_qwen3_4b_thinking_l40s_sft_8gpu.sbatch
+```
+
+Use any dataset in the existing local raw format by overriding
+`TRAIN_RAW_ROOT=/path/to/raw/root`. The launcher defaults to
+`PACK_SIZE=32768`, rejects values below 32,768, and uses the chat template at
+`/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/eval/chat_templates/qwen3_thinking_acc.jinja2`.
+
+Measured unstable L40S variants during smoke testing:
+
+- `PACK_SIZE=65536`, local batch 1: OOM with compile on, compile off, and prefetch off.
+- `PACK_SIZE=49152`, local batch 1, compile on: OOM.
+- `PACK_SIZE=32768`, local batch 2, compile off: OOM.
+- `PACK_SIZE=32768`, local batch 1, compile on: OOM.
+
+`PACK_SIZE=49152`, local batch 1, gradient accumulation 3, compile off, and
+prefetch off is a higher-context override, but it is slower and closer to the
+memory limit than the default 32k recipe.
+
 For a quick smoke training run:
 
 ```bash
@@ -82,6 +122,36 @@ VAL_RAW_ROOT=$PWD/data/smoke_raw \
 MAX_STEPS=3 \
 ./scripts/run_qwen3_4b_thinking_sft_8gpu.sh
 ```
+
+## Run The Qwen3-VL 2B Text L40S Recipe
+
+`Qwen/Qwen3-VL-2B-Thinking` is trained through a text-only safetensors view, so
+the vision tensors are not loaded by the training model. The measured L40S
+default is `PACK_SIZE=40960`, `LOCAL_BATCH_SIZE=4`, `GRAD_ACCUM_STEPS=1`,
+`ENABLE_COMPILE=false`, and `ENABLE_FSDP2_PREFETCH=false`, for 1,310,720
+tokens/update. It uses the shared Qwen3 thinking ACC chat template:
+
+```bash
+sbatch scripts/slurm_qwen3_vl_2b_text_l40s_sft_8gpu.sbatch
+```
+
+Measured L40S smoke results on 8 GPUs:
+
+| Shape | Status | Steps | Avg TPS, excluding step 0 | Max Mem/GPU | Notes |
+| --- | --- | ---: | ---: | ---: | --- |
+| 32k, local batch 2, GA 2, no compile | completed | 25 | 32,160 | 24.91 GiB | Conservative baseline. |
+| 32k, local batch 4, GA 1, no compile | partial | 16 | 33,087 | 31.50 GiB | Stable, but only modestly faster than the baseline. |
+| 40k, local batch 4, GA 1, no compile | completed | 25 | 28,968 | 36.89 GiB | Recommended long-context default. |
+| 40k, local batch 4, GA 1, no compile, FSDP2 prefetch | partial | 7 | 29,314 | 36.98 GiB | No clear gain over prefetch off. |
+| 49k, local batch 4, GA 1, no compile | completed | 25 | 26,038 | 43.42 GiB | Works, but leaves little L40S memory headroom. |
+| 49k, local batch 2, GA 2, no compile | partial | 9 | 26,980 | 30.86 GiB | Safer memory, slower than 40k-lb4. |
+
+`Qwen/Qwen3.5-2B` was also tested with the existing
+`/wbl-fast/usrs/ee/code-swe-data/sft/qwen3.5-sft` pattern
+(`NeMoAutoModelForCausalLM`, FA3, BF16, FSDP2, activation checkpointing, and the
+tokenizer's original chat template). It did not fit the 32k minimum on 8 x L40S
+for full-parameter SFT: local batch 4 with compile, local batch 2 with no
+compile, and local batch 1 with no compile all OOMed before completing step 0.
 
 ## Run The 8B Text-Tower Recipe
 
