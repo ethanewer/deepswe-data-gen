@@ -12,8 +12,8 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+REPO_ROOT="${REPO_ROOT:-/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen}"
+SCRIPT_DIR="$REPO_ROOT/eval/benchmarks/swebench_multilingual"
 cd "$REPO_ROOT"
 
 PYTHON="${PYTHON:-$REPO_ROOT/.venv/bin/python}"
