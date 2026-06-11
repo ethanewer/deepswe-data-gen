@@ -8,6 +8,7 @@ import fcntl
 import json
 import os
 import subprocess
+import tomllib
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
@@ -72,6 +73,27 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def task_quality_metadata(task_dir: str) -> dict[str, object]:
+    path = Path(task_dir) / "task.toml"
+    if not path.exists():
+        return {}
+    try:
+        with path.open("rb") as handle:
+            metadata = (tomllib.load(handle).get("metadata") or {})
+    except Exception:
+        return {}
+    keys = (
+        "swe_rebench_quality_tier",
+        "swe_rebench_quality_gate_pass",
+        "swe_rebench_quality_gate_failures",
+        "swe_rebench_annotation_code",
+        "swe_rebench_intent_completeness",
+        "swe_rebench_detected_issue_count",
+        "swe_rebench_test_alignment_issue_count",
+    )
+    return {key: metadata[key] for key in keys if key in metadata}
+
+
 def result_index_path(workspace: Path) -> Path | None:
     for parent in workspace.parents:
         if parent.name == "pyxis-traces":
@@ -105,6 +127,7 @@ def append_result_index(workspace: Path, result: dict) -> None:
         "uses_updated_alignment": result.get("uses_updated_alignment", False),
         "eligible_for_controlled_comparison": result.get("eligible_for_controlled_comparison", False),
         "reason_excluded_from_comparison": result.get("reason_excluded_from_comparison", ""),
+        **task_quality_metadata(str(result.get("task_dir", ""))),
         "finished_at": result.get("finished_at"),
         "agent_exit_status": result.get("agent_exit_status"),
         "agent_exception_type": (result.get("agent_exception") or {}).get("type"),
@@ -193,6 +216,7 @@ def main() -> None:
         "verifier": None,
         "stdout_log": args.stdout_log,
         "stderr_log": args.stderr_log,
+        **task_quality_metadata(args.task_dir),
     }
     write_setup_failure_trajectory(args, result)
     (args.workspace / "result.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")

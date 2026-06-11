@@ -222,6 +222,19 @@ def load_task_toml(task_dir: Path) -> dict[str, Any]:
         }
 
 
+def task_quality_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+    keys = (
+        "swe_rebench_quality_tier",
+        "swe_rebench_quality_gate_pass",
+        "swe_rebench_quality_gate_failures",
+        "swe_rebench_annotation_code",
+        "swe_rebench_intent_completeness",
+        "swe_rebench_detected_issue_count",
+        "swe_rebench_test_alignment_issue_count",
+    )
+    return {key: metadata[key] for key in keys if key in metadata}
+
+
 def configure_runtime_env(args: argparse.Namespace) -> None:
     home = args.workspace / "home"
     cache_root = Path("/wbl-fast/usrs/ee/code-swe-data/cache")
@@ -510,6 +523,7 @@ def append_result_index(workspace: Path, result: dict[str, Any]) -> None:
         "uses_updated_alignment": result.get("uses_updated_alignment", False),
         "eligible_for_controlled_comparison": result.get("eligible_for_controlled_comparison", False),
         "reason_excluded_from_comparison": result.get("reason_excluded_from_comparison", ""),
+        **task_quality_metadata(result),
         "trajectory_saved": trajectory_saved,
         "result_path": str(host_workspace_path(workspace) / "result.json"),
         "trajectory_path": str(trajectory_record_path),
@@ -622,6 +636,7 @@ def main() -> None:
         "max_tokens": args.max_tokens,
         "reasoning_effort": args.reasoning_effort,
         "extra_body_json": args.extra_body_json,
+        **task_quality_metadata(metadata),
     }
     (args.workspace / "metadata.json").write_text(json.dumps(metadata_record, indent=2) + "\n")
 

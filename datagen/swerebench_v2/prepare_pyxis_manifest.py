@@ -157,6 +157,21 @@ def main() -> None:
                 task_meta["image"] = args.image_override
             settings = MODEL_SETTINGS[model]
             instruction_style = args.instruction_style_override or row["instruction_style"]
+            extra_metadata = {
+                key: value
+                for key, value in row.items()
+                if key.startswith("quality_")
+                or key
+                in {
+                    "annotation_code",
+                    "intent_completeness",
+                    "confidence",
+                    "detected_issue_count",
+                    "test_alignment_issue_count",
+                    "task_quality_tier",
+                    "quality_tier",
+                }
+            }
             for rollout_index in range(args.rollout_count):
                 rollout_id = f"r{rollout_index:02d}"
                 workspace = (
@@ -194,6 +209,7 @@ def main() -> None:
                     "task_dir": str(task_dir.resolve()),
                     "workspace": str(workspace.resolve()),
                     **task_meta,
+                    **extra_metadata,
                     }
                 )
                 if args.limit and len(records) >= args.limit:
