@@ -6,9 +6,9 @@ step_scheduler:
   # 8 GPUs * local batch 4 * 40,960 tokens = 1,310,720 tokens/update.
   global_batch_size: 32
   local_batch_size: 4
-  ckpt_every_steps: 1000
+  ckpt_every_steps: 100
   val_every_steps: 1000
-  max_steps: 1000
+  max_steps: 400
 
 dist_env:
   backend: nccl
@@ -37,9 +37,9 @@ fp8:
   enabled: false
 
 checkpoint:
-  enabled: false
+  enabled: true
   checkpoint_dir: checkpoints/qwen3_vl_2b_text_l40s_40k_online_packed_sft/
-  model_save_format: torch_save
+  model_save_format: safetensors
   save_consolidated: false
 
 distributed:
@@ -65,7 +65,7 @@ loss_fn:
 
 dataset:
   _target_: qwen_agentic_sft.online_packed_dataset.OnlinePackedChatDataset
-  raw_root: /wbl-fast/usrs/ee/code-swe-data/data/code-swe-terminal-agentic-sft
+  raw_root: /wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260611/highquality-3x-duplicate-reasoning-90pct
   chat_template_path: /wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/eval/chat_templates/qwen3_thinking_acc.jinja2
   sequence_length: 40960
   max_rows_per_file: 0
