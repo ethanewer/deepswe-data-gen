@@ -66,6 +66,12 @@ configs from `instruction_style` by default:
 - `deepswe`/`rewritten`/`planned` -> DeepSWE/Pier `mini.yaml`-style prompt
   and submission flow.
 
+For `planned` tasks, `instruction.md` is the hinted teacher-rollout prompt and
+`instruction.sft.md` is the unhinted benchmark-aligned prompt. The SFT dataset
+builders replace the first user message with `instruction.sft.md` when the
+rollout metadata points at a planned task directory, while recording only prompt
+hashes and the substitution status in metadata.
+
 Pass `--config-file` or `--benchmark-profile` to
 `datagen.swerebench_v2.submit_pyxis_datagen` only when intentionally running a
 custom or legacy prompt contract.

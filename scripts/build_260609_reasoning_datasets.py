@@ -74,6 +74,10 @@ INDEX_FIELDS = [
     "prompt_sha256",
     "prompt_chars",
     "prompt_preview",
+    "sft_prompt_variant",
+    "sft_prompt_substitution",
+    "rollout_instruction_sha256",
+    "sft_instruction_sha256",
     "agent_exit_status",
     "agent_exception_type",
     "api_calls",
@@ -124,6 +128,82 @@ def first_nonempty(*values: Any) -> str:
         if text:
             return text
     return ""
+
+
+def planned_task_dir(workspace: Path | None, result: dict[str, Any], metadata: dict[str, Any]) -> Path | None:
+    task_dir = first_nonempty(result.get("task_dir"), metadata.get("task_dir"))
+    if not task_dir:
+        return None
+    path = Path(task_dir)
+    if not path.is_absolute() and workspace is not None:
+        path = workspace / path
+    return path
+
+
+def replace_first_user_prompt(
+    messages: list[Any],
+    rollout_instruction: str,
+    sft_instruction: str,
+) -> tuple[list[Any], bool]:
+    if not rollout_instruction.strip() or not sft_instruction.strip():
+        return messages, False
+    replacements = [
+        (rollout_instruction, sft_instruction),
+        (rollout_instruction.strip(), sft_instruction.strip()),
+        (rollout_instruction.rstrip("\n"), sft_instruction.rstrip("\n")),
+    ]
+    updated: list[Any] = []
+    replaced = False
+    for message in messages:
+        if (
+            not replaced
+            and isinstance(message, dict)
+            and message.get("role") == "user"
+            and isinstance(message.get("content"), str)
+        ):
+            content = message["content"]
+            for old, new in replacements:
+                if old and old in content:
+                    clean = dict(message)
+                    clean["content"] = content.replace(old, new, 1)
+                    updated.append(clean)
+                    replaced = True
+                    break
+            if replaced:
+                continue
+        updated.append(message)
+    return updated, replaced
+
+
+def remove_rollout_hints_for_sft(
+    messages: list[Any],
+    workspace: Path | None,
+    result: dict[str, Any],
+    metadata: dict[str, Any],
+    instruction_style: str,
+) -> tuple[list[Any], dict[str, Any]]:
+    if instruction_style != "planned":
+        return messages, {"sft_prompt_variant": "rollout"}
+    task_dir = planned_task_dir(workspace, result, metadata)
+    if task_dir is None:
+        return messages, {"sft_prompt_variant": "rollout", "sft_prompt_substitution": "missing_task_dir"}
+    rollout_instruction = read_text_if_small(task_dir / "instruction.md")
+    sft_instruction = read_text_if_small(task_dir / "instruction.sft.md")
+    updated, replaced = replace_first_user_prompt(messages, rollout_instruction, sft_instruction)
+    if not replaced:
+        status = "missing_instruction_files" if not rollout_instruction or not sft_instruction else "rollout_text_not_found"
+        return messages, {
+            "sft_prompt_variant": "rollout",
+            "sft_prompt_substitution": status,
+            "rollout_instruction_sha256": sha256_text(rollout_instruction) if rollout_instruction else "",
+            "sft_instruction_sha256": sha256_text(sft_instruction) if sft_instruction else "",
+        }
+    return updated, {
+        "sft_prompt_variant": "unhinted",
+        "sft_prompt_substitution": "replaced_first_user_prompt",
+        "rollout_instruction_sha256": sha256_text(rollout_instruction),
+        "sft_instruction_sha256": sha256_text(sft_instruction),
+    }
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -275,6 +355,16 @@ def build_existing_record(row: dict[str, Any]) -> dict[str, Any] | None:
         return None
     metadata = dict(row.get("metadata") or {})
     reasoning = row.get("reasoning") if isinstance(row.get("reasoning"), list) else collect_message_reasoning(messages)
+    instruction_style = first_nonempty(metadata.get("instruction_style"), row.get("instruction_style"))
+    workspace_text = first_nonempty(metadata.get("workspace"))
+    workspace = Path(workspace_text) if workspace_text else None
+    messages, prompt_variant_metadata = remove_rollout_hints_for_sft(
+        messages,
+        workspace,
+        {},
+        metadata,
+        instruction_style,
+    )
     metrics = reasoning_metrics(messages, reasoning)
     prompt = prompt_from_messages(messages)
     model_patch = row.get("model_patch") if isinstance(row.get("model_patch"), str) else ""
@@ -288,7 +378,6 @@ def build_existing_record(row: dict[str, Any]) -> dict[str, Any] | None:
     except Exception:
         reward_int = 1 if bool_from_any(reward) else 0
     passed = bool_from_any(metadata.get("passed", row.get("passed", reward_int == 1)))
-    instruction_style = first_nonempty(metadata.get("instruction_style"), row.get("instruction_style"))
     deepswe_prompt_augmentation = instruction_style == "deepswe"
     trajectory_path = first_nonempty(metadata.get("trajectory_path"))
     trajectory_bytes = int(metadata.get("trajectory_bytes") or 0)
@@ -325,6 +414,7 @@ def build_existing_record(row: dict[str, Any]) -> dict[str, Any] | None:
             "trajectory_chars": trajectory_chars,
             "trajectory_bytes": trajectory_bytes,
             "row_source": first_nonempty(metadata.get("row_source"), "existing_all_trajectories"),
+            **prompt_variant_metadata,
         }
     )
     out = dict(row)
@@ -386,8 +476,8 @@ def build_mimo_record(run_root: Path, manifest_path: Path, parts: list[str]) -> 
         return None
     reasoning = collect_message_reasoning(raw_messages)
     messages = normalize_messages(raw_messages)
-    metrics = reasoning_metrics(messages, reasoning)
     result = load_json(workspace / "result.json")
+    run_metadata = load_json(workspace / "metadata.json")
     info = trajectory.get("info") if isinstance(trajectory.get("info"), dict) else {}
     model_stats = info.get("model_stats") if isinstance(info.get("model_stats"), dict) else {}
     config = info.get("config") if isinstance(info.get("config"), dict) else {}
@@ -398,8 +488,16 @@ def build_mimo_record(run_root: Path, manifest_path: Path, parts: list[str]) -> 
     litellm_model = first_nonempty(result.get("litellm_model"), parts[7])
     difficulty = first_nonempty(result.get("difficulty"), parts[11])
     language = first_nonempty(result.get("language"), parts[12])
-    instruction_style = first_nonempty(result.get("instruction_style"), parts[13])
+    instruction_style = first_nonempty(result.get("instruction_style"), run_metadata.get("instruction_style"), parts[13])
     repo = first_nonempty(result.get("repo"), parts[14])
+    messages, prompt_variant_metadata = remove_rollout_hints_for_sft(
+        messages,
+        workspace,
+        result,
+        run_metadata,
+        instruction_style,
+    )
+    metrics = reasoning_metrics(messages, reasoning)
     reward = result.get("reward", 0)
     try:
         reward_int = int(reward)
@@ -468,6 +566,7 @@ def build_mimo_record(run_root: Path, manifest_path: Path, parts: list[str]) -> 
         "prompt_chars": len(prompt),
         "prompt_sha256": sha256_text(prompt) if prompt else "",
         "row_source": "mimo_manifest_trace",
+        **prompt_variant_metadata,
     }
     record: dict[str, Any] = {
         "uuid": stable_uuid([str(trajectory_path), task_id, rollout_id, teacher, instruction_style]),
@@ -524,6 +623,10 @@ def record_to_index(row: dict[str, Any], line_number: int) -> dict[str, Any]:
         "prompt_sha256": sha256_text(prompt) if prompt else first_nonempty(metadata.get("prompt_sha256")),
         "prompt_chars": len(prompt) if prompt else int(metadata.get("prompt_chars", 0) or 0),
         "prompt_preview": prompt[:500].replace("\n", "\\n") if prompt else "",
+        "sft_prompt_variant": first_nonempty(metadata.get("sft_prompt_variant")),
+        "sft_prompt_substitution": first_nonempty(metadata.get("sft_prompt_substitution")),
+        "rollout_instruction_sha256": first_nonempty(metadata.get("rollout_instruction_sha256")),
+        "sft_instruction_sha256": first_nonempty(metadata.get("sft_instruction_sha256")),
         "agent_exit_status": first_nonempty(metadata.get("agent_exit_status")),
         "agent_exception_type": first_nonempty(metadata.get("agent_exception_type")),
         "api_calls": int(metadata.get("api_calls", 0) or 0),

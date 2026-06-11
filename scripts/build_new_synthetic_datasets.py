@@ -104,9 +104,12 @@ def read_text_if_small(path: Path, max_bytes: int = 2_000_000) -> str:
     return ""
 
 
+def sha256_text(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()
+
+
 def stable_uuid(parts: list[str]) -> str:
-    digest = hashlib.sha256("\n".join(parts).encode("utf-8", errors="replace")).hexdigest()
-    return digest
+    return sha256_text("\n".join(parts))
 
 
 def first_nonempty(*values: Any) -> str:
@@ -117,6 +120,84 @@ def first_nonempty(*values: Any) -> str:
         if text:
             return text
     return ""
+
+
+def planned_task_dir(workspace: Path, result: dict[str, Any], metadata: dict[str, Any]) -> Path | None:
+    task_dir = first_nonempty(result.get("task_dir"), metadata.get("task_dir"))
+    if not task_dir:
+        return None
+    path = Path(task_dir)
+    if not path.is_absolute():
+        path = workspace / path
+    return path
+
+
+def replace_first_user_prompt(
+    messages: list[Any],
+    rollout_instruction: str,
+    sft_instruction: str,
+) -> tuple[list[Any], bool]:
+    if not rollout_instruction.strip() or not sft_instruction.strip():
+        return messages, False
+    replacements = [
+        (rollout_instruction, sft_instruction),
+        (rollout_instruction.strip(), sft_instruction.strip()),
+        (rollout_instruction.rstrip("\n"), sft_instruction.rstrip("\n")),
+    ]
+    updated: list[Any] = []
+    replaced = False
+    for message in messages:
+        if (
+            not replaced
+            and isinstance(message, dict)
+            and message.get("role") == "user"
+            and isinstance(message.get("content"), str)
+        ):
+            content = message["content"]
+            for old, new in replacements:
+                if old and old in content:
+                    clean = dict(message)
+                    clean["content"] = content.replace(old, new, 1)
+                    updated.append(clean)
+                    replaced = True
+                    break
+            if replaced:
+                continue
+        updated.append(message)
+    return updated, replaced
+
+
+def remove_rollout_hints_for_sft(
+    messages: list[Any],
+    workspace: Path,
+    result: dict[str, Any],
+    metadata: dict[str, Any],
+    instruction_style: str,
+) -> tuple[list[Any], dict[str, Any]]:
+    if instruction_style != "planned":
+        return messages, {"sft_prompt_variant": "rollout"}
+    task_dir = planned_task_dir(workspace, result, metadata)
+    if task_dir is None:
+        return messages, {"sft_prompt_variant": "rollout", "sft_prompt_substitution": "missing_task_dir"}
+    rollout_path = task_dir / "instruction.md"
+    sft_path = task_dir / "instruction.sft.md"
+    rollout_instruction = read_text_if_small(rollout_path)
+    sft_instruction = read_text_if_small(sft_path)
+    updated, replaced = replace_first_user_prompt(messages, rollout_instruction, sft_instruction)
+    if not replaced:
+        status = "missing_instruction_files" if not rollout_instruction or not sft_instruction else "rollout_text_not_found"
+        return messages, {
+            "sft_prompt_variant": "rollout",
+            "sft_prompt_substitution": status,
+            "rollout_instruction_sha256": sha256_text(rollout_instruction) if rollout_instruction else "",
+            "sft_instruction_sha256": sha256_text(sft_instruction) if sft_instruction else "",
+        }
+    return updated, {
+        "sft_prompt_variant": "unhinted",
+        "sft_prompt_substitution": "replaced_first_user_prompt",
+        "rollout_instruction_sha256": sha256_text(rollout_instruction),
+        "sft_instruction_sha256": sha256_text(sft_instruction),
+    }
 
 
 def collect_message_reasoning(messages: list[Any]) -> list[dict[str, Any]]:
@@ -200,7 +281,6 @@ def build_record(item: dict[str, Any]) -> dict[str, Any] | None:
     if not isinstance(raw_messages, list) or not raw_messages:
         return None
     reasoning = collect_message_reasoning(raw_messages)
-    messages = normalize_messages(raw_messages)
 
     workspace = item["workspace"]
     result = load_json(workspace / "result.json")
@@ -232,6 +312,14 @@ def build_record(item: dict[str, Any]) -> dict[str, Any] | None:
         result.get("instruction_style"),
         metadata.get("instruction_style"),
         item["instruction_style"],
+    )
+    messages = normalize_messages(raw_messages)
+    messages, prompt_variant_metadata = remove_rollout_hints_for_sft(
+        messages,
+        workspace,
+        result,
+        metadata,
+        instruction_style,
     )
 
     reward = result.get("reward", 0)
@@ -302,6 +390,7 @@ def build_record(item: dict[str, Any]) -> dict[str, Any] | None:
             "mini_swe_agent_version": info.get("mini_version", ""),
             "model_patch_bytes": len(patch_text.encode("utf-8")) if patch_text else 0,
             "model_config": config.get("model", {}) if isinstance(config.get("model"), dict) else {},
+            **prompt_variant_metadata,
         },
     }
     if patch_text:

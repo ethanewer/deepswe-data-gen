@@ -26,6 +26,7 @@ MIN_CONFIDENCE = 0.95
 TASKS_CSV = MODULE_DIR / "data" / "high_quality_conf_ge_0.95_tasks.csv"
 DEFAULT_OUTPUT_DIR = REPO_ROOT / "runs" / "swerebench-v2" / "harbor-tasks"
 DEFAULT_REWRITES_JSONL = MODULE_DIR / "examples" / "rewritten-prompts" / "rewrites.jsonl"
+DEFAULT_PLANS_JSONL = MODULE_DIR / "examples" / "planned-prompts" / "plans.jsonl"
 
 
 def parse_args() -> argparse.Namespace:
@@ -45,7 +46,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--instruction-style",
-        choices=("deepswe", "swe_rebench", "rewritten"),
+        choices=("deepswe", "swe_rebench", "rewritten", "planned"),
         default="deepswe",
         help="Prompt style to write to instruction.md.",
     )
@@ -54,6 +55,12 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=DEFAULT_REWRITES_JSONL,
         help="JSONL file from datagen.swerebench_v2.rewrite_prompts.",
+    )
+    parser.add_argument(
+        "--plans-file",
+        type=Path,
+        default=DEFAULT_PLANS_JSONL,
+        help="JSONL file from datagen.swerebench_v2.generate_plan_prompts.",
     )
     parser.add_argument(
         "--clean",
@@ -159,12 +166,43 @@ def load_rewrites(path: Path) -> dict[str, str]:
     return rewrites
 
 
-def build_instruction(row: dict, style: str, rewrites: dict[str, str] | None = None) -> str:
+def load_plans(path: Path) -> dict[str, dict[str, str]]:
+    if not path.exists():
+        return {}
+    plans: dict[str, dict[str, str]] = {}
+    with path.open(encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            record = json.loads(line)
+            plan = record["plan"]
+            plans[record["task"]["instance_id"]] = {
+                "planned_prompt": plan["planned_prompt"],
+                "rollout_prompt": plan.get("rollout_prompt", plan["planned_prompt"]),
+                "sft_prompt": plan.get("sft_prompt", ""),
+            }
+    return plans
+
+
+def build_instruction(
+    row: dict,
+    style: str,
+    rewrites: dict[str, str] | None = None,
+    plans: dict[str, dict[str, str]] | None = None,
+) -> str:
     if style == "rewritten":
         rewritten_prompt = (rewrites or {}).get(row["instance_id"])
         if not rewritten_prompt:
             raise ValueError(f"missing rewritten prompt for {row['instance_id']}")
         return f"{rewritten_prompt.strip()}\n"
+    if style == "planned":
+        plan = (plans or {}).get(row["instance_id"])
+        if not plan:
+            raise ValueError(f"missing planned prompt for {row['instance_id']}")
+        planned_prompt = plan.get("rollout_prompt") or plan.get("planned_prompt")
+        if not planned_prompt:
+            raise ValueError(f"missing planned rollout prompt for {row['instance_id']}")
+        return f"{planned_prompt.strip()}\n"
 
     problem = clean_issue_prompt(
         row["problem_statement"] or "",
@@ -180,6 +218,21 @@ def build_instruction(row: dict, style: str, rewrites: dict[str, str] | None = N
     # DeepSWE prompts are natural, behavior-focused task requests. Avoid
     # metadata, test names, reference-patch hints, and generated interface dumps.
     return f"{problem}\n"
+
+
+def build_sft_instruction(
+    row: dict,
+    style: str,
+    rewrites: dict[str, str] | None = None,
+    plans: dict[str, dict[str, str]] | None = None,
+) -> str:
+    if style == "planned":
+        plan = (plans or {}).get(row["instance_id"])
+        if not plan:
+            raise ValueError(f"missing planned prompt for {row['instance_id']}")
+        sft_prompt = plan.get("sft_prompt") or clean_issue_prompt(row["problem_statement"] or "", strip_urls=True)
+        return f"{sft_prompt.strip()}\n"
+    return build_instruction(row, style, rewrites, plans)
 
 
 def build_task_toml(
@@ -365,6 +418,7 @@ def materialize_task(
     output_dir: Path,
     instruction_style: str,
     rewrites: dict[str, str],
+    plans: dict[str, dict[str, str]],
     allow_internet: bool,
     outside_original_high_quality_set: bool,
 ) -> Path:
@@ -379,7 +433,9 @@ def materialize_task(
             outside_original_high_quality_set=outside_original_high_quality_set,
         ),
     )
-    write_text(task_dir / "instruction.md", build_instruction(row, instruction_style, rewrites))
+    write_text(task_dir / "instruction.md", build_instruction(row, instruction_style, rewrites, plans))
+    if instruction_style == "planned":
+        write_text(task_dir / "instruction.sft.md", build_sft_instruction(row, instruction_style, rewrites, plans))
     write_text(task_dir / "environment" / "Dockerfile", build_environment_dockerfile(row))
     write_text(task_dir / "tests" / "test.patch", row["test_patch"] or "")
     write_text(task_dir / "tests" / "test.sh", build_test_sh(row), executable=True)
@@ -399,8 +455,13 @@ def iter_rows_by_id(instance_ids: Iterable[str], *, require_high_quality: bool =
 def main() -> None:
     args = parse_args()
     rewrites = load_rewrites(args.rewrites_file)
-    rewritten_instance_ids = set(rewrites) if args.instruction_style == "rewritten" else None
-    selected_ids = load_selected_ids(args.tasks_file, args, rewritten_instance_ids)
+    plans = load_plans(args.plans_file)
+    prompt_instance_ids = None
+    if args.instruction_style == "rewritten":
+        prompt_instance_ids = set(rewrites)
+    elif args.instruction_style == "planned":
+        prompt_instance_ids = set(plans)
+    selected_ids = load_selected_ids(args.tasks_file, args, prompt_instance_ids)
     if not selected_ids:
         raise SystemExit("No tasks matched the requested filters")
 
@@ -419,6 +480,7 @@ def main() -> None:
             args.output_dir,
             args.instruction_style,
             rewrites,
+            plans,
             args.allow_internet,
             args.outside_original_high_quality_set,
         )
