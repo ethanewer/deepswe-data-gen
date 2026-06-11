@@ -21,6 +21,16 @@ MINI_SWE_AGENT_PIER_EXTRA_PACKAGES = [
     "idna>=3,<4",
     "typing_extensions>=4.12,<5",
 ]
+MINI_SWE_AGENT_RUNTIME_MODULES = [
+    "minisweagent",
+    "pydantic",
+    "pydantic_core",
+    "idna",
+    "attrs",
+    "litellm",
+    "httpx",
+    "typing_extensions",
+]
 
 MINI_SWE_AGENT_OVERLAY_ENV = "PYDEPS_OVERLAY"
 MINI_SWE_AGENT_ALLOW_UNPINNED_ENV = "MINI_SWE_AGENT_ALLOW_UNPINNED"
@@ -50,6 +60,17 @@ def require_pinned_minisweagent_overlay() -> Path:
     """Return the overlay path, failing unless an explicit override is enabled."""
     overlay = pinned_minisweagent_overlay()
     if overlay.exists():
+        missing = [
+            module
+            for module in MINI_SWE_AGENT_RUNTIME_MODULES
+            if not (overlay / module).exists() and not (overlay / f"{module}.py").exists()
+        ]
+        if missing and not os.environ.get(MINI_SWE_AGENT_ALLOW_UNPINNED_ENV):
+            raise FileNotFoundError(
+                f"pinned mini-swe-agent overlay is missing runtime module(s): "
+                f"{', '.join(missing)} in {overlay}. Rebuild or repair the overlay from "
+                f"MINI_SWE_AGENT_PIER_EXTRA_PACKAGES before submitting datagen jobs."
+            )
         return overlay
     if os.environ.get(MINI_SWE_AGENT_ALLOW_UNPINNED_ENV):
         return overlay

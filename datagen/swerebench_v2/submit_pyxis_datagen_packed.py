@@ -539,11 +539,12 @@ active=0
 for row_number in $(seq "$start_row" "$end_row"); do
   run_row "$row_number" &
   active=$((active + 1))
+  if [[ "$STAGGER_SECONDS" != "0" && "$STAGGER_SECONDS" != "0.0" && "$row_number" -lt "$end_row" ]]; then
+    sleep "$STAGGER_SECONDS"
+  fi
   if [[ "$active" -ge "$PARALLEL_ROWS" ]]; then
     wait -n || true
     active=$((active - 1))
-  elif [[ "$STAGGER_SECONDS" != "0" && "$STAGGER_SECONDS" != "0.0" && "$row_number" -lt "$end_row" ]]; then
-    sleep "$STAGGER_SECONDS"
   fi
 done
 wait || true
