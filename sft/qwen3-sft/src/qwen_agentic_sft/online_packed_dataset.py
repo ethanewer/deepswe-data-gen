@@ -327,7 +327,7 @@ class OnlinePackedChatDataset(IterableDataset):
         dataset.shard_world_size = int(num_shards)
         return dataset
 
-    def _sharded_files(self, epoch: int) -> tuple[list[Path], int, int, int, int]:
+    def _sharded_files(self, epoch: int) -> tuple[list[Path], int, int, int, int, int | None, int | None]:
         if self.shard_rank is None or self.shard_world_size is None:
             rank, world_size = _rank_world()
         else:
@@ -342,14 +342,16 @@ class OnlinePackedChatDataset(IterableDataset):
         if self.shuffle_files:
             rng = random.Random(self.seed + epoch)
             rng.shuffle(files)
-        return files[shard_id::num_shards], rank, world_size, worker_id, num_workers
+        if len(files) >= num_shards:
+            return files[shard_id::num_shards], rank, world_size, worker_id, num_workers, None, None
+        return files, rank, world_size, worker_id, num_workers, shard_id, num_shards
 
     def __iter__(self) -> Iterator[dict[str, Any]]:
         tokenizer = self._ensure_tokenizer()
         epoch = 0
         emitted_total = 0
         while True:
-            files, rank, _world_size, worker_id, _num_workers = self._sharded_files(epoch)
+            files, rank, _world_size, worker_id, _num_workers, row_shard_id, row_num_shards = self._sharded_files(epoch)
             packer = StreamingTHDPacker(
                 sequence_length=self.sequence_length,
                 pad_token_id=self.pad_token_id,
@@ -357,12 +359,18 @@ class OnlinePackedChatDataset(IterableDataset):
             examples_seen = 0
             packs_emitted = 0
             start_time = time.time()
-            for example in iter_normalized_examples_from_files(
+            for row_idx, example in enumerate(iter_normalized_examples_from_files(
                 files,
                 max_rows_per_file=self.max_rows_per_file,
                 parquet_batch_size=self.parquet_batch_size,
                 max_examples=self.max_examples,
-            ):
+            )):
+                if (
+                    row_shard_id is not None
+                    and row_num_shards is not None
+                    and row_idx % row_num_shards != row_shard_id
+                ):
+                    continue
                 examples_seen += 1
                 example = apply_assistant_loss_policy(
                     example,
