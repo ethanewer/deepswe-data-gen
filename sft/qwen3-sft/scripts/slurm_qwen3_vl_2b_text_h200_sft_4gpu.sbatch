@@ -49,6 +49,8 @@ echo "local_batch_size=$LOCAL_BATCH_SIZE"
 echo "grad_accum_steps=$GRAD_ACCUM_STEPS"
 echo "max_steps=$MAX_STEPS"
 echo "checkpoint_dir=$CHECKPOINT_DIR"
+echo "cuda_visible_devices=${CUDA_VISIBLE_DEVICES:-unset}"
+echo "slurm_step_gpus=${SLURM_STEP_GPUS:-unset}"
 nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv,noheader,nounits
 
 exec "$ROOT_DIR/scripts/run_qwen3_vl_2b_text_h200_sft.sh"
