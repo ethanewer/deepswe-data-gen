@@ -426,6 +426,7 @@ def base_environment(args: argparse.Namespace, workspace: Path, row: ManifestRow
 def docker_run_command(args: argparse.Namespace, row: ManifestRow) -> list[str]:
     shared_root = REPO_ROOT.parent
     env = base_environment(args, row.workspace, row)
+    pydeps_overlay = Path(env["PYDEPS_OVERLAY"])
     benchmark_profile = resolve_benchmark_profile(row.instruction_style, args.benchmark_profile)
     config_file = selected_config_file(args, benchmark_profile)
     uses_updated_alignment = getattr(args, "uses_updated_alignment", "true")
@@ -445,6 +446,8 @@ def docker_run_command(args: argparse.Namespace, row: ManifestRow) -> list[str]:
         f"{safe_name(args.job_name)}-{safe_name(row.instance_id)}-{int(time.time())}",
         "-v",
         f"{shared_root}:{shared_root}:rw",
+        "-v",
+        f"{pydeps_overlay}:{pydeps_overlay}:ro",
         "-v",
         f"{row.workspace}:/workspace:rw",
         "-v",
