@@ -17,6 +17,7 @@ MINI_SWE_AGENT_PIER_EXTRA_PACKAGES = [
     MINI_SWE_AGENT_REQUIREMENT,
     "click>=8.1,<9",
     "attrs>=23,<27",
+    "pydantic>=2,<3",
     "typing_extensions>=4.12,<5",
 ]
 
@@ -27,6 +28,11 @@ MINI_SWE_AGENT_OVERLAY = (
     / "runtime"
     / f"pydeps-miniswe-upstream-{MINI_SWE_AGENT_GIT_SHA[:7]}"
 )
+MINI_SWE_AGENT_CLEAN_OVERLAY = (
+    REPO_ROOT.parent
+    / "runtime"
+    / f"pydeps-miniswe-upstream-{MINI_SWE_AGENT_GIT_SHA[:7]}-clean-20260610T2340"
+)
 
 
 def pinned_minisweagent_overlay() -> Path:
@@ -34,6 +40,8 @@ def pinned_minisweagent_overlay() -> Path:
     override = os.environ.get(MINI_SWE_AGENT_OVERLAY_ENV)
     if override:
         return Path(override)
+    if MINI_SWE_AGENT_CLEAN_OVERLAY.exists():
+        return MINI_SWE_AGENT_CLEAN_OVERLAY
     return MINI_SWE_AGENT_OVERLAY
 
 
