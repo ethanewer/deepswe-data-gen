@@ -52,8 +52,8 @@ distributed:
   sequence_parallel: false
   activation_checkpointing: true
   enable_compile: false
-  enable_fsdp2_prefetch: false
-  fsdp2_backward_prefetch_depth: 2
+  enable_fsdp2_prefetch: true
+  fsdp2_backward_prefetch_depth: 3
   fsdp2_forward_prefetch_depth: 1
 
 clip_grad_norm:
