@@ -36,6 +36,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--rows-per-job", type=int, default=12)
     parser.add_argument("--parallel-rows", type=int, default=2)
     parser.add_argument("--cpus-per-row", type=int, default=8)
+    parser.add_argument(
+        "--stagger-seconds",
+        type=float,
+        default=0.0,
+        help="Sleep this many seconds between launching row containers inside one packed array element.",
+    )
     parser.add_argument("--mem", default="56G")
     parser.add_argument("--tmp", default="")
     parser.add_argument("--time", default="04:00:00")
@@ -166,6 +172,7 @@ TOTAL_ROWS={n_rows}
 ROWS_PER_JOB={args.rows_per_job}
 PARALLEL_ROWS={args.parallel_rows}
 CPUS_PER_ROW={args.cpus_per_row}
+STAGGER_SECONDS={shell_quote(str(args.stagger_seconds))}
 SUBMIT_DIR="${{SLURM_SUBMIT_DIR:-$PWD}}"
 LOG_DIR={shell_quote(log_dir)}
 SHARED_ROOT={shell_quote(shared_root)}
@@ -209,6 +216,7 @@ echo "partition={args.partition}"
 echo "array_task_id=${{SLURM_ARRAY_TASK_ID}}"
 echo "rows_per_job=$ROWS_PER_JOB"
 echo "parallel_rows=$PARALLEL_ROWS"
+echo "stagger_seconds=$STAGGER_SECONDS"
 echo "mini_swe_agent_git_sha={MINI_SWE_AGENT_GIT_SHA}"
 echo "mini_swe_agent_overlay_env={MINI_SWE_AGENT_OVERLAY_ENV}"
 echo "mini_swe_agent_pydeps_overlay=$PYDEPS_OVERLAY"
@@ -533,6 +541,8 @@ for row_number in $(seq "$start_row" "$end_row"); do
   if [[ "$active" -ge "$PARALLEL_ROWS" ]]; then
     wait -n || true
     active=$((active - 1))
+  elif [[ "$STAGGER_SECONDS" != "0" && "$STAGGER_SECONDS" != "0.0" && "$row_number" -lt "$end_row" ]]; then
+    sleep "$STAGGER_SECONDS"
   fi
 done
 wait || true
