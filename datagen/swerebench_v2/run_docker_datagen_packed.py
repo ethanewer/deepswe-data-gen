@@ -102,6 +102,22 @@ def parse_args() -> argparse.Namespace:
         help="Override the command timeout from the selected mini-swe-agent config.",
     )
     parser.add_argument("--pull-retries", type=int, default=3)
+    parser.add_argument(
+        "--min-docker-free-gb",
+        type=float,
+        default=20.0,
+        help=(
+            "Pause before pulls/container starts while the Docker/containerd "
+            "filesystem has less than this many GiB free. This prevents "
+            "zero-call setup failures from local snapshot exhaustion."
+        ),
+    )
+    parser.add_argument(
+        "--docker-space-check-interval",
+        type=int,
+        default=60,
+        help="Seconds to sleep between low-Docker-space checks.",
+    )
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
 
@@ -120,6 +136,13 @@ def load_env_file(path: Path) -> None:
 
 
 def parse_manifest(path: Path, api_base_filter: str, limit: int) -> list[ManifestRow]:
+    def decode_tsv_json_field(value: str) -> str:
+        if value == "-":
+            return ""
+        if len(value) >= 2 and value[0] == '"' and value[-1] == '"':
+            return value[1:-1].replace('""', '"')
+        return value
+
     rows: list[ManifestRow] = []
     with path.open(encoding="utf-8") as handle:
         for raw in handle:
@@ -132,7 +155,7 @@ def parse_manifest(path: Path, api_base_filter: str, limit: int) -> list[Manifes
             api_base = "" if fields[9] == "-" else fields[9]
             if api_base_filter and api_base_filter not in api_base:
                 continue
-            extra_body_json = "" if fields[10] == "-" else fields[10]
+            extra_body_json = decode_tsv_json_field(fields[10])
             rows.append(
                 ManifestRow(
                     index=fields[0],
@@ -212,28 +235,55 @@ def run_command(command: list[str], stdout: Path, stderr: Path, timeout: int | N
 
 def result_has_model_trace(workspace: Path) -> bool:
     result_path = workspace / "result.json"
-    if not result_path.exists():
-        return False
-    try:
-        result = json.loads(result_path.read_text(encoding="utf-8"))
-    except Exception:
-        return False
-    return int(result.get("api_calls") or 0) > 0
+    trajectory_path = workspace / "agent" / "mini-swe-agent.trajectory.json"
+    if result_path.exists():
+        try:
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            if int(result.get("api_calls") or 0) > 0:
+                return True
+        except Exception:
+            pass
+    if trajectory_path.exists():
+        try:
+            trajectory = json.loads(trajectory_path.read_text(encoding="utf-8"))
+        except Exception:
+            return False
+        info = trajectory.get("info") or {}
+        model_stats = info.get("model_stats") or info.get("model_usage") or {}
+        if isinstance(model_stats, dict) and int(model_stats.get("api_calls") or 0) > 0:
+            return True
+    return False
 
 
 def archive_retryable_result(workspace: Path) -> None:
+    if result_has_model_trace(workspace):
+        return
     result_path = workspace / "result.json"
     trajectory_path = workspace / "agent" / "mini-swe-agent.trajectory.json"
     if not result_path.exists() and not trajectory_path.exists():
         return
     stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     history_dir = workspace / "retry-history" / stamp
-    history_dir.mkdir(parents=True, exist_ok=True)
-    if result_path.exists():
-        shutil.copy2(result_path, history_dir / "result.json")
-    if trajectory_path.exists():
-        (history_dir / "agent").mkdir(parents=True, exist_ok=True)
-        shutil.copy2(trajectory_path, history_dir / "agent" / "mini-swe-agent.trajectory.json")
+    errors: list[str] = []
+    try:
+        history_dir.mkdir(parents=True, exist_ok=True)
+        if result_path.exists():
+            shutil.copy2(result_path, history_dir / "result.json")
+        if trajectory_path.exists():
+            (history_dir / "agent").mkdir(parents=True, exist_ok=True)
+            shutil.copy2(trajectory_path, history_dir / "agent" / "mini-swe-agent.trajectory.json")
+    except OSError as exc:
+        errors.append(f"copy:{type(exc).__name__}:{exc}")
+    for path in (result_path, trajectory_path):
+        try:
+            path.unlink(missing_ok=True)
+        except OSError as exc:
+            errors.append(f"unlink:{path.name}:{type(exc).__name__}:{exc}")
+    if errors:
+        try:
+            (history_dir / "archive_errors.log").write_text("\n".join(errors) + "\n", encoding="utf-8")
+        except OSError:
+            pass
 
 
 pull_locks: dict[str, threading.Lock] = {}
@@ -303,6 +353,34 @@ def ensure_image(image: str, log_path: Path, retries: int) -> tuple[bool, str]:
             if attempt < retries:
                 time.sleep(20 * attempt)
         return False, f"pull_failed:{status}"
+
+
+def docker_space_path() -> Path:
+    for path in (Path("/var/lib/containerd"), Path("/var/lib/docker"), Path("/")):
+        if path.exists():
+            return path
+    return Path("/")
+
+
+def wait_for_docker_space(args: argparse.Namespace, log_path: Path) -> None:
+    min_free_bytes = int(args.min_docker_free_gb * (1024**3))
+    if min_free_bytes <= 0:
+        return
+    path = docker_space_path()
+    while True:
+        usage = shutil.disk_usage(path)
+        if usage.free >= min_free_bytes:
+            return
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        free_gib = usage.free / (1024**3)
+        with log_path.open("ab") as log:
+            log.write(
+                (
+                    f"docker_space_wait path={path} free_gib={free_gib:.2f} "
+                    f"min_gib={args.min_docker_free_gb:.2f}\n"
+                ).encode()
+            )
+        time.sleep(max(5, args.docker_space_check_interval))
 
 
 def base_environment(args: argparse.Namespace, workspace: Path, row: ManifestRow) -> dict[str, str]:
@@ -509,10 +587,12 @@ def run_row(args: argparse.Namespace, row: ManifestRow, log_dir: Path) -> dict[s
     if args.skip_existing_result and result_has_model_trace(row.workspace):
         return {"instance_id": row.instance_id, "status": 0, "state": "skipped_existing"}
     archive_retryable_result(row.workspace)
+    wait_for_docker_space(args, pull_log)
     ok, pull_state = ensure_image(row.image, pull_log, args.pull_retries)
     if not ok:
         write_failure(args, row, 125, stdout_log, stderr_log, pull_state)
         return {"instance_id": row.instance_id, "status": 125, "state": pull_state}
+    wait_for_docker_space(args, pull_log)
     command = docker_run_command(args, row)
     status = run_command(command, stdout_log, stderr_log, timeout=args.agent_wall_time_limit + 4200)
     if status != 0 and not (row.workspace / "result.json").exists():

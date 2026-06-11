@@ -8,6 +8,7 @@ from datagen.swerebench_v2 import pyxis_miniswe_agent_driver
 from datagen.swerebench_v2.pyxis_miniswe_agent_driver import (
     build_model_kwargs,
     build_agent,
+    ensure_testbed_alias,
     resolve_benchmark_profile,
     resolve_model_class_and_name,
 )
@@ -96,6 +97,18 @@ def test_datagen_strict_keeps_legacy_reasoning_kwargs():
     assert kwargs["reasoning_effort"] == "high"
     assert kwargs["timeout"] == 180
     assert "temperature" not in kwargs
+
+
+def test_ensure_testbed_alias_points_to_task_workdir(tmp_path):
+    workdir = tmp_path / "repo"
+    workdir.mkdir()
+    alias = tmp_path / "testbed"
+
+    record = ensure_testbed_alias(str(workdir), alias=alias)
+
+    assert record["created"] is True
+    assert record["usable"] is True
+    assert alias.resolve() == workdir
 
 
 def submit_script(tmp_path, monkeypatch, *, style="original", benchmark_profile="auto", command_timeout=180):

@@ -282,6 +282,40 @@ def prepare_aliases(args: argparse.Namespace) -> None:
             link_path.symlink_to(target, target_is_directory=True)
 
 
+def ensure_testbed_alias(workdir: str, alias: Path = Path("/testbed")) -> dict[str, Any]:
+    """Make /testbed resolve to the task workdir when the image uses another path."""
+    target = Path(workdir)
+    record: dict[str, Any] = {
+        "alias": str(alias),
+        "target": str(target),
+        "created": False,
+        "usable": False,
+        "error": None,
+    }
+    try:
+        if str(target) == str(alias):
+            record["usable"] = alias.exists()
+            return record
+        if alias.is_symlink():
+            if alias.resolve(strict=False) == target:
+                record["usable"] = True
+                return record
+            alias.unlink()
+        elif alias.exists():
+            record["usable"] = True
+            record["target"] = str(alias)
+            return record
+        if target.exists():
+            alias.symlink_to(target, target_is_directory=True)
+            record["created"] = True
+            record["usable"] = True
+        return record
+    except Exception as exc:  # noqa: BLE001 - surface this in metadata, but do not fail setup
+        record["error"] = f"{type(exc).__name__}: {exc}"
+        record["usable"] = alias.exists()
+        return record
+
+
 def prepare_agent_bin(args: argparse.Namespace) -> Path:
     agent_bin = args.workspace / "agent-bin"
     agent_bin.mkdir(parents=True, exist_ok=True)
@@ -552,6 +586,12 @@ def main() -> None:
     workdir = environment.get("workdir") or "/testbed"
     base_commit = metadata["base_commit_hash"]
     instruction = (args.task_dir / "instruction.md").read_text(encoding="utf-8")
+    testbed_alias = ensure_testbed_alias(workdir)
+    effective_workdir = (
+        "/testbed"
+        if benchmark_profile == "swebench-multilingual" and testbed_alias.get("usable")
+        else workdir
+    )
 
     metadata_record = {
         "instance_id": args.instance_id,
@@ -574,7 +614,9 @@ def main() -> None:
         in {"1", "true", "yes"},
         "task_dir": str(args.task_dir),
         "docker_image": environment.get("docker_image"),
-        "workdir": workdir,
+        "task_workdir": workdir,
+        "workdir": effective_workdir,
+        "testbed_alias": testbed_alias,
         "base_commit": base_commit,
         "started_at": started_at,
         "max_tokens": args.max_tokens,
@@ -597,8 +639,8 @@ def main() -> None:
     }
 
     try:
-        result["repo_reset"] = reset_repo(workdir, base_commit)
-        agent = build_agent(args, workdir, Path(result["trajectory_path"]))
+        result["repo_reset"] = reset_repo(effective_workdir, base_commit)
+        agent = build_agent(args, effective_workdir, Path(result["trajectory_path"]))
         try:
             agent_info = agent.run(instruction)
             result["agent_exit_status"] = agent_info.get("exit_status", "")
@@ -615,7 +657,7 @@ def main() -> None:
             result["api_calls"] = model_stats.get("api_calls", 0)
             result["cost_usd"] = model_stats.get("instance_cost", 0.0)
 
-        result["patch"] = collect_patch(workdir, Path(result["patch_path"]))
+        result["patch"] = collect_patch(effective_workdir, Path(result["patch_path"]))
         verifier = run_verifier(args)
         result["verifier"] = verifier
         result["reward"] = verifier.get("reward", 0)
