@@ -66,6 +66,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--cpus-per-worker", type=float, default=4.0)
     parser.add_argument("--memory-per-worker", default="48g")
+    parser.add_argument(
+        "--stagger-seconds",
+        type=float,
+        default=0.0,
+        help="Sleep this many seconds between starting Docker rollouts.",
+    )
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--api-base-filter", default="")
     parser.add_argument("--skip-existing-result", action="store_true")
@@ -117,6 +123,11 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=60,
         help="Seconds to sleep between low-Docker-space checks.",
+    )
+    parser.add_argument(
+        "--remove-image-after-run",
+        action="store_true",
+        help="Best-effort docker image rm after a row finishes to keep node disk usage bounded.",
     )
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
@@ -231,6 +242,14 @@ def run_command(command: list[str], stdout: Path, stderr: Path, timeout: int | N
     with stdout.open("ab") as out, stderr.open("ab") as err:
         process = subprocess.run(command, stdout=out, stderr=err, timeout=timeout)
     return process.returncode
+
+
+def remove_image(image: str, log_path: Path) -> None:
+    ref = docker_image_ref(image)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("ab") as log:
+        log.write(f"docker_image_rm={ref}\n".encode())
+        subprocess.run(["docker", "image", "rm", ref], stdout=log, stderr=log, check=False)
 
 
 def result_has_model_trace(workspace: Path) -> bool:
@@ -597,10 +616,41 @@ def run_row(args: argparse.Namespace, row: ManifestRow, log_dir: Path) -> dict[s
         return {"instance_id": row.instance_id, "status": 125, "state": pull_state}
     wait_for_docker_space(args, pull_log)
     command = docker_run_command(args, row)
-    status = run_command(command, stdout_log, stderr_log, timeout=args.agent_wall_time_limit + 4200)
+    status = 124
+    try:
+        status = run_command(command, stdout_log, stderr_log, timeout=args.agent_wall_time_limit + 4200)
+    except subprocess.TimeoutExpired:
+        stderr_log.parent.mkdir(parents=True, exist_ok=True)
+        with stderr_log.open("ab") as err:
+            err.write(b"docker_run_timeout=1\n")
+    finally:
+        if args.remove_image_after_run:
+            remove_image(row.image, pull_log)
     if status != 0 and not (row.workspace / "result.json").exists():
         write_failure(args, row, status, stdout_log, stderr_log, f"docker run exited with status {status}")
     return {"instance_id": row.instance_id, "status": status, "state": "done" if status == 0 else "docker_failed"}
+
+
+def launch_future(
+    executor: concurrent.futures.ThreadPoolExecutor,
+    args: argparse.Namespace,
+    row: ManifestRow,
+    log_dir: Path,
+    in_flight: set[concurrent.futures.Future[dict[str, str | int]]],
+    launch_count: int,
+    total: int,
+) -> int:
+    future = executor.submit(run_row, args, row, log_dir)
+    in_flight.add(future)
+    launch_count += 1
+    print(
+        f"launched={launch_count}/{total} instance_id={row.instance_id} "
+        f"workers={args.workers}",
+        flush=True,
+    )
+    if args.stagger_seconds > 0 and launch_count < total:
+        time.sleep(args.stagger_seconds)
+    return launch_count
 
 
 def main() -> None:
@@ -620,6 +670,8 @@ def main() -> None:
     print(f"rows={len(rows)}")
     print(f"workers={args.workers}")
     print(f"cpus_per_worker={args.cpus_per_worker}")
+    print(f"stagger_seconds={args.stagger_seconds}")
+    print(f"remove_image_after_run={args.remove_image_after_run}")
     print(f"mini_swe_agent_git_sha={MINI_SWE_AGENT_GIT_SHA}")
     print(f"mini_swe_agent_overlay_env={MINI_SWE_AGENT_OVERLAY_ENV}")
     print(f"log_dir={log_dir}")
@@ -628,17 +680,39 @@ def main() -> None:
             print(f"dry_row={row.instance_id} image={row.image} workspace={row.workspace}")
         return
     counts: dict[str, int] = {}
+    row_iter = iter(rows)
+    launch_count = 0
+    completed_count = 0
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as executor:
-        futures = [executor.submit(run_row, args, row, log_dir) for row in rows]
-        for i, future in enumerate(concurrent.futures.as_completed(futures), start=1):
-            result = future.result()
-            state = str(result["state"])
-            counts[state] = counts.get(state, 0) + 1
-            print(
-                f"completed={i}/{len(rows)} instance_id={result['instance_id']} "
-                f"state={state} status={result['status']} counts={json.dumps(counts, sort_keys=True)}",
-                flush=True,
+        in_flight: set[concurrent.futures.Future[dict[str, str | int]]] = set()
+        while len(in_flight) < args.workers:
+            try:
+                row = next(row_iter)
+            except StopIteration:
+                break
+            launch_count = launch_future(executor, args, row, log_dir, in_flight, launch_count, len(rows))
+
+        while in_flight:
+            done, in_flight = concurrent.futures.wait(
+                in_flight,
+                return_when=concurrent.futures.FIRST_COMPLETED,
             )
+            for future in done:
+                completed_count += 1
+                result = future.result()
+                state = str(result["state"])
+                counts[state] = counts.get(state, 0) + 1
+                print(
+                    f"completed={completed_count}/{len(rows)} instance_id={result['instance_id']} "
+                    f"state={state} status={result['status']} counts={json.dumps(counts, sort_keys=True)}",
+                    flush=True,
+                )
+            while len(in_flight) < args.workers:
+                try:
+                    row = next(row_iter)
+                except StopIteration:
+                    break
+                launch_count = launch_future(executor, args, row, log_dir, in_flight, launch_count, len(rows))
 
 
 if __name__ == "__main__":
