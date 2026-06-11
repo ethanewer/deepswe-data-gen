@@ -146,6 +146,7 @@ def write_array_script(args: argparse.Namespace, n_rows: int) -> Path:
         "true" if getattr(args, "eligible_for_controlled_comparison", False) else "false"
     )
     reason_excluded_from_comparison = getattr(args, "reason_excluded_from_comparison", "")
+    stagger_seconds = getattr(args, "stagger_seconds", 0.0)
     array_size = math.ceil(n_rows / args.rows_per_job)
     if args.array_concurrency and args.array_concurrency < array_size:
         array_spec = f"0-{array_size - 1}%{args.array_concurrency}"
@@ -172,7 +173,7 @@ TOTAL_ROWS={n_rows}
 ROWS_PER_JOB={args.rows_per_job}
 PARALLEL_ROWS={args.parallel_rows}
 CPUS_PER_ROW={args.cpus_per_row}
-STAGGER_SECONDS={shell_quote(str(args.stagger_seconds))}
+STAGGER_SECONDS={shell_quote(str(stagger_seconds))}
 SUBMIT_DIR="${{SLURM_SUBMIT_DIR:-$PWD}}"
 LOG_DIR={shell_quote(log_dir)}
 SHARED_ROOT={shell_quote(shared_root)}

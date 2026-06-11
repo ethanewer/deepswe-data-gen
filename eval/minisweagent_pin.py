@@ -18,6 +18,7 @@ MINI_SWE_AGENT_PIER_EXTRA_PACKAGES = [
     "click>=8.1,<9",
     "attrs>=23,<27",
     "pydantic>=2,<3",
+    "idna>=3,<4",
     "typing_extensions>=4.12,<5",
 ]
 
