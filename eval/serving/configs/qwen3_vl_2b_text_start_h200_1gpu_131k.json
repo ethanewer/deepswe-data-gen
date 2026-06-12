@@ -1,6 +1,10 @@
 {
-  "model": "sft/qwen3-sft/data/qwen3_vl_2b_text_checkpoint",
+  "model": "Qwen/Qwen3-VL-2B-Thinking",
   "description": "Single-H200-GPU SWE-bench Multilingual serving setup for the Qwen3-VL-2B-Thinking starting checkpoint at 131k context.",
+  "sources": [
+    "https://huggingface.co/Qwen/Qwen3-VL-2B-Thinking",
+    "https://github.com/open-thoughts/OpenThoughts-Agent/blob/main/chat_templates/qwen3_thinking_acc.jinja2"
+  ],
   "serve": {
     "gpus": [0],
     "map_gpus_from_cuda_visible_devices": true,
@@ -42,5 +46,9 @@
       "max_tokens": 16384,
       "temperature": 0.6
     }
-  }
+  },
+  "notes": [
+    "The SFT recipe trains a local text-only view of this checkpoint, but vLLM 0.19.1 does not expose Qwen3-VL text-only serving or a language-model-only flag.",
+    "Serving uses the full HF checkpoint with text-only prompts and the same OpenThoughts Qwen3 thinking chat template as training."
+  ]
 }
