@@ -12,7 +12,11 @@
 
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+DEFAULT_REPO_ROOT="/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen"
+REPO_ROOT="${REPO_ROOT:-${SLURM_SUBMIT_DIR:-$DEFAULT_REPO_ROOT}}"
+if [ ! -d "$REPO_ROOT/eval/benchmarks/swebench_multilingual" ]; then
+  REPO_ROOT="$DEFAULT_REPO_ROOT"
+fi
 cd "$REPO_ROOT"
 mkdir -p logs runs/serving_configs runs/serving runs/swebench_ml
 

@@ -12,9 +12,13 @@
 
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$ROOT_DIR"
-mkdir -p logs
+DEFAULT_REPO_ROOT="/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen"
+REPO_ROOT="${REPO_ROOT:-${SLURM_SUBMIT_DIR:-$DEFAULT_REPO_ROOT}}"
+if [ ! -x "$REPO_ROOT/sft/qwen3-sft/scripts/run_qwen3_4b_thinking_swe260612_highquality_sft_8gpu.sh" ]; then
+  REPO_ROOT="$DEFAULT_REPO_ROOT"
+fi
+QWEN_DIR="$REPO_ROOT/sft/qwen3-sft"
+cd "$QWEN_DIR"
 
 if [ -z "${CUDA_VISIBLE_DEVICES:-}" ]; then
   echo "CUDA_VISIBLE_DEVICES is not set by Slurm; refusing to guess assigned GPUs on a shared node." >&2
@@ -23,6 +27,8 @@ fi
 
 echo "Job ID: ${SLURM_JOB_ID:-unknown}"
 echo "Node: ${SLURMD_NODENAME:-$(hostname)}"
+echo "Repo root: ${REPO_ROOT}"
+echo "Qwen SFT dir: ${QWEN_DIR}"
 echo "CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES}"
 nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv,noheader,nounits
 
