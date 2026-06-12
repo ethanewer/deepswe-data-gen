@@ -87,6 +87,7 @@ GLOBAL_TOKENS="$((GLOBAL_BATCH_SIZE * PACK_SIZE))"
 MAX_STEPS="${MAX_STEPS:-1000}"
 LR="${LR:-1.0e-5}"
 MIN_LR="${MIN_LR:-$LR}"
+LR_WARMUP_STEPS="${LR_WARMUP_STEPS:-}"
 NUM_WORKERS="${NUM_WORKERS:-2}"
 MULTIPROCESSING_CONTEXT="${MULTIPROCESSING_CONTEXT:-fork}"
 PERSISTENT_WORKERS="${PERSISTENT_WORKERS:-false}"
@@ -133,6 +134,9 @@ echo "Global packed sequences: $GLOBAL_BATCH_SIZE"
 echo "Global tokens/update: $GLOBAL_TOKENS"
 echo "Compile: $ENABLE_COMPILE"
 echo "FSDP2 prefetch: $ENABLE_FSDP2_PREFETCH B${FSDP2_BACKWARD_PREFETCH_DEPTH}/F${FSDP2_FORWARD_PREFETCH_DEPTH}"
+if [ -n "$LR_WARMUP_STEPS" ]; then
+  echo "LR warmup steps: $LR_WARMUP_STEPS"
+fi
 if [ -n "$OVERLENGTH_STRATEGY" ]; then
   echo "Overlength strategy: $OVERLENGTH_STRATEGY"
 fi
@@ -198,6 +202,10 @@ args=(
   --checkpoint.save_consolidated "$CHECKPOINT_SAVE_CONSOLIDATED"
   --checkpoint.v4_compatible "$CHECKPOINT_V4_COMPATIBLE"
 )
+
+if [ -n "$LR_WARMUP_STEPS" ]; then
+  args+=(--lr_scheduler.lr_warmup_steps "$LR_WARMUP_STEPS")
+fi
 
 if [ -n "$OVERLENGTH_STRATEGY" ]; then
   args+=(--dataset.overlength_strategy "$OVERLENGTH_STRATEGY")
