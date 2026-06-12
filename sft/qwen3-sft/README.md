@@ -3,10 +3,12 @@
 This recipe runs full-parameter SFT for:
 
 - `Qwen/Qwen3-4B-Thinking-2507`
+- the text tower from `Qwen/Qwen3-VL-2B-Thinking`
 - the text tower from `Qwen/Qwen3-VL-8B-Thinking`
 
-It is built for the local 8 x H200 node and refuses to launch unless exactly
-eight visible GPUs are selected.
+The original launchers are built for the local 8 x H200 node and refuse to
+launch unless exactly eight visible GPUs are selected. The Qwen3-VL 2B text
+recipe also includes L40S 8-GPU and H200 2/4-GPU Slurm wrappers.
 
 ## What This Uses
 
@@ -152,6 +154,62 @@ Measured L40S smoke results on 8 GPUs:
 tokenizer's original chat template). It did not fit the 32k minimum on 8 x L40S
 for full-parameter SFT: local batch 4 with compile, local batch 2 with no
 compile, and local batch 1 with no compile all OOMed before completing step 0.
+
+## Run The Qwen3-VL 2B Text H200 Recipe
+
+The H200 production recipe is the fastest measured setup for the
+`Qwen/Qwen3-VL-2B-Thinking` text tower. It uses one 4-GPU H200 allocation,
+40,960-token packs, local batch 8, gradient accumulation 1, FA3, FSDP2 prefetch,
+native RMSNorm, chunked eager MLP, online tokenization, overlength truncation,
+and the shared Qwen3 thinking ACC chat template.
+
+Submit the high-quality 3x duplicate reasoning run:
+
+```bash
+cd /wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen
+sbatch \
+  --export=ALL,TRAIN_RAW_ROOT=/wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260611/highquality-3x-duplicate-reasoning-90pct,PACK_SIZE=40960,LOCAL_BATCH_SIZE=8,GRAD_ACCUM_STEPS=1,LR=5.0e-6,MIN_LR=5.0e-7,MAX_STEPS=400,CKPT_EVERY_STEPS=100,CHECKPOINT_ENABLED=true,CHECKPOINT_MODEL_SAVE_FORMAT=safetensors,VALIDATION_ENABLED=false \
+  sft/qwen3-sft/scripts/slurm_qwen3_vl_2b_text_h200_sft_4gpu.sbatch
+```
+
+When resuming a stopped run, reuse the same checkpoint directory and ask the
+Slurm wrapper to resolve the latest `epoch_*_step_*` checkpoint:
+
+```bash
+cd /wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen
+sbatch \
+  --export=ALL,CHECKPOINT_DIR=/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/sft/qwen3-sft/checkpoints/<run_dir>,RUN_NAME=<run_name>_resume,RESTORE_FROM=latest,NEMO_AUTOMODEL_SKIP_DATALOADER_RESTORE=true,MAX_STEPS=400,CHECKPOINT_ENABLED=true,CHECKPOINT_MODEL_SAVE_FORMAT=safetensors,VALIDATION_ENABLED=false \
+  sft/qwen3-sft/scripts/slurm_qwen3_vl_2b_text_h200_sft_4gpu.sbatch
+```
+
+`NEMO_AUTOMODEL_SKIP_DATALOADER_RESTORE=true` keeps model, optimizer,
+scheduler, and RNG restore intact while avoiding long replay of the online
+iterable dataloader state. This is appropriate for the shuffled repeated corpus
+used here. Leave it unset if exact dataloader-position replay matters more than
+restart latency.
+
+The recipe masks loss on assistant turns that are missing reasoning or valid
+tool calls by default:
+
+```bash
+REQUIRE_ASSISTANT_REASONING_FOR_LOSS=true
+REQUIRE_ASSISTANT_TOOL_CALLS_FOR_LOSS=true
+OVERLENGTH_STRATEGY=truncate
+CHAT_TEMPLATE=/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/eval/chat_templates/qwen3_thinking_acc.jinja2
+```
+
+The completed 400-step run used:
+
+```text
+sft/qwen3-sft/checkpoints/qwen3_vl_2b_text_h200_4gpu_40k_hq3x_reasoning90_lr5e6_s400_418791
+```
+
+Serving configs for reproducing the SWE-bench checks are in
+`eval/serving/configs/qwen3_vl_2b_text_*_h200_1gpu_*.json`. The training/eval
+summary is in `eval/results/qwen3_vl_2b_text_sft_swebench_training.md`. That
+report found invalid SWE-bench harness use before and after SFT, so do not treat
+this recipe as a validated SWE-bench improvement until the data/loss-mask issue
+is fixed and a nonzero tool-call trace is observed.
 
 ## Run The 8B Text-Tower Recipe
 
