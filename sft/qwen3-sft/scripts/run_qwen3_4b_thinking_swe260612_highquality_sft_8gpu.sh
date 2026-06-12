@@ -4,14 +4,14 @@ set -euo pipefail
 export CONFIG="${CONFIG:-configs/qwen3_4b_thinking_swe260612_highquality_65k_online_packed_sft_8gpu.yaml}"
 export MODEL="${MODEL:-Qwen/Qwen3-4B-Thinking-2507}"
 export TRAIN_RAW_ROOT="${TRAIN_RAW_ROOT:-/wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260612/highquality-1x-duplicate-reasoning-90pct-30k-full-raw-sharded/data}"
-export CHECKPOINT_DIR="${CHECKPOINT_DIR:-checkpoints/qwen3_4b_thinking_swe260612_highquality_65k_online_packed_sft/}"
-export RUN_NAME="${RUN_NAME:-qwen3_4b_thinking_swe260612_highquality_65k_sft}"
+export CHECKPOINT_DIR="${CHECKPOINT_DIR:-checkpoints/qwen3_4b_thinking_swe260612_highquality_65k_online_packed_sft_fixed/}"
+export RUN_NAME="${RUN_NAME:-qwen3_4b_thinking_swe260612_highquality_65k_fixed_sft}"
 
 export PACK_SIZE="${PACK_SIZE:-65536}"
 export LOCAL_BATCH_SIZE="${LOCAL_BATCH_SIZE:-2}"
 export GRAD_ACCUM_STEPS="${GRAD_ACCUM_STEPS:-1}"
 export MAX_STEPS="${MAX_STEPS:-500}"
-export CKPT_EVERY_STEPS="${CKPT_EVERY_STEPS:-100}"
+export CKPT_EVERY_STEPS="${CKPT_EVERY_STEPS:-50}"
 export VAL_EVERY_STEPS="${VAL_EVERY_STEPS:-1000}"
 
 export LR="${LR:-5.0e-6}"
