@@ -9,6 +9,7 @@ to one source row and contains full-length ``input_ids``, ``labels``,
 from __future__ import annotations
 
 import argparse
+import copy
 import io
 import json
 import math
@@ -32,6 +33,7 @@ QWEN_SFT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(QWEN_SFT_ROOT / "src"))
 
 from qwen_agentic_sft import data as qwen_data  # noqa: E402
+from qwen_agentic_sft.online_packed_dataset import apply_assistant_loss_policy  # noqa: E402
 
 
 IGNORE_INDEX = -100
@@ -112,71 +114,83 @@ def top_level_reasoning_by_index(row: dict[str, Any]) -> dict[int, str]:
     return out
 
 
-def normalize_row_for_tokenization(row: dict[str, Any]) -> tuple[dict[str, Any] | None, Counter[str]]:
-    """Normalize one generated trace row using the shared SFT helpers.
+def enrich_top_level_reasoning(row: dict[str, Any]) -> dict[str, Any]:
+    """Copy generated top-level reasoning onto raw assistant messages if needed."""
+    top_reasoning = top_level_reasoning_by_index(row)
+    if not top_reasoning:
+        return row
+    raw_messages = qwen_data.parse_messages(row.get("messages"))
+    if raw_messages is None:
+        return row
+    copied = dict(row)
+    copied_messages: list[Any] = []
+    changed = False
+    for index, raw_msg in enumerate(raw_messages):
+        if not isinstance(raw_msg, dict):
+            copied_messages.append(raw_msg)
+            continue
+        msg = dict(raw_msg)
+        if msg.get("role") == "assistant" and not qwen_data.assistant_has_reasoning(msg):
+            reasoning = top_reasoning.get(index)
+            if reasoning:
+                msg["reasoning_content"] = reasoning
+                changed = True
+        copied_messages.append(msg)
+    if changed:
+        copied["messages"] = copied_messages
+    return copied
 
-    The generated SWE-rebench dataset stores high-quality reasoning directly on
-    assistant messages and sometimes in a top-level ``reasoning`` side channel.
-    The shared normalizer handles role/content/tool-call normalization; this
-    adapter keeps generated-trace reasoning in ``reasoning_content`` so the Qwen
-    chat template renders exactly one ``<think>...</think>`` block.
-    """
+
+def normalize_row_for_tokenization(row: dict[str, Any]) -> tuple[dict[str, Any] | None, Counter[str]]:
+    """Normalize and mask one row using the same SFT path as online training."""
 
     stats: Counter[str] = Counter()
     raw_messages = qwen_data.parse_messages(row.get("messages"))
     if raw_messages is None:
         stats["dropped_no_messages"] += 1
         return None, stats
+    stats["skipped_bookkeeping_messages"] += sum(
+        1 for raw_msg in raw_messages if isinstance(raw_msg, dict) and qwen_data.message_role(raw_msg) is None
+    )
 
-    top_reasoning = top_level_reasoning_by_index(row)
-    messages: list[dict[str, Any]] = []
-    for raw_index, raw_msg in enumerate(raw_messages):
-        if not isinstance(raw_msg, dict):
-            stats["dropped_bad_message"] += 1
-            return None, stats
-        if qwen_data.raw_role_is_bookkeeping(raw_msg):
-            stats["skipped_bookkeeping_messages"] += 1
-            continue
-
-        msg = qwen_data.normalize_message(raw_msg)
-        if msg is None:
-            stats["dropped_bad_message"] += 1
-            return None, stats
-
-        if msg.get("role") == "assistant":
-            reasoning = qwen_data.assistant_reasoning_text(raw_msg)
-            if not reasoning:
-                reasoning = top_reasoning.get(raw_index, "")
-            if reasoning:
-                msg["reasoning_content"] = reasoning
-                msg["content"] = qwen_data.assistant_visible_content(raw_msg)
-                stats["assistant_with_reasoning"] += 1
-            else:
-                msg["trainable"] = False
-                msg["loss"] = False
-                stats["masked_no_reasoning_assistant_turns"] += 1
-
-            if qwen_data.message_has_misformatted_tool_call(raw_msg):
-                msg["trainable"] = False
-                msg["loss"] = False
-                stats["masked_bad_tool_call_assistant_turns"] += 1
-            if raw_msg.get("trainable") is False or raw_msg.get("loss") is False:
-                msg["trainable"] = False
-                msg["loss"] = False
-                stats["masked_source_loss_false_assistant_turns"] += 1
-            stats["assistant_turns"] += 1
-        messages.append(msg)
-
-    messages = qwen_data.strip_empty_system_prefix(messages)
-    if not messages:
-        stats["dropped_empty_messages"] += 1
+    example = qwen_data.normalize_row(enrich_top_level_reasoning(row))
+    if example is None:
+        stats["dropped_normalize_row_none"] += 1
         return None, stats
 
-    tools = qwen_data.normalize_tools(row.get("tools"))
-    out: dict[str, Any] = {"messages": messages}
-    if tools is not None:
-        out["tools"] = tools
-    return out, stats
+    assistant_before: list[tuple[bool, bool, bool, bool]] = []
+    for message in example.get("messages", []):
+        if message.get("role") != "assistant":
+            continue
+        has_reasoning = qwen_data.assistant_has_reasoning(message)
+        has_valid_tool_calls = qwen_data.assistant_has_valid_tool_calls(message)
+        source_masked = message.get("trainable") is False or message.get("loss") is False
+        assistant_before.append((has_reasoning, has_valid_tool_calls, source_masked, message.get("loss") is False))
+
+    apply_assistant_loss_policy(
+        example,
+        require_assistant_reasoning_for_loss=True,
+        require_assistant_tool_calls_for_loss=True,
+    )
+
+    for message, (has_reasoning, has_valid_tool_calls, source_masked, was_loss_false) in zip(
+        [m for m in example.get("messages", []) if m.get("role") == "assistant"],
+        assistant_before,
+    ):
+        stats["assistant_turns"] += 1
+        if has_reasoning:
+            stats["assistant_with_reasoning"] += 1
+        if not has_reasoning:
+            stats["masked_no_reasoning_assistant_turns"] += 1
+        if not has_valid_tool_calls:
+            stats["masked_bad_tool_call_assistant_turns"] += 1
+            stats["masked_missing_or_invalid_tool_call_assistant_turns"] += 1
+        if source_masked or was_loss_false:
+            stats["masked_source_loss_false_assistant_turns"] += 1
+        if message.get("loss") is False:
+            stats["masked_assistant_turns"] += 1
+
+    return example, stats
 
 
 def render_chat_with_spans(example: dict[str, Any]) -> tuple[str, list[dict[str, Any]]]:
@@ -371,7 +385,11 @@ def process_task(task: tuple[str, str, int, bool]) -> tuple[dict[str, Any] | Non
             "ignore_index": IGNORE_INDEX,
             "masked_no_reasoning_assistant_turns": int(stats["masked_no_reasoning_assistant_turns"]),
             "masked_bad_tool_call_assistant_turns": int(stats["masked_bad_tool_call_assistant_turns"]),
+            "masked_missing_or_invalid_tool_call_assistant_turns": int(
+                stats["masked_missing_or_invalid_tool_call_assistant_turns"]
+            ),
             "masked_source_loss_false_assistant_turns": int(stats["masked_source_loss_false_assistant_turns"]),
+            "masked_assistant_turns": int(stats["masked_assistant_turns"]),
             "assistant_turns": int(stats["assistant_turns"]),
             "assistant_with_reasoning": int(stats["assistant_with_reasoning"]),
             "skipped_bookkeeping_messages": int(stats["skipped_bookkeeping_messages"]),
@@ -623,7 +641,11 @@ def main() -> int:
         ),
         "masked_no_reasoning_assistant_turns": int(stats["masked_no_reasoning_assistant_turns"]),
         "masked_bad_tool_call_assistant_turns": int(stats["masked_bad_tool_call_assistant_turns"]),
+        "masked_missing_or_invalid_tool_call_assistant_turns": int(
+            stats["masked_missing_or_invalid_tool_call_assistant_turns"]
+        ),
         "masked_source_loss_false_assistant_turns": int(stats["masked_source_loss_false_assistant_turns"]),
+        "masked_assistant_turns": int(stats["masked_assistant_turns"]),
         "skipped_bookkeeping_messages": int(stats["skipped_bookkeeping_messages"]),
         "assistant_turns": int(stats["assistant_turns"]),
         "assistant_with_reasoning": int(stats["assistant_with_reasoning"]),
