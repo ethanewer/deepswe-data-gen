@@ -26,6 +26,7 @@ except ImportError:  # pragma: no cover - optional until setup is run.
 
 RAW_ROOT = Path("/wbl-fast/usrs/ee/code-swe-data/data/code-swe-terminal-agentic-sft")
 EVENT_LOG_TYPES = {"session", "message", "model_change", "thinking_level_change"}
+BOOKKEEPING_ROLES = {"exit"}
 THINK_OPEN = "<think>\n"
 THINK_CLOSE = "\n</think>\n"
 
@@ -190,6 +191,49 @@ def normalize_tool_calls(tool_calls: Any) -> list[dict[str, Any]]:
     return [call for call in (normalize_tool_call(item) for item in tool_calls) if call is not None]
 
 
+def raw_tool_call_values(msg: dict[str, Any]) -> list[Any]:
+    values: list[Any] = []
+    for key in ("tool_calls", "function_calls"):
+        value = msg.get(key)
+        if not value:
+            continue
+        parsed = parse_jsonish(value)
+        if isinstance(parsed, list):
+            values.extend(parsed)
+        else:
+            values.append(parsed)
+    value = msg.get("function_call")
+    if value:
+        values.append(parse_jsonish(value))
+    return values
+
+
+def tool_call_is_well_formatted(call: Any) -> bool:
+    call = parse_jsonish(call)
+    if not isinstance(call, dict):
+        return False
+    function = call.get("function") if isinstance(call.get("function"), dict) else call
+    name = function.get("name", call.get("name", ""))
+    if not isinstance(name, str) or not name.strip():
+        return False
+    arguments = parse_jsonish(function.get("arguments", {}))
+    return isinstance(arguments, dict)
+
+
+def message_has_misformatted_tool_call(msg: dict[str, Any]) -> bool:
+    raw_calls = raw_tool_call_values(msg)
+    if not raw_calls:
+        return False
+    normalized = normalize_tool_calls(msg.get("tool_calls"))
+    if not normalized:
+        normalized = normalize_tool_calls(msg.get("function_calls"))
+    if not normalized:
+        normalized = normalize_tool_calls(msg.get("function_call"))
+    if len(normalized) != len(raw_calls):
+        return True
+    return any(not tool_call_is_well_formatted(call) for call in raw_calls)
+
+
 def tool_calls_from_content(content: Any) -> list[dict[str, Any]]:
     content = parse_jsonish(content)
     if not isinstance(content, list):
@@ -210,6 +254,51 @@ def tool_calls_from_content(content: Any) -> list[dict[str, Any]]:
         if call is not None:
             calls.append(call)
     return calls
+
+
+def raw_role_is_bookkeeping(msg: Any) -> bool:
+    if not isinstance(msg, dict):
+        return False
+    role = msg.get("role", msg.get("from", msg.get("speaker")))
+    return isinstance(role, str) and role.strip().lower() in BOOKKEEPING_ROLES
+
+
+def assistant_reasoning_text(msg: dict[str, Any]) -> str:
+    if msg.get("role") != "assistant":
+        return ""
+    for key in ("reasoning_content", "reasoning", "reasoning_details", "thinking", "thought"):
+        value = msg.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, (list, dict)) and value:
+            return json_dumps(value)
+    provider = msg.get("provider_specific_fields")
+    if isinstance(provider, dict):
+        for key in ("reasoning_content", "reasoning", "reasoning_details", "thinking"):
+            value = provider.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+            if isinstance(value, (list, dict)) and value:
+                return json_dumps(value)
+    content = text_from_content(message_content(msg))
+    if "</think>" in content:
+        before = content.split("</think>", 1)[0]
+        if "<think>" in before:
+            thought = before.rsplit("<think>", 1)[-1].strip()
+            if thought:
+                return thought
+    return ""
+
+
+def assistant_has_reasoning(msg: dict[str, Any]) -> bool:
+    return bool(assistant_reasoning_text(msg))
+
+
+def assistant_visible_content(msg: dict[str, Any]) -> str:
+    content = text_from_content(message_content(msg))
+    if "</think>" in content:
+        return content.split("</think>", 1)[-1].lstrip("\n")
+    return content
 
 
 def normalize_message(msg: Any) -> dict[str, Any] | None:
@@ -322,6 +411,8 @@ def normalize_row(row: Any) -> dict[str, Any] | None:
 
     messages: list[dict[str, Any]] = []
     for raw_msg in raw_messages:
+        if raw_role_is_bookkeeping(raw_msg):
+            continue
         msg = normalize_message(raw_msg)
         if msg is None:
             return None
