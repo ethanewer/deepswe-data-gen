@@ -6,7 +6,7 @@
 #SBATCH --gres=gpu:h200:4
 #SBATCH --cpus-per-task=96
 #SBATCH --mem=850G
-#SBATCH --time=1-00:00:00
+#SBATCH --time=12:00:00
 #SBATCH --output=logs/slurm-qwen3-4b-swe260612-h200-4g-%j.out
 #SBATCH --error=logs/slurm-qwen3-4b-swe260612-h200-4g-%j.err
 
