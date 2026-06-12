@@ -1,0 +1,54 @@
+{
+  "model": "/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/sft/qwen3-sft/checkpoints/qwen3_vl_2b_text_h200_4gpu_40k_hq3x_reasoning90_lr5e6_s400_418791/epoch_0_step_199/qwen3_vl_2b_full_overlay",
+  "description": "Single-H200-GPU SWE-bench Multilingual serving setup for Qwen3-VL-2B text SFT checkpoint epoch_0_step_199 at 40k context.",
+  "sources": [
+    "Qwen/Qwen3-VL-2B-Thinking",
+    "eval/chat_templates/qwen3_thinking_acc.jinja2"
+  ],
+  "serve": {
+    "gpus": [0],
+    "map_gpus_from_cuda_visible_devices": true,
+    "backend_ports": [8340],
+    "backend_host": "0.0.0.0",
+    "backend_base_url_host": "127.0.0.1",
+    "proxy_host": "0.0.0.0",
+    "proxy_port": 8330,
+    "served_model_name": "Qwen/Qwen3-VL-2B-Thinking",
+    "tensor_parallel_size": 1,
+    "max_model_len": 40960,
+    "gpu_memory_utilization": 0.9,
+    "trust_remote_code": true,
+    "chat_template": "eval/chat_templates/qwen3_thinking_acc.jinja2",
+    "chat_template_content_format": "string",
+    "vllm_args": [
+      "--reasoning-parser",
+      "qwen3",
+      "--enable-auto-tool-choice",
+      "--tool-call-parser",
+      "hermes"
+    ]
+  },
+  "generation": {
+    "temperature": 0.6,
+    "max_tokens": 16384,
+    "extra_body": {
+      "top_p": 0.95,
+      "top_k": 20,
+      "min_p": 0,
+      "presence_penalty": 0
+    }
+  },
+  "benchmarks": {
+    "swebench_multilingual_predictive_30": {
+      "harness": "mini-swe-agent",
+      "generation_workers": 1,
+      "eval_workers": 4,
+      "max_tokens": 16384,
+      "temperature": 0.6
+    }
+  },
+  "notes": [
+    "Checkpoint text weights were overlaid onto the full Qwen3-VL-2B checkpoint for vLLM serving.",
+    "Serving uses the same OpenThoughts Qwen3 thinking chat template as training."
+  ]
+}
