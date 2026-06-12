@@ -35,12 +35,13 @@ nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv,noheader
 export REQUIRED_LOCAL_GPUS=4
 export NPROC_PER_NODE=4
 
-# Preserve the 8-GPU recipe's effective batch:
+# Preserve the 8-GPU recipe's effective batch while reducing per-GPU memory:
 # 8 GPU: local 2 * 8 GPUs * accum 1 = 16 packed sequences/update.
-# 4 GPU: local 2 * 4 GPUs * accum 2 = 16 packed sequences/update.
-export LOCAL_BATCH_SIZE="${LOCAL_BATCH_SIZE:-2}"
-export GRAD_ACCUM_STEPS="${GRAD_ACCUM_STEPS:-2}"
+# 4 GPU: local 1 * 4 GPUs * accum 4 = 16 packed sequences/update.
+export LOCAL_BATCH_SIZE="${LOCAL_BATCH_SIZE:-1}"
+export GRAD_ACCUM_STEPS="${GRAD_ACCUM_STEPS:-4}"
 export GLOBAL_BATCH_SIZE="${GLOBAL_BATCH_SIZE:-16}"
+export PYTORCH_ALLOC_CONF="${PYTORCH_ALLOC_CONF:-expandable_segments:True}"
 
 export CHECKPOINT_DIR="${CHECKPOINT_DIR:-checkpoints/qwen3_4b_thinking_swe260612_highquality_65k_toolcall_only_h200_4gpu_sft/}"
 export RUN_NAME="${RUN_NAME:-qwen3_4b_thinking_swe260612_highquality_65k_toolcall_only_h200_4gpu_sft}"
