@@ -36,6 +36,7 @@ STABILIZE_SECONDS="${STABILIZE_SECONDS:-120}"
 SMOKE_MAX_MODEL_LEN="${SMOKE_MAX_MODEL_LEN:-65536}"
 SMOKE_GPU_MEMORY_UTILIZATION="${SMOKE_GPU_MEMORY_UTILIZATION:-0.9}"
 SMOKE_REQUIRE_TOOL_CALL="${SMOKE_REQUIRE_TOOL_CALL:-false}"
+TRAIN_LOG_GLOB="${TRAIN_LOG_GLOB:-$REPO_ROOT/logs/slurm-qwen3-4b-swe260612-h200-4g-*.err}"
 
 export PYTHONPATH="$REPO_ROOT/sft/qwen3-sft/third_party/Automodel:$REPO_ROOT/sft/qwen3-sft/src${PYTHONPATH:+:$PYTHONPATH}"
 
@@ -183,7 +184,11 @@ nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv,noheader
 
 echo "Waiting for checkpoint metadata: $CHECKPOINT_STEP_DIR/model/.metadata"
 while [ ! -f "$CHECKPOINT_STEP_DIR/model/.metadata" ]; do
-  latest_step="$(tail -n 120 logs/slurm-qwen3-4b-swe260612-h200-4g-434441.err 2>/dev/null | grep -E 'step [0-9]+ \\|' | tail -n 1 || true)"
+  latest_train_log="$(find "$REPO_ROOT/logs" -maxdepth 1 -type f -name "$(basename "$TRAIN_LOG_GLOB")" -printf '%T@ %p\n' 2>/dev/null | sort -nr | awk 'NR == 1 {print $2}')"
+  latest_step=""
+  if [ -n "$latest_train_log" ]; then
+    latest_step="$(tail -n 120 "$latest_train_log" 2>/dev/null | grep -E 'step [0-9]+ \\|' | tail -n 1 || true)"
+  fi
   echo "[$(date -Is)] checkpoint not ready; latest_step=${latest_step:-unknown}"
   sleep "$POLL_SECONDS"
 done
