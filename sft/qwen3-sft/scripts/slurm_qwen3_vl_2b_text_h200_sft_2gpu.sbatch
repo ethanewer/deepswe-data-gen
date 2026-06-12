@@ -24,6 +24,7 @@ export PYTORCH_ALLOC_CONF="${PYTORCH_ALLOC_CONF:-expandable_segments:True}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 export REQUIRED_LOCAL_GPUS=2
 export NPROC_PER_NODE=2
+export MASTER_PORT="${MASTER_PORT:-$((29500 + (${SLURM_JOB_ID:-0} % 1000)))}"
 
 export TRAIN_RAW_ROOT="${TRAIN_RAW_ROOT:-/wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260611/highquality-3x-duplicate-reasoning-90pct}"
 export VAL_RAW_ROOT="${VAL_RAW_ROOT:-$ROOT_DIR/data/smoke_raw}"
@@ -53,6 +54,7 @@ echo "checkpoint_dir=$CHECKPOINT_DIR"
 echo "checkpoint_model_save_format=$CHECKPOINT_MODEL_SAVE_FORMAT"
 echo "cuda_visible_devices=${CUDA_VISIBLE_DEVICES:-unset}"
 echo "slurm_step_gpus=${SLURM_STEP_GPUS:-unset}"
+echo "master_port=$MASTER_PORT"
 nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv,noheader,nounits
 
 exec "$ROOT_DIR/scripts/run_qwen3_vl_2b_text_h200_sft.sh"
