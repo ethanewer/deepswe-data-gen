@@ -15,7 +15,7 @@ step_scheduler:
   # With 8 GPUs: 16 * 65,536 = 1,048,576 tokens/global update.
   global_batch_size: 16
   local_batch_size: 2
-  ckpt_every_steps: 100
+  ckpt_every_steps: 50
   val_every_steps: 1000
   max_steps: 500
 
@@ -47,7 +47,7 @@ fp8:
 
 checkpoint:
   enabled: true
-  checkpoint_dir: checkpoints/qwen3_4b_thinking_swe260612_highquality_65k_online_packed_sft/
+  checkpoint_dir: checkpoints/qwen3_4b_thinking_swe260612_highquality_65k_online_packed_sft_fixed/
   model_save_format: torch_save
   save_consolidated: false
 

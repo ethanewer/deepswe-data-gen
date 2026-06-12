@@ -295,12 +295,17 @@ def has_assistant_target(messages: list[dict[str, Any]]) -> bool:
 def assistant_has_reasoning(msg: dict[str, Any]) -> bool:
     if msg.get("role") != "assistant":
         return False
+    for key in ("reasoning_content", "reasoning", "thinking", "thought"):
+        value = msg.get(key)
+        if value not in (None, "", [], {}) and text_from_content(value).strip():
+            return True
     content = str(msg.get("content") or "")
-    start = content.find(THINK_OPEN)
-    end = content.find(THINK_CLOSE, start + len(THINK_OPEN))
+    start = content.find("<think>")
+    end = content.find("</think>", start + len("<think>"))
     if start == -1 or end == -1:
         return False
-    return bool(content[start + len(THINK_OPEN) : end].strip())
+    reasoning = content[start + len("<think>") : end]
+    return bool(reasoning.strip())
 
 
 def assistant_has_valid_tool_calls(msg: dict[str, Any]) -> bool:
@@ -355,7 +360,10 @@ def normalize_row(row: Any) -> dict[str, Any] | None:
     for raw_msg in raw_messages:
         msg = normalize_message(raw_msg)
         if msg is None:
-            return None
+            # Generated trajectory rows can include bookkeeping records such as
+            # {"role": "exit", ...}; they are not part of the model-visible
+            # chat history and cannot be rendered by chat templates.
+            continue
         messages.append(msg)
 
     messages = strip_empty_system_prefix(messages)
