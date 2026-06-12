@@ -18,11 +18,11 @@ from typing import Any
 from eval.paths import REPO_ROOT, RUNS_DIR
 
 
-def vllm_executable() -> str:
+def vllm_executable() -> list[str]:
     candidate = Path(sys.executable).resolve().parent / "vllm"
     if candidate.exists():
-        return str(candidate)
-    return "vllm"
+        return [str(candidate)]
+    return [sys.executable, "-m", "vllm.entrypoints.cli.main"]
 
 
 def repo_path(path: str | None) -> str | None:
@@ -50,7 +50,7 @@ def backend_urls(serve: dict[str, Any]) -> list[str]:
 def build_vllm_command(config: dict[str, Any], gpu: int, port: int) -> list[str]:
     serve = config["serve"]
     command = [
-        vllm_executable(),
+        *vllm_executable(),
         "serve",
         config["model"],
         "--host",
@@ -208,7 +208,8 @@ def main() -> None:
                 log_path=run_dir / "round-robin-proxy.log",
             )
             processes.append(proxy_process)
-            manifest["proxy_url"] = f"http://127.0.0.1:{serve.get('proxy_port', 8000)}/v1"
+            proxy_base_url = f"http://127.0.0.1:{serve.get('proxy_port', 8000)}"
+            manifest["proxy_url"] = f"{proxy_base_url}/v1"
             manifest["processes"].append(
                 {
                     "kind": "proxy",
@@ -219,6 +220,9 @@ def main() -> None:
                 }
             )
             print(f"Started proxy on port {serve.get('proxy_port', 8000)} with pid {proxy_process.pid}", flush=True)
+            if not args.skip_health:
+                print(f"Waiting for {proxy_base_url}/health", flush=True)
+                wait_health(proxy_base_url, args.health_timeout)
 
         manifest_path = run_dir / "manifest.json"
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")

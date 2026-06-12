@@ -27,6 +27,8 @@ CHECKPOINT_LABEL="${CHECKPOINT_LABEL:-step50}"
 CONTEXT_LABEL="${CONTEXT_LABEL:-65k}"
 MODEL_NAME="${MODEL_NAME:-Qwen/Qwen3-4B-Thinking-2507}"
 CONSOLIDATED_DIR="${CONSOLIDATED_DIR:-$CHECKPOINT_STEP_DIR/model/consolidated}"
+CONSOLIDATED_READY="$CONSOLIDATED_DIR/.complete"
+CONSOLIDATED_LOCK="$CHECKPOINT_STEP_DIR/model/.consolidate.lock"
 
 if [ ! -d "$CHECKPOINT_STEP_DIR/model" ]; then
   echo "Checkpoint model directory does not exist: $CHECKPOINT_STEP_DIR/model" >&2
@@ -35,16 +37,35 @@ fi
 
 export PYTHONPATH="$REPO_ROOT/sft/qwen3-sft/third_party/Automodel:$REPO_ROOT/sft/qwen3-sft/src${PYTHONPATH:+:$PYTHONPATH}"
 
-if ! compgen -G "$CONSOLIDATED_DIR/*.safetensors" >/dev/null; then
+if ! compgen -G "$CONSOLIDATED_DIR/*.safetensors" >/dev/null || [ ! -f "$CONSOLIDATED_READY" ]; then
   echo "Consolidating $CHECKPOINT_STEP_DIR/model -> $CONSOLIDATED_DIR"
-  mkdir -p "$CONSOLIDATED_DIR"
-  "$REPO_ROOT/sft/qwen3-sft/.venv/bin/python" \
-    "$REPO_ROOT/sft/qwen3-sft/third_party/Automodel/tools/offline_hf_consolidation.py" \
-    --backend gloo \
-    --model-name "$MODEL_NAME" \
-    --input-dir "$CHECKPOINT_STEP_DIR/model" \
-    --output-dir "$CONSOLIDATED_DIR" \
-    --cast-dtype bf16
+  (
+    flock -x 9
+    if ! compgen -G "$CONSOLIDATED_DIR/*.safetensors" >/dev/null || [ ! -f "$CONSOLIDATED_READY" ]; then
+      TMP_CONSOLIDATED_DIR="${CONSOLIDATED_DIR}.tmp.${SLURM_JOB_ID:-manual}.$$"
+      rm -rf "$TMP_CONSOLIDATED_DIR"
+      mkdir -p "$TMP_CONSOLIDATED_DIR"
+      if [ -d "$CHECKPOINT_STEP_DIR/model/.hf_metadata" ]; then
+        "$REPO_ROOT/sft/qwen3-sft/.venv/bin/python" \
+          "$REPO_ROOT/sft/qwen3-sft/third_party/Automodel/tools/offline_hf_consolidation.py" \
+          --backend gloo \
+          --model-name "$MODEL_NAME" \
+          --input-dir "$CHECKPOINT_STEP_DIR/model" \
+          --output-dir "$TMP_CONSOLIDATED_DIR" \
+          --cast-dtype bf16
+      else
+        "$REPO_ROOT/sft/qwen3-sft/.venv/bin/python" \
+          "$REPO_ROOT/eval/benchmarks/swebench_multilingual/export_dcp_torchsave_to_hf.py" \
+          --model-name "$MODEL_NAME" \
+          --input-dir "$CHECKPOINT_STEP_DIR/model" \
+          --output-dir "$TMP_CONSOLIDATED_DIR" \
+          --dtype bf16
+      fi
+      rm -rf "$CONSOLIDATED_DIR"
+      mv "$TMP_CONSOLIDATED_DIR" "$CONSOLIDATED_DIR"
+      touch "$CONSOLIDATED_READY"
+    fi
+  ) 9>"$CONSOLIDATED_LOCK"
 fi
 
 BASE_PORT=$((20000 + (${SLURM_JOB_ID:-0} % 20000)))
