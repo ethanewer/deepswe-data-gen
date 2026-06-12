@@ -23,6 +23,7 @@ from .data import (
     assistant_has_valid_tool_calls,
     discover_raw_files,
     iter_normalized_examples_from_files,
+    text_from_content,
 )
 
 
@@ -32,6 +33,9 @@ DEFAULT_CHAT_TEMPLATE = Path(
     "/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/eval/chat_templates/"
     "qwen3_thinking_acc.jinja2"
 )
+THINK_OPEN = "<think>\n"
+THINK_CLOSE = "\n</think>"
+ASSISTANT_LOSS_TARGETS = ("assistant", "tool_calls")
 
 
 def _rank_world() -> tuple[int, int]:
@@ -83,23 +87,69 @@ def encode_text(tokenizer: Any, text: str) -> list[int]:
     return tokenizer(text, add_special_tokens=False)["input_ids"]
 
 
+def assistant_reasoning_from_content(message: dict[str, Any]) -> str:
+    for key in ("reasoning_content", "reasoning", "thinking", "thought"):
+        value = message.get(key)
+        if value not in (None, "", [], {}):
+            return text_from_content(value).strip()
+    content = text_from_content(message.get("content"))
+    start = content.find("<think>")
+    end = content.find("</think>", start + len("<think>"))
+    if start == -1 or end == -1:
+        return ""
+    return content[start + len("<think>") : end].strip()
+
+
+def drop_assistant_content_preserving_reasoning(message: dict[str, Any]) -> None:
+    reasoning = assistant_reasoning_from_content(message)
+    if reasoning:
+        message["content"] = f"{THINK_OPEN}{reasoning}{THINK_CLOSE}"
+    else:
+        message["content"] = ""
+
+
 def apply_assistant_loss_policy(
     example: dict[str, Any],
     *,
     require_assistant_reasoning_for_loss: bool = False,
     require_assistant_tool_calls_for_loss: bool = False,
+    drop_assistant_content_for_tool_calls: bool = False,
 ) -> dict[str, Any]:
-    if not require_assistant_reasoning_for_loss and not require_assistant_tool_calls_for_loss:
+    if (
+        not require_assistant_reasoning_for_loss
+        and not require_assistant_tool_calls_for_loss
+        and not drop_assistant_content_for_tool_calls
+    ):
         return example
 
     for message in example.get("messages", []):
         if message.get("role") != "assistant":
             continue
+        has_tool_calls = assistant_has_valid_tool_calls(message)
+        if drop_assistant_content_for_tool_calls and has_tool_calls:
+            drop_assistant_content_preserving_reasoning(message)
         if require_assistant_reasoning_for_loss and not assistant_has_reasoning(message):
             message["loss"] = False
-        if require_assistant_tool_calls_for_loss and not assistant_has_valid_tool_calls(message):
+        if require_assistant_tool_calls_for_loss and not has_tool_calls:
             message["loss"] = False
     return example
+
+
+def tool_call_label_span(rendered: str, assistant_start_char: int) -> tuple[int, int] | None:
+    assistant_end = rendered.find("<|im_end|>", assistant_start_char)
+    search_end = len(rendered) if assistant_end == -1 else assistant_end
+    tool_start = rendered.find("<tool_call>", assistant_start_char, search_end)
+    if tool_start == -1:
+        return None
+    if assistant_end != -1:
+        tool_end = assistant_end + len("<|im_end|>")
+        if rendered.startswith("\n", tool_end):
+            tool_end += 1
+        return tool_start, tool_end
+    close = rendered.rfind("</tool_call>", tool_start)
+    if close == -1:
+        return None
+    return tool_start, close + len("</tool_call>")
 
 
 def tokenize_chat_example(
@@ -110,7 +160,11 @@ def tokenize_chat_example(
     sequence_length: int,
     overlength_strategy: str = "split",
     min_label_tokens: int = 1,
+    assistant_loss_target: str = "assistant",
 ) -> Iterator[tuple[np.ndarray, np.ndarray]]:
+    if assistant_loss_target not in ASSISTANT_LOSS_TARGETS:
+        raise ValueError(f"assistant_loss_target must be one of {ASSISTANT_LOSS_TARGETS}; got {assistant_loss_target}")
+
     messages = example["messages"]
     tools = example.get("tools")
     if not messages:
@@ -127,11 +181,20 @@ def tokenize_chat_example(
             continue
         if message.get("trainable") is False or message.get("loss") is False:
             continue
-        start = 0 if idx == 0 else len(encode_text(tokenizer, render_chat(tokenizer, messages[:idx], tools, chat_template)))
-        end = len(encode_text(tokenizer, render_chat(tokenizer, messages[: idx + 1], tools, chat_template)))
-        if end <= start:
-            continue
-        labels[start:end] = np.asarray(input_ids[start:end], dtype=np.int64)
+        prefix = "" if idx == 0 else render_chat(tokenizer, messages[:idx], tools, chat_template)
+        current = render_chat(tokenizer, messages[: idx + 1], tools, chat_template)
+        if assistant_loss_target == "tool_calls":
+            span = tool_call_label_span(current, len(prefix))
+            if span is None:
+                continue
+            start_char, end_char = span
+            start = len(encode_text(tokenizer, current[:start_char]))
+            end = len(encode_text(tokenizer, current[:end_char]))
+        else:
+            start = len(encode_text(tokenizer, prefix))
+            end = len(encode_text(tokenizer, current))
+        if end > start:
+            labels[start:end] = np.asarray(input_ids[start:end], dtype=np.int64)
 
     ids = np.asarray(input_ids, dtype=np.int64)
     if int(np.count_nonzero(labels != IGNORE_INDEX)) < min_label_tokens:
@@ -264,6 +327,8 @@ class OnlinePackedChatDataset(IterableDataset):
         shard_world_size: int | None = None,
         require_assistant_reasoning_for_loss: bool = False,
         require_assistant_tool_calls_for_loss: bool = False,
+        drop_assistant_content_for_tool_calls: bool = False,
+        assistant_loss_target: str = "assistant",
     ):
         super().__init__()
         self.tokenizer = tokenizer
@@ -285,6 +350,10 @@ class OnlinePackedChatDataset(IterableDataset):
         self.shard_world_size = None if shard_world_size is None else int(shard_world_size)
         self.require_assistant_reasoning_for_loss = bool(require_assistant_reasoning_for_loss)
         self.require_assistant_tool_calls_for_loss = bool(require_assistant_tool_calls_for_loss)
+        self.drop_assistant_content_for_tool_calls = bool(drop_assistant_content_for_tool_calls)
+        if assistant_loss_target not in ASSISTANT_LOSS_TARGETS:
+            raise ValueError(f"assistant_loss_target must be one of {ASSISTANT_LOSS_TARGETS}; got {assistant_loss_target}")
+        self.assistant_loss_target = assistant_loss_target
         self.chat_template = load_chat_template(self.chat_template_path)
         self._configure_tokenizer()
 
@@ -376,6 +445,7 @@ class OnlinePackedChatDataset(IterableDataset):
                     example,
                     require_assistant_reasoning_for_loss=self.require_assistant_reasoning_for_loss,
                     require_assistant_tool_calls_for_loss=self.require_assistant_tool_calls_for_loss,
+                    drop_assistant_content_for_tool_calls=self.drop_assistant_content_for_tool_calls,
                 )
                 for input_ids, labels in tokenize_chat_example(
                     example,
@@ -384,6 +454,7 @@ class OnlinePackedChatDataset(IterableDataset):
                     sequence_length=self.sequence_length,
                     overlength_strategy=self.overlength_strategy,
                     min_label_tokens=self.min_label_tokens,
+                    assistant_loss_target=self.assistant_loss_target,
                 ):
                     for packed in packer.add(input_ids, labels):
                         packs_emitted += 1
@@ -430,6 +501,8 @@ def inspect_packer(args: argparse.Namespace) -> int:
         log_every_packs=0,
         require_assistant_reasoning_for_loss=args.require_assistant_reasoning_for_loss,
         require_assistant_tool_calls_for_loss=args.require_assistant_tool_calls_for_loss,
+        drop_assistant_content_for_tool_calls=args.drop_assistant_content_for_tool_calls,
+        assistant_loss_target=args.assistant_loss_target,
     )
     stats = {
         "packs": 0,
@@ -463,6 +536,8 @@ def parse_args() -> argparse.Namespace:
     inspect.add_argument("--overlength-strategy", choices=["split", "truncate", "drop"], default="split")
     inspect.add_argument("--require-assistant-reasoning-for-loss", action="store_true")
     inspect.add_argument("--require-assistant-tool-calls-for-loss", action="store_true")
+    inspect.add_argument("--drop-assistant-content-for-tool-calls", action="store_true")
+    inspect.add_argument("--assistant-loss-target", choices=ASSISTANT_LOSS_TARGETS, default="assistant")
     inspect.add_argument("--local-files-only", action=argparse.BooleanOptionalAction, default=True)
     return parser.parse_args()
 

@@ -75,6 +75,8 @@ dataset:
   min_label_tokens: 1
   require_assistant_reasoning_for_loss: true
   require_assistant_tool_calls_for_loss: true
+  drop_assistant_content_for_tool_calls: true
+  assistant_loss_target: tool_calls
   shuffle_files: true
   seed: 33333
   repeat: true
@@ -104,6 +106,8 @@ validation_dataset:
   min_label_tokens: 1
   require_assistant_reasoning_for_loss: true
   require_assistant_tool_calls_for_loss: true
+  drop_assistant_content_for_tool_calls: true
+  assistant_loss_target: tool_calls
   shuffle_files: false
   seed: 33333
   repeat: false

@@ -1060,7 +1060,7 @@ def run_minisweagent_generation(
         "-c",
         "environment.pull_timeout=1800",
         "-c",
-        f"agent.step_limit={defaults['generation_step_limit']}",
+        f"agent.step_limit={args.generation_step_limit}",
     ]
     if model_config.api_base:
         generation_cmd.extend(["-c", f"model.model_kwargs.api_base={model_config.api_base}"])
@@ -1410,6 +1410,12 @@ def main() -> None:
         type=int,
         default=defaults["generation_workers"],
         help="mini-swe-agent generation workers.",
+    )
+    parser.add_argument(
+        "--generation-step-limit",
+        type=int,
+        default=defaults["generation_step_limit"],
+        help="Maximum mini-swe-agent steps per instance.",
     )
     parser.add_argument(
         "--eval-workers",

@@ -17,7 +17,7 @@ step_scheduler:
   local_batch_size: 2
   ckpt_every_steps: 50
   val_every_steps: 1000
-  max_steps: 500
+  max_steps: 300
 
 dist_env:
   backend: nccl
@@ -47,7 +47,7 @@ fp8:
 
 checkpoint:
   enabled: true
-  checkpoint_dir: checkpoints/qwen3_4b_thinking_swe260612_highquality_65k_online_packed_sft_fixed/
+  checkpoint_dir: checkpoints/qwen3_4b_thinking_swe260612_highquality_65k_toolcall_only_sft/
   model_save_format: torch_save
   save_consolidated: false
 
@@ -88,6 +88,8 @@ dataset:
   log_every_packs: 100
   require_assistant_reasoning_for_loss: true
   require_assistant_tool_calls_for_loss: true
+  drop_assistant_content_for_tool_calls: true
+  assistant_loss_target: tool_calls
 
 dataloader:
   _target_: torchdata.stateful_dataloader.StatefulDataLoader
@@ -117,6 +119,8 @@ validation_dataset:
   log_every_packs: 0
   require_assistant_reasoning_for_loss: true
   require_assistant_tool_calls_for_loss: true
+  drop_assistant_content_for_tool_calls: true
+  assistant_loss_target: tool_calls
 
 validation_dataloader:
   _target_: torchdata.stateful_dataloader.StatefulDataLoader
@@ -134,11 +138,11 @@ optimizer:
   _target_: torch.optim.AdamW
   betas: [0.9, 0.95]
   eps: 1.0e-8
-  lr: 5.0e-6
+  lr: 2.0e-6
   weight_decay: 0.01
   fused: true
 
 lr_scheduler:
   lr_decay_style: cosine
-  lr_warmup_steps: 25
-  min_lr: 5.0e-7
+  lr_warmup_steps: 20
+  min_lr: 2.0e-7
