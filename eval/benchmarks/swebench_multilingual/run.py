@@ -1063,6 +1063,8 @@ def run_minisweagent_generation(
         generation_cmd.extend(["-c", f"model.model_kwargs.api_base={model_config.api_base}"])
     if model_config.extra_body:
         generation_cmd.extend(["-c", f"model.model_kwargs.extra_body={extra_body}"])
+    if args.generation_workers == 1:
+        generation_cmd.extend(["-c", f"agent.output_path={output_dir / 'live.traj.json'}"])
     run(generation_cmd, generation_env)
     return {"predictions_path": str(output_dir / "preds.json"), "env": generation_env}
 
