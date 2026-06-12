@@ -25,6 +25,9 @@ SUBSET_DIR = Path(__file__).resolve().parent
 DEFAULTS_PATH = SUBSET_DIR / "defaults.json"
 DEFAULT_INSTANCE_IDS_PATH = SUBSET_DIR / "predictive_30_instance_ids.txt"
 DATASET_NAME = "SWE-bench/SWE-bench_Multilingual"
+MINISWEAGENT_SUBSET = "multilingual"
+BENCHMARK_DISPLAY_NAME = "SWE-bench Multilingual"
+BENCHMARK_RUN_TAG = "multilingual-30"
 SUPPORTED_HARNESSES = ("mini-swe-agent", "openhands-swe", "opencode", "terminus-2")
 OPENHANDS_SETUP_FILES_TO_REMOVE = ("pyproject.toml", "tox.ini", "setup.py")
 OPENCODE_DEFAULT_COMMAND = "npx --yes opencode-ai"
@@ -805,7 +808,7 @@ def build_opencode_config_content(model_config, opencode_model: str) -> str:
 
 def opencode_prompt(row: dict[str, Any]) -> str:
     prompt_parts = [
-        "You are solving a SWE-bench Multilingual task.",
+        f"You are solving a {BENCHMARK_DISPLAY_NAME} task.",
         "The repository is already checked out at the base commit.",
         "Modify files in this worktree to fix the issue. Do not commit changes.",
         "Work directly with read/search/bash/edit/write tools; do not use subagents.",
@@ -1035,7 +1038,7 @@ def run_minisweagent_generation(
         "-m",
         "minisweagent.run.benchmarks.swebench",
         "--subset",
-        "multilingual",
+        MINISWEAGENT_SUBSET,
         "--split",
         "test",
         "--filter",
@@ -1221,7 +1224,7 @@ def run_opencode_generation(
 
 def terminus_instruction(row: dict[str, Any]) -> str:
     prompt_parts = [
-        "You are solving a SWE-bench Multilingual task.",
+        f"You are solving a {BENCHMARK_DISPLAY_NAME} task.",
         "The repository is already checked out at the base commit in the current directory.",
         "Modify files in this worktree to fix the issue. Do not commit changes.",
         "Keep exploration brief, then make the required code change.",
@@ -1386,7 +1389,10 @@ def run_terminus_generation(
 def main() -> None:
     defaults = load_defaults(DEFAULTS_PATH)
     parser = argparse.ArgumentParser(
-        description="Run an OpenAI-compatible model on the 30-task predictive subset."
+        description=(
+            "Run an OpenAI-compatible model on the "
+            f"{BENCHMARK_DISPLAY_NAME} predictive subset."
+        )
     )
     parser.add_argument(
         "--harness",
@@ -1590,8 +1596,10 @@ def main() -> None:
     model_config = model_from_defaults(defaults, args)
 
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    output_dir = args.output or REPO_ROOT / "runs" / f"{model_config.slug}-multilingual-30-{timestamp}"
-    run_id = args.run_id or f"{model_config.slug}-multilingual-30-{timestamp}"
+    output_dir = args.output or (
+        REPO_ROOT / "runs" / f"{model_config.slug}-{BENCHMARK_RUN_TAG}-{timestamp}"
+    )
+    run_id = args.run_id or f"{model_config.slug}-{BENCHMARK_RUN_TAG}-{timestamp}"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     instance_ids = read_instance_ids(args.instance_ids)

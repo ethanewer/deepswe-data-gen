@@ -1,0 +1,10 @@
+model,source,coverage,full_score_pct,subset_score_pct,error_pct_points
+gpt-5-nano,SWE-Router/swebench-verified-gpt-5-nano,500,30.6,30.0,-0.6
+gpt-5-mini,SWE-Router/swebench-verified-gpt-5-mini,500,55.6,55.0,-0.6
+gpt-5.2,SWE-Router/swebench-verified-gpt-5.2,500,74.2,75.0,0.8
+deepseek-v4-flash,SWE-Router/swebench-verified-deepseek-v4-flash,500,63.2,65.0,1.8
+deepseek-v3.2,SWE-Router/swebench-verified-deepseek-v3.2,500,62.4,60.0,-2.4
+gemini-3-pro,SWE-Router/swebench-verified-gemini-3-pro,500,70.4,70.0,-0.4
+gemini-2.5-pro,SWE-Router/swebench-verified-gemini-2.5-pro,500,50.0,50.0,0.0
+claude-opus-4.7,SWE-Router/swebench-verified-claude-opus-4.7,500,78.2,80.0,1.8
+gemini-3.1-pro-preview,SWE-Router/swebench-verified-gemini-3.1-pro-preview,500,65.4,65.0,-0.4

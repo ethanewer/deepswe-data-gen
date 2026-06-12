@@ -1,0 +1,171 @@
+{
+  "files": [
+    "predictive_20_tasks.csv",
+    "predictive_20_instance_ids.txt",
+    "predictive_20_model_score_comparison.csv",
+    "predictive_20_summary.json"
+  ],
+  "known_full_runs": {
+    "claude-opus-4.7": {
+      "coverage": 500,
+      "dataset": "SWE-Router/swebench-verified-claude-opus-4.7",
+      "missing_counted_unresolved": [],
+      "rows": 500,
+      "score": 0.782,
+      "source": "SWE-Router",
+      "unknown_ids": []
+    },
+    "deepseek-v3.2": {
+      "coverage": 500,
+      "dataset": "SWE-Router/swebench-verified-deepseek-v3.2",
+      "missing_counted_unresolved": [],
+      "rows": 500,
+      "score": 0.624,
+      "source": "SWE-Router",
+      "unknown_ids": []
+    },
+    "deepseek-v4-flash": {
+      "coverage": 500,
+      "dataset": "SWE-Router/swebench-verified-deepseek-v4-flash",
+      "missing_counted_unresolved": [],
+      "rows": 500,
+      "score": 0.632,
+      "source": "SWE-Router",
+      "unknown_ids": []
+    },
+    "gemini-2.5-pro": {
+      "coverage": 500,
+      "dataset": "SWE-Router/swebench-verified-gemini-2.5-pro",
+      "missing_counted_unresolved": [],
+      "rows": 500,
+      "score": 0.5,
+      "source": "SWE-Router",
+      "unknown_ids": []
+    },
+    "gemini-3-pro": {
+      "coverage": 500,
+      "dataset": "SWE-Router/swebench-verified-gemini-3-pro",
+      "missing_counted_unresolved": [],
+      "rows": 500,
+      "score": 0.704,
+      "source": "SWE-Router",
+      "unknown_ids": []
+    },
+    "gemini-3.1-pro-preview": {
+      "coverage": 500,
+      "dataset": "SWE-Router/swebench-verified-gemini-3.1-pro-preview",
+      "missing_counted_unresolved": [],
+      "rows": 500,
+      "score": 0.654,
+      "source": "SWE-Router",
+      "unknown_ids": []
+    },
+    "gpt-5-mini": {
+      "coverage": 500,
+      "dataset": "SWE-Router/swebench-verified-gpt-5-mini",
+      "missing_counted_unresolved": [],
+      "rows": 500,
+      "score": 0.556,
+      "source": "SWE-Router",
+      "unknown_ids": []
+    },
+    "gpt-5-nano": {
+      "coverage": 500,
+      "dataset": "SWE-Router/swebench-verified-gpt-5-nano",
+      "missing_counted_unresolved": [],
+      "rows": 500,
+      "score": 0.306,
+      "source": "SWE-Router",
+      "unknown_ids": []
+    },
+    "gpt-5.2": {
+      "coverage": 500,
+      "dataset": "SWE-Router/swebench-verified-gpt-5.2",
+      "missing_counted_unresolved": [],
+      "rows": 500,
+      "score": 0.742,
+      "source": "SWE-Router",
+      "unknown_ids": []
+    }
+  },
+  "random_seed": 20260612,
+  "selected_instance_ids": [
+    "astropy__astropy-14539",
+    "django__django-13023",
+    "django__django-13670",
+    "django__django-13810",
+    "django__django-15499",
+    "matplotlib__matplotlib-20488",
+    "matplotlib__matplotlib-20826",
+    "matplotlib__matplotlib-26342",
+    "psf__requests-1724",
+    "pydata__xarray-6938",
+    "pylint-dev__pylint-6386",
+    "pytest-dev__pytest-10081",
+    "scikit-learn__scikit-learn-13135",
+    "scikit-learn__scikit-learn-14087",
+    "sphinx-doc__sphinx-8548",
+    "sphinx-doc__sphinx-9258",
+    "sympy__sympy-13372",
+    "sympy__sympy-16597",
+    "sympy__sympy-17318",
+    "sympy__sympy-22714"
+  ],
+  "selected_repo_counts": {
+    "astropy/astropy": 1,
+    "django/django": 4,
+    "matplotlib/matplotlib": 3,
+    "psf/requests": 1,
+    "pydata/xarray": 1,
+    "pylint-dev/pylint": 1,
+    "pytest-dev/pytest": 1,
+    "scikit-learn/scikit-learn": 2,
+    "sphinx-doc/sphinx": 2,
+    "sympy/sympy": 4
+  },
+  "selection_method": {
+    "constraints": {
+      "max_per_repo": 4
+    },
+    "objective_terms": [
+      "model score RMSE",
+      "model score max absolute error",
+      "task difficulty histogram balance",
+      "year bucket balance",
+      "repository distribution balance"
+    ],
+    "target": "Minimize 20-task score error against known full per-instance SWE-bench Verified model runs."
+  },
+  "subset_size": 20,
+  "task_dataset": "SWE-bench/SWE-bench_Verified",
+  "validation": {
+    "mae_pct_points": 0.9777777777777786,
+    "max_abs_error_pct_points": 2.400000000000002,
+    "pearson_across_known_model_scores": 0.9966721656958267,
+    "random_repo_capped_baseline_pct_points": {
+      "mae": {
+        "median": 7.600000000000001,
+        "p05": 4.28888888888889,
+        "p95": 15.000000000000002
+      },
+      "max_abs_error": {
+        "median": 16.799999999999994,
+        "p05": 9.600000000000009,
+        "p95": 28.200000000000003
+      },
+      "pearson": {
+        "median": 0.9113790298199558,
+        "p05": 0.7741028829164294,
+        "p95": 0.9710687959435017
+      },
+      "rmse": {
+        "median": 9.207002166225925,
+        "p05": 5.3843394312683435,
+        "p95": 16.895495540713686
+      },
+      "samples": 5000
+    },
+    "rmse_pct_points": 1.243650540411843,
+    "spearman_across_known_model_scores": 0.9958246164193105
+  }
+}
