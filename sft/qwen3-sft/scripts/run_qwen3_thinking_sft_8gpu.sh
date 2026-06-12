@@ -21,18 +21,19 @@ export NCCL_DEBUG="${NCCL_DEBUG:-WARN}"
 
 IFS=',' read -r -a visible_gpus <<< "$CUDA_VISIBLE_DEVICES"
 NPROC_PER_NODE="${NPROC_PER_NODE:-${#visible_gpus[@]}}"
-if [ "$NPROC_PER_NODE" -ne 8 ] || [ "${#visible_gpus[@]}" -ne 8 ]; then
-  echo "This recipe must use exactly 8 local GPUs. CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES NPROC_PER_NODE=$NPROC_PER_NODE" >&2
+REQUIRED_LOCAL_GPUS="${REQUIRED_LOCAL_GPUS:-8}"
+if [ "$NPROC_PER_NODE" -ne "$REQUIRED_LOCAL_GPUS" ] || [ "${#visible_gpus[@]}" -ne "$REQUIRED_LOCAL_GPUS" ]; then
+  echo "This recipe must use exactly $REQUIRED_LOCAL_GPUS local GPUs. CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES NPROC_PER_NODE=$NPROC_PER_NODE" >&2
   exit 1
 fi
 
 if command -v nvidia-smi >/dev/null 2>&1; then
   gpu_count="$(nvidia-smi --query-gpu=index --format=csv,noheader,nounits | wc -l)"
-  if [ "$gpu_count" -lt 8 ]; then
-    echo "Expected at least 8 local GPUs from nvidia-smi, saw $gpu_count" >&2
+  if [ "$gpu_count" -lt "$REQUIRED_LOCAL_GPUS" ]; then
+    echo "Expected at least $REQUIRED_LOCAL_GPUS local GPUs from nvidia-smi, saw $gpu_count" >&2
     exit 1
   fi
-  nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv,noheader,nounits | sed -n '1,8p'
+  nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv,noheader,nounits | sed -n "1,${REQUIRED_LOCAL_GPUS}p"
 fi
 
 MODEL_SIZE="${MODEL_SIZE:-4b}"
@@ -71,7 +72,12 @@ CONFIG="${CONFIG:-$DEFAULT_CONFIG}"
 MODEL="${MODEL:-$DEFAULT_MODEL}"
 TRAIN_RAW_ROOT="${TRAIN_RAW_ROOT:-/wbl-fast/usrs/ee/code-swe-data/data/code-swe-terminal-agentic-sft}"
 VAL_RAW_ROOT="${VAL_RAW_ROOT:-$ROOT_DIR/data/smoke_raw}"
-CHAT_TEMPLATE="${CHAT_TEMPLATE:-/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/eval/chat_templates/qwen3_thinking_acc.jinja2}"
+CHAT_TEMPLATE_SOURCE="${CHAT_TEMPLATE_SOURCE:-file}"
+if [ "$CHAT_TEMPLATE_SOURCE" = "tokenizer" ]; then
+  CHAT_TEMPLATE="${CHAT_TEMPLATE:-}"
+else
+  CHAT_TEMPLATE="${CHAT_TEMPLATE:-/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/eval/chat_templates/qwen3_thinking_acc.jinja2}"
+fi
 
 PACK_SIZE="${PACK_SIZE:-$DEFAULT_PACK_SIZE}"
 LOCAL_BATCH_SIZE="${LOCAL_BATCH_SIZE:-$DEFAULT_LOCAL_BATCH_SIZE}"
@@ -81,10 +87,14 @@ GLOBAL_TOKENS="$((GLOBAL_BATCH_SIZE * PACK_SIZE))"
 MAX_STEPS="${MAX_STEPS:-1000}"
 LR="${LR:-1.0e-5}"
 MIN_LR="${MIN_LR:-$LR}"
+LR_WARMUP_STEPS="${LR_WARMUP_STEPS:-}"
 NUM_WORKERS="${NUM_WORKERS:-2}"
 MULTIPROCESSING_CONTEXT="${MULTIPROCESSING_CONTEXT:-fork}"
 PERSISTENT_WORKERS="${PERSISTENT_WORKERS:-false}"
 PREFETCH_FACTOR="${PREFETCH_FACTOR:-2}"
+OVERLENGTH_STRATEGY="${OVERLENGTH_STRATEGY:-}"
+REQUIRE_ASSISTANT_REASONING_FOR_LOSS="${REQUIRE_ASSISTANT_REASONING_FOR_LOSS:-}"
+REQUIRE_ASSISTANT_TOOL_CALLS_FOR_LOSS="${REQUIRE_ASSISTANT_TOOL_CALLS_FOR_LOSS:-}"
 ENABLE_COMPILE="${ENABLE_COMPILE:-$DEFAULT_ENABLE_COMPILE}"
 ACTIVATION_CHECKPOINTING="${ACTIVATION_CHECKPOINTING:-true}"
 ENABLE_FSDP2_PREFETCH="${ENABLE_FSDP2_PREFETCH:-true}"
@@ -124,6 +134,20 @@ echo "Global packed sequences: $GLOBAL_BATCH_SIZE"
 echo "Global tokens/update: $GLOBAL_TOKENS"
 echo "Compile: $ENABLE_COMPILE"
 echo "FSDP2 prefetch: $ENABLE_FSDP2_PREFETCH B${FSDP2_BACKWARD_PREFETCH_DEPTH}/F${FSDP2_FORWARD_PREFETCH_DEPTH}"
+if [ -n "$LR_WARMUP_STEPS" ]; then
+  echo "LR warmup steps: $LR_WARMUP_STEPS"
+fi
+if [ -n "$OVERLENGTH_STRATEGY" ]; then
+  echo "Overlength strategy: $OVERLENGTH_STRATEGY"
+fi
+if [ -n "$REQUIRE_ASSISTANT_REASONING_FOR_LOSS" ] || [ -n "$REQUIRE_ASSISTANT_TOOL_CALLS_FOR_LOSS" ]; then
+  echo "Assistant loss requirements: reasoning=${REQUIRE_ASSISTANT_REASONING_FOR_LOSS:-config} tool_calls=${REQUIRE_ASSISTANT_TOOL_CALLS_FOR_LOSS:-config}"
+fi
+if [ "$CHAT_TEMPLATE_SOURCE" = "tokenizer" ]; then
+  echo "Chat template: tokenizer default"
+else
+  echo "Chat template: $CHAT_TEMPLATE"
+fi
 if [ "$MODEL_SIZE" = "8b" ]; then
   echo "8B text memory path: native_rmsnorm=${QWEN3_VL_TEXT_USE_NATIVE_RMSNORM:-0} disable_mlp_compile=${QWEN3_VL_TEXT_DISABLE_MLP_COMPILE:-0} mlp_chunk_tokens=${QWEN3_VL_TEXT_MLP_CHUNK_TOKENS:-0}"
 fi
@@ -154,7 +178,6 @@ args=(
   --model.attn_implementation "$ATTN_IMPLEMENTATION"
   --model.output_hidden_states "$OUTPUT_HIDDEN_STATES"
   --dataset.raw_root "$TRAIN_RAW_ROOT"
-  --dataset.chat_template_path "$CHAT_TEMPLATE"
   --dataset.sequence_length "$PACK_SIZE"
   --step_scheduler.global_batch_size "$GLOBAL_BATCH_SIZE"
   --step_scheduler.local_batch_size "$LOCAL_BATCH_SIZE"
@@ -180,6 +203,26 @@ args=(
   --checkpoint.v4_compatible "$CHECKPOINT_V4_COMPATIBLE"
 )
 
+if [ -n "$LR_WARMUP_STEPS" ]; then
+  args+=(--lr_scheduler.lr_warmup_steps "$LR_WARMUP_STEPS")
+fi
+
+if [ -n "$OVERLENGTH_STRATEGY" ]; then
+  args+=(--dataset.overlength_strategy "$OVERLENGTH_STRATEGY")
+fi
+
+if [ -n "$REQUIRE_ASSISTANT_REASONING_FOR_LOSS" ]; then
+  args+=(--dataset.require_assistant_reasoning_for_loss "$REQUIRE_ASSISTANT_REASONING_FOR_LOSS")
+fi
+
+if [ -n "$REQUIRE_ASSISTANT_TOOL_CALLS_FOR_LOSS" ]; then
+  args+=(--dataset.require_assistant_tool_calls_for_loss "$REQUIRE_ASSISTANT_TOOL_CALLS_FOR_LOSS")
+fi
+
+if [ "$CHAT_TEMPLATE_SOURCE" != "tokenizer" ]; then
+  args+=(--dataset.chat_template_path "$CHAT_TEMPLATE")
+fi
+
 if [ -n "$RESTORE_FROM" ]; then
   args+=(--checkpoint.restore_from "$RESTORE_FROM")
 fi
@@ -187,9 +230,20 @@ fi
 if [ "$VALIDATION_ENABLED" = "true" ]; then
   args+=(
     --validation_dataset.raw_root "$VAL_RAW_ROOT"
-    --validation_dataset.chat_template_path "$CHAT_TEMPLATE"
     --validation_dataset.sequence_length "$PACK_SIZE"
   )
+  if [ -n "$OVERLENGTH_STRATEGY" ]; then
+    args+=(--validation_dataset.overlength_strategy "$OVERLENGTH_STRATEGY")
+  fi
+  if [ -n "$REQUIRE_ASSISTANT_REASONING_FOR_LOSS" ]; then
+    args+=(--validation_dataset.require_assistant_reasoning_for_loss "$REQUIRE_ASSISTANT_REASONING_FOR_LOSS")
+  fi
+  if [ -n "$REQUIRE_ASSISTANT_TOOL_CALLS_FOR_LOSS" ]; then
+    args+=(--validation_dataset.require_assistant_tool_calls_for_loss "$REQUIRE_ASSISTANT_TOOL_CALLS_FOR_LOSS")
+  fi
+  if [ "$CHAT_TEMPLATE_SOURCE" != "tokenizer" ]; then
+    args+=(--validation_dataset.chat_template_path "$CHAT_TEMPLATE")
+  fi
 fi
 
 if "$VENV_PYTHON" "$AUTOMODEL_BIN" --help 2>&1 | grep -q -- "--nproc-per-node"; then

@@ -77,6 +77,20 @@ def build_vllm_command(config: dict[str, Any], gpu: int, port: int) -> list[str]
     return command
 
 
+def cuda_visible_device_for_gpu(serve: dict[str, Any], gpu: int) -> str:
+    if serve.get("map_gpus_from_cuda_visible_devices"):
+        visible = os.environ.get("CUDA_VISIBLE_DEVICES")
+        if visible:
+            devices = [device.strip() for device in visible.split(",") if device.strip()]
+            if gpu < len(devices):
+                return devices[gpu]
+            raise ValueError(
+                "serve.gpus contains logical index "
+                f"{gpu}, but CUDA_VISIBLE_DEVICES only exposes {len(devices)} device(s): {visible}"
+            )
+    return str(gpu)
+
+
 def wait_health(url: str, timeout_s: float) -> None:
     deadline = time.time() + timeout_s
     last_error = ""
@@ -156,7 +170,7 @@ def main() -> None:
     try:
         for gpu, port in zip(gpus, ports, strict=True):
             env = os.environ.copy()
-            env["CUDA_VISIBLE_DEVICES"] = str(gpu)
+            env["CUDA_VISIBLE_DEVICES"] = cuda_visible_device_for_gpu(serve, gpu)
             command = build_vllm_command(config, gpu, port)
             process = start_process(
                 command,
@@ -168,6 +182,7 @@ def main() -> None:
                 {
                     "kind": "vllm",
                     "gpu": gpu,
+                    "cuda_visible_devices": env["CUDA_VISIBLE_DEVICES"],
                     "port": port,
                     "pid": process.pid,
                     "command": command,

@@ -17,7 +17,13 @@ import numpy as np
 import torch
 from torch.utils.data import IterableDataset, get_worker_info
 
-from .data import RAW_ROOT, discover_raw_files, iter_normalized_examples_from_files
+from .data import (
+    RAW_ROOT,
+    assistant_has_reasoning,
+    assistant_has_valid_tool_calls,
+    discover_raw_files,
+    iter_normalized_examples_from_files,
+)
 
 
 IGNORE_INDEX = -100
@@ -32,7 +38,9 @@ def _rank_world() -> tuple[int, int]:
     return int(os.environ.get("RANK", "0")), int(os.environ.get("WORLD_SIZE", "1"))
 
 
-def load_chat_template(path: str | Path) -> str:
+def load_chat_template(path: str | Path | None) -> str | None:
+    if path is None or str(path).strip() == "":
+        return None
     return Path(path).read_text(encoding="utf-8")
 
 
@@ -50,7 +58,7 @@ def tokenizer_name_or_path(tokenizer: Any) -> str:
     return DEFAULT_MODEL
 
 
-def render_chat(tokenizer: Any, messages: list[dict[str, Any]], tools: Any, chat_template: str) -> str:
+def render_chat(tokenizer: Any, messages: list[dict[str, Any]], tools: Any, chat_template: str | None) -> str:
     kwargs: dict[str, Any] = {
         "conversation": messages,
         "tokenize": False,
@@ -58,6 +66,8 @@ def render_chat(tokenizer: Any, messages: list[dict[str, Any]], tools: Any, chat
     }
     if tools is not None:
         kwargs["tools"] = tools
+    if chat_template is None:
+        return tokenizer.apply_chat_template(**kwargs)
     try:
         return tokenizer.apply_chat_template(chat_template=chat_template, **kwargs)
     except TypeError:
@@ -71,6 +81,25 @@ def render_chat(tokenizer: Any, messages: list[dict[str, Any]], tools: Any, chat
 
 def encode_text(tokenizer: Any, text: str) -> list[int]:
     return tokenizer(text, add_special_tokens=False)["input_ids"]
+
+
+def apply_assistant_loss_policy(
+    example: dict[str, Any],
+    *,
+    require_assistant_reasoning_for_loss: bool = False,
+    require_assistant_tool_calls_for_loss: bool = False,
+) -> dict[str, Any]:
+    if not require_assistant_reasoning_for_loss and not require_assistant_tool_calls_for_loss:
+        return example
+
+    for message in example.get("messages", []):
+        if message.get("role") != "assistant":
+            continue
+        if require_assistant_reasoning_for_loss and not assistant_has_reasoning(message):
+            message["loss"] = False
+        if require_assistant_tool_calls_for_loss and not assistant_has_valid_tool_calls(message):
+            message["loss"] = False
+    return example
 
 
 def tokenize_chat_example(
@@ -219,7 +248,7 @@ class OnlinePackedChatDataset(IterableDataset):
         tokenizer: Any,
         *,
         raw_root: str | Path = RAW_ROOT,
-        chat_template_path: str | Path = DEFAULT_CHAT_TEMPLATE,
+        chat_template_path: str | Path | None = DEFAULT_CHAT_TEMPLATE,
         sequence_length: int = 65536,
         max_rows_per_file: int = 0,
         max_examples: int = 0,
@@ -233,12 +262,14 @@ class OnlinePackedChatDataset(IterableDataset):
         log_every_packs: int = 100,
         shard_rank: int | None = None,
         shard_world_size: int | None = None,
+        require_assistant_reasoning_for_loss: bool = False,
+        require_assistant_tool_calls_for_loss: bool = False,
     ):
         super().__init__()
         self.tokenizer = tokenizer
         self.tokenizer_name_or_path = tokenizer_name_or_path(tokenizer)
         self.raw_root = Path(raw_root)
-        self.chat_template_path = Path(chat_template_path)
+        self.chat_template_path = None if chat_template_path is None or str(chat_template_path).strip() == "" else Path(chat_template_path)
         self.sequence_length = int(sequence_length)
         self.max_rows_per_file = int(max_rows_per_file)
         self.max_examples = int(max_examples)
@@ -252,6 +283,8 @@ class OnlinePackedChatDataset(IterableDataset):
         self.log_every_packs = int(log_every_packs)
         self.shard_rank = None if shard_rank is None else int(shard_rank)
         self.shard_world_size = None if shard_world_size is None else int(shard_world_size)
+        self.require_assistant_reasoning_for_loss = bool(require_assistant_reasoning_for_loss)
+        self.require_assistant_tool_calls_for_loss = bool(require_assistant_tool_calls_for_loss)
         self.chat_template = load_chat_template(self.chat_template_path)
         self._configure_tokenizer()
 
@@ -294,7 +327,7 @@ class OnlinePackedChatDataset(IterableDataset):
         dataset.shard_world_size = int(num_shards)
         return dataset
 
-    def _sharded_files(self, epoch: int) -> tuple[list[Path], int, int, int, int]:
+    def _sharded_files(self, epoch: int) -> tuple[list[Path], int, int, int, int, int | None, int | None]:
         if self.shard_rank is None or self.shard_world_size is None:
             rank, world_size = _rank_world()
         else:
@@ -309,14 +342,16 @@ class OnlinePackedChatDataset(IterableDataset):
         if self.shuffle_files:
             rng = random.Random(self.seed + epoch)
             rng.shuffle(files)
-        return files[shard_id::num_shards], rank, world_size, worker_id, num_workers
+        if len(files) >= num_shards:
+            return files[shard_id::num_shards], rank, world_size, worker_id, num_workers, None, None
+        return files, rank, world_size, worker_id, num_workers, shard_id, num_shards
 
     def __iter__(self) -> Iterator[dict[str, Any]]:
         tokenizer = self._ensure_tokenizer()
         epoch = 0
         emitted_total = 0
         while True:
-            files, rank, _world_size, worker_id, _num_workers = self._sharded_files(epoch)
+            files, rank, _world_size, worker_id, _num_workers, row_shard_id, row_num_shards = self._sharded_files(epoch)
             packer = StreamingTHDPacker(
                 sequence_length=self.sequence_length,
                 pad_token_id=self.pad_token_id,
@@ -324,13 +359,24 @@ class OnlinePackedChatDataset(IterableDataset):
             examples_seen = 0
             packs_emitted = 0
             start_time = time.time()
-            for example in iter_normalized_examples_from_files(
+            for row_idx, example in enumerate(iter_normalized_examples_from_files(
                 files,
                 max_rows_per_file=self.max_rows_per_file,
                 parquet_batch_size=self.parquet_batch_size,
                 max_examples=self.max_examples,
-            ):
+            )):
+                if (
+                    row_shard_id is not None
+                    and row_num_shards is not None
+                    and row_idx % row_num_shards != row_shard_id
+                ):
+                    continue
                 examples_seen += 1
+                example = apply_assistant_loss_policy(
+                    example,
+                    require_assistant_reasoning_for_loss=self.require_assistant_reasoning_for_loss,
+                    require_assistant_tool_calls_for_loss=self.require_assistant_tool_calls_for_loss,
+                )
                 for input_ids, labels in tokenize_chat_example(
                     example,
                     tokenizer,
@@ -382,6 +428,8 @@ def inspect_packer(args: argparse.Namespace) -> int:
         shuffle_files=False,
         repeat=False,
         log_every_packs=0,
+        require_assistant_reasoning_for_loss=args.require_assistant_reasoning_for_loss,
+        require_assistant_tool_calls_for_loss=args.require_assistant_tool_calls_for_loss,
     )
     stats = {
         "packs": 0,
@@ -413,6 +461,8 @@ def parse_args() -> argparse.Namespace:
     inspect.add_argument("--max-examples", type=int, default=64)
     inspect.add_argument("--max-packs", type=int, default=2)
     inspect.add_argument("--overlength-strategy", choices=["split", "truncate", "drop"], default="split")
+    inspect.add_argument("--require-assistant-reasoning-for-loss", action="store_true")
+    inspect.add_argument("--require-assistant-tool-calls-for-loss", action="store_true")
     inspect.add_argument("--local-files-only", action=argparse.BooleanOptionalAction, default=True)
     return parser.parse_args()
 

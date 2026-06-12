@@ -10,6 +10,7 @@ import shutil
 from pathlib import Path
 
 from huggingface_hub import snapshot_download
+from safetensors import safe_open
 
 
 TEXT_PREFIX = "model.language_model."
@@ -43,15 +44,22 @@ def build_view(repo_id: str, output_dir: Path, revision: str | None, local_files
         snapshot_download(
             repo_id,
             revision=revision,
-            allow_patterns=base_patterns,
+            allow_patterns=base_patterns + ["model.safetensors"],
             local_files_only=local_files_only,
         )
     )
     index_path = snapshot / "model.safetensors.index.json"
-    with index_path.open("r", encoding="utf-8") as f:
-        index = json.load(f)
-
-    full_weight_map = index["weight_map"]
+    single_shard_path = snapshot / "model.safetensors"
+    if index_path.exists():
+        with index_path.open("r", encoding="utf-8") as f:
+            index = json.load(f)
+        full_weight_map = index["weight_map"]
+    elif single_shard_path.exists():
+        with safe_open(single_shard_path, framework="pt", device="cpu") as f:
+            full_weight_map = {key: single_shard_path.name for key in f.keys()}
+        index = {"metadata": {"total_size": str(single_shard_path.stat().st_size)}, "weight_map": full_weight_map}
+    else:
+        raise FileNotFoundError(f"no safetensors checkpoint found for {repo_id}")
     text_weight_map = {k: v for k, v in full_weight_map.items() if k.startswith(KEEP_PREFIXES)}
     if not text_weight_map:
         raise RuntimeError(f"no text weights found in {index_path}")

@@ -179,6 +179,20 @@ def normalize_tool_call(call: Any) -> dict[str, Any] | None:
     return {"function": {"name": str(name), "arguments": arguments}}
 
 
+def is_valid_tool_call(call: Any) -> bool:
+    call = parse_jsonish(call)
+    if not isinstance(call, dict):
+        return False
+    function = call.get("function")
+    if not isinstance(function, dict):
+        return False
+    name = function.get("name")
+    if not isinstance(name, str) or not name.strip():
+        return False
+    arguments = parse_jsonish(function.get("arguments", {}))
+    return isinstance(arguments, (dict, list))
+
+
 def normalize_tool_calls(tool_calls: Any) -> list[dict[str, Any]]:
     tool_calls = parse_jsonish(tool_calls)
     if not tool_calls:
@@ -278,6 +292,28 @@ def has_assistant_target(messages: list[dict[str, Any]]) -> bool:
     return any(assistant_has_target(msg) for msg in messages)
 
 
+def assistant_has_reasoning(msg: dict[str, Any]) -> bool:
+    if msg.get("role") != "assistant":
+        return False
+    for key in ("reasoning_content", "reasoning", "thinking", "thought"):
+        value = msg.get(key)
+        if value not in (None, "", [], {}) and text_from_content(value).strip():
+            return True
+    content = str(msg.get("content") or "")
+    start = content.find("<think>")
+    end = content.find("</think>", start + len("<think>"))
+    if start == -1 or end == -1:
+        return False
+    reasoning = content[start + len("<think>") : end]
+    return bool(reasoning.strip())
+
+
+def assistant_has_valid_tool_calls(msg: dict[str, Any]) -> bool:
+    if msg.get("role") != "assistant":
+        return False
+    return any(is_valid_tool_call(call) for call in msg.get("tool_calls") or [])
+
+
 def first_value(row: dict[str, Any], keys: Iterable[str]) -> Any:
     for key in keys:
         value = row.get(key)
@@ -324,7 +360,10 @@ def normalize_row(row: Any) -> dict[str, Any] | None:
     for raw_msg in raw_messages:
         msg = normalize_message(raw_msg)
         if msg is None:
-            return None
+            # Generated trajectory rows can include bookkeeping records such as
+            # {"role": "exit", ...}; they are not part of the model-visible
+            # chat history and cannot be rendered by chat templates.
+            continue
         messages.append(msg)
 
     messages = strip_empty_system_prefix(messages)

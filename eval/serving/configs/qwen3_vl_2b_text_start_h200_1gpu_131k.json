@@ -1,0 +1,54 @@
+{
+  "model": "Qwen/Qwen3-VL-2B-Thinking",
+  "description": "Single-H200-GPU SWE-bench Multilingual serving setup for the Qwen3-VL-2B-Thinking starting checkpoint at 131k context.",
+  "sources": [
+    "https://huggingface.co/Qwen/Qwen3-VL-2B-Thinking",
+    "https://github.com/open-thoughts/OpenThoughts-Agent/blob/main/chat_templates/qwen3_thinking_acc.jinja2"
+  ],
+  "serve": {
+    "gpus": [0],
+    "map_gpus_from_cuda_visible_devices": true,
+    "backend_ports": [8200],
+    "backend_host": "0.0.0.0",
+    "backend_base_url_host": "127.0.0.1",
+    "proxy_host": "0.0.0.0",
+    "proxy_port": 8001,
+    "served_model_name": "Qwen/Qwen3-VL-2B-Thinking",
+    "tensor_parallel_size": 1,
+    "max_model_len": 131072,
+    "gpu_memory_utilization": 0.9,
+    "trust_remote_code": true,
+    "chat_template": "eval/chat_templates/qwen3_thinking_acc.jinja2",
+    "chat_template_content_format": "string",
+    "vllm_args": [
+      "--reasoning-parser",
+      "qwen3",
+      "--enable-auto-tool-choice",
+      "--tool-call-parser",
+      "hermes"
+    ]
+  },
+  "generation": {
+    "temperature": 0.6,
+    "max_tokens": 16384,
+    "extra_body": {
+      "top_p": 0.95,
+      "top_k": 20,
+      "min_p": 0,
+      "presence_penalty": 0
+    }
+  },
+  "benchmarks": {
+    "swebench_multilingual_predictive_30": {
+      "harness": "mini-swe-agent",
+      "generation_workers": 1,
+      "eval_workers": 4,
+      "max_tokens": 16384,
+      "temperature": 0.6
+    }
+  },
+  "notes": [
+    "The SFT recipe trains a local text-only view of this checkpoint, but vLLM 0.19.1 does not expose Qwen3-VL text-only serving or a language-model-only flag.",
+    "Serving uses the full HF checkpoint with text-only prompts and the same OpenThoughts Qwen3 thinking chat template as training."
+  ]
+}
