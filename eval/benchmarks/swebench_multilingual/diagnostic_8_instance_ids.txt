@@ -1,0 +1,8 @@
+briannesbitt__carbon-2752
+burntsushi__ripgrep-2209
+apache__lucene-12196
+apache__druid-16875
+caddyserver__caddy-6350
+babel__babel-15445
+gohugoio__hugo-12204
+astral-sh__ruff-15543

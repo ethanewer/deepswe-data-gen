@@ -95,6 +95,8 @@ PREFETCH_FACTOR="${PREFETCH_FACTOR:-2}"
 OVERLENGTH_STRATEGY="${OVERLENGTH_STRATEGY:-}"
 REQUIRE_ASSISTANT_REASONING_FOR_LOSS="${REQUIRE_ASSISTANT_REASONING_FOR_LOSS:-}"
 REQUIRE_ASSISTANT_TOOL_CALLS_FOR_LOSS="${REQUIRE_ASSISTANT_TOOL_CALLS_FOR_LOSS:-}"
+DROP_ASSISTANT_CONTENT_FOR_TOOL_CALLS="${DROP_ASSISTANT_CONTENT_FOR_TOOL_CALLS:-}"
+ASSISTANT_LOSS_TARGET="${ASSISTANT_LOSS_TARGET:-}"
 ENABLE_COMPILE="${ENABLE_COMPILE:-$DEFAULT_ENABLE_COMPILE}"
 ACTIVATION_CHECKPOINTING="${ACTIVATION_CHECKPOINTING:-true}"
 ENABLE_FSDP2_PREFETCH="${ENABLE_FSDP2_PREFETCH:-true}"
@@ -142,6 +144,9 @@ if [ -n "$OVERLENGTH_STRATEGY" ]; then
 fi
 if [ -n "$REQUIRE_ASSISTANT_REASONING_FOR_LOSS" ] || [ -n "$REQUIRE_ASSISTANT_TOOL_CALLS_FOR_LOSS" ]; then
   echo "Assistant loss requirements: reasoning=${REQUIRE_ASSISTANT_REASONING_FOR_LOSS:-config} tool_calls=${REQUIRE_ASSISTANT_TOOL_CALLS_FOR_LOSS:-config}"
+fi
+if [ -n "$DROP_ASSISTANT_CONTENT_FOR_TOOL_CALLS" ] || [ -n "$ASSISTANT_LOSS_TARGET" ]; then
+  echo "Assistant tool-call loss shaping: drop_content=${DROP_ASSISTANT_CONTENT_FOR_TOOL_CALLS:-config} target=${ASSISTANT_LOSS_TARGET:-config}"
 fi
 if [ "$CHAT_TEMPLATE_SOURCE" = "tokenizer" ]; then
   echo "Chat template: tokenizer default"
@@ -219,6 +224,14 @@ if [ -n "$REQUIRE_ASSISTANT_TOOL_CALLS_FOR_LOSS" ]; then
   args+=(--dataset.require_assistant_tool_calls_for_loss "$REQUIRE_ASSISTANT_TOOL_CALLS_FOR_LOSS")
 fi
 
+if [ -n "$DROP_ASSISTANT_CONTENT_FOR_TOOL_CALLS" ]; then
+  args+=(--dataset.drop_assistant_content_for_tool_calls "$DROP_ASSISTANT_CONTENT_FOR_TOOL_CALLS")
+fi
+
+if [ -n "$ASSISTANT_LOSS_TARGET" ]; then
+  args+=(--dataset.assistant_loss_target "$ASSISTANT_LOSS_TARGET")
+fi
+
 if [ "$CHAT_TEMPLATE_SOURCE" != "tokenizer" ]; then
   args+=(--dataset.chat_template_path "$CHAT_TEMPLATE")
 fi
@@ -240,6 +253,12 @@ if [ "$VALIDATION_ENABLED" = "true" ]; then
   fi
   if [ -n "$REQUIRE_ASSISTANT_TOOL_CALLS_FOR_LOSS" ]; then
     args+=(--validation_dataset.require_assistant_tool_calls_for_loss "$REQUIRE_ASSISTANT_TOOL_CALLS_FOR_LOSS")
+  fi
+  if [ -n "$DROP_ASSISTANT_CONTENT_FOR_TOOL_CALLS" ]; then
+    args+=(--validation_dataset.drop_assistant_content_for_tool_calls "$DROP_ASSISTANT_CONTENT_FOR_TOOL_CALLS")
+  fi
+  if [ -n "$ASSISTANT_LOSS_TARGET" ]; then
+    args+=(--validation_dataset.assistant_loss_target "$ASSISTANT_LOSS_TARGET")
   fi
   if [ "$CHAT_TEMPLATE_SOURCE" != "tokenizer" ]; then
     args+=(--validation_dataset.chat_template_path "$CHAT_TEMPLATE")
