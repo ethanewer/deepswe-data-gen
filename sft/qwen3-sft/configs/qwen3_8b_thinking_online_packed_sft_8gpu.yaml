@@ -1,9 +1,15 @@
-# Full-parameter BF16 SFT for the text tower of Qwen/Qwen3-VL-8B-Thinking.
+# Full-parameter BF16 SFT for the text tower of Qwen/Qwen3-VL-8B-Thinking
+# on the SWE260612 mini-swe-agent-aligned prefix-weighted data.
 #
 # The local runner builds data/qwen3_vl_8b_text_checkpoint as a filtered
 # safetensors view containing only model.language_model.* and lm_head.*.  The
 # Automodel registry maps Qwen3VLForConditionalGeneration to a text-only causal
 # LM wrapper, so the vision encoder is neither constructed nor loaded.
+#
+# This mirrors the active Qwen3-4B SWE recipe: online packing at 65k, the
+# qwen3_thinking_acc.jinja2 chat template, assistant-turn loss with tool-call
+# content dropped, and guards against supervising manual patch writes or submits
+# whose patch content was not verified from git diff output.
 
 recipe: TrainFinetuneRecipeForNextTokenPrediction
 
@@ -12,9 +18,9 @@ step_scheduler:
   # With 8 GPUs and 2 grad accum steps: 16 * 65,536 = 1,048,576 tokens/global update.
   global_batch_size: 16
   local_batch_size: 1
-  ckpt_every_steps: 1000
+  ckpt_every_steps: 50
   val_every_steps: 1000
-  max_steps: 1000
+  max_steps: 200
 
 dist_env:
   backend: nccl
@@ -43,8 +49,8 @@ fp8:
   enabled: false
 
 checkpoint:
-  enabled: false
-  checkpoint_dir: checkpoints/qwen3_8b_thinking_online_packed_sft/
+  enabled: true
+  checkpoint_dir: checkpoints/qwen3_8b_thinking_swe260612_prefix_weighted_v6_taintguard_65k_assistant_sft/
   model_save_format: torch_save
   save_consolidated: false
 
@@ -71,7 +77,7 @@ loss_fn:
 
 dataset:
   _target_: qwen_agentic_sft.online_packed_dataset.OnlinePackedChatDataset
-  raw_root: /wbl-fast/usrs/ee/code-swe-data/data/code-swe-terminal-agentic-sft
+  raw_root: /wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260612/qwen3-4b-thinking-prefix-weighted-v3-emptydiffx4-mix
   chat_template_path: /wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/eval/chat_templates/qwen3_thinking_acc.jinja2
   sequence_length: 65536
   max_rows_per_file: 0
@@ -83,6 +89,12 @@ dataset:
   seed: 33333
   repeat: true
   log_every_packs: 100
+  require_assistant_reasoning_for_loss: true
+  require_assistant_tool_calls_for_loss: true
+  drop_assistant_content_for_tool_calls: true
+  assistant_loss_target: assistant
+  reject_manual_patch_targets: true
+  reject_unverified_submit_targets: true
 
 dataloader:
   _target_: torchdata.stateful_dataloader.StatefulDataLoader
@@ -110,6 +122,12 @@ validation_dataset:
   seed: 33333
   repeat: false
   log_every_packs: 0
+  require_assistant_reasoning_for_loss: true
+  require_assistant_tool_calls_for_loss: true
+  drop_assistant_content_for_tool_calls: true
+  assistant_loss_target: assistant
+  reject_manual_patch_targets: true
+  reject_unverified_submit_targets: true
 
 validation_dataloader:
   _target_: torchdata.stateful_dataloader.StatefulDataLoader
@@ -127,10 +145,11 @@ optimizer:
   _target_: torch.optim.AdamW
   betas: [0.9, 0.95]
   eps: 1.0e-8
-  lr: 1.0e-5
+  lr: 1.0e-6
   weight_decay: 0.01
   fused: true
 
 lr_scheduler:
   lr_decay_style: cosine
-  min_lr: 1.0e-6
+  lr_warmup_steps: 10
+  min_lr: 1.0e-7
