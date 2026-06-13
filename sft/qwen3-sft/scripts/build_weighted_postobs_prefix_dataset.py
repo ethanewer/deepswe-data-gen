@@ -24,6 +24,7 @@ from typing import Any
 INSPECT_CATS = {"cat", "search", "view"}
 EDIT_CATS = {"edit_shell", "edit_python"}
 HIGH_VALUE_CATS = EDIT_CATS | {"diff", "test", "submit"}
+MINI_SWE_SUBMIT_COMMAND = "echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && cat patch.txt"
 
 
 def json_dumps(value: Any) -> str:
@@ -57,6 +58,35 @@ def command_from_assistant(message: dict[str, Any]) -> str:
     if not isinstance(args, dict):
         return ""
     return str(args.get("command") or "")
+
+
+def set_assistant_command(message: dict[str, Any], command: str) -> None:
+    calls = message.get("tool_calls") or []
+    if not calls or not isinstance(calls[0], dict):
+        return
+    function = calls[0].setdefault("function", {})
+    args = function.get("arguments", {})
+    if isinstance(args, str):
+        try:
+            parsed = json.loads(args)
+        except json.JSONDecodeError:
+            function["arguments"] = json.dumps({"command": command}, ensure_ascii=False)
+            return
+        if not isinstance(parsed, dict):
+            parsed = {}
+        parsed["command"] = command
+        function["arguments"] = json.dumps(parsed, ensure_ascii=False)
+        return
+    if not isinstance(args, dict):
+        args = {}
+        function["arguments"] = args
+    args["command"] = command
+
+
+def normalize_target_command(command: str) -> str:
+    if "complete_task_and_submit_final_output" in command.lower():
+        return MINI_SWE_SUBMIT_COMMAND
+    return command
 
 
 def target_message_index(messages: list[dict[str, Any]]) -> int | None:
@@ -131,9 +161,13 @@ def bad_target_command(command: str) -> bool:
     text = command.lower()
     if "/path/to/" in text or "placeholder" in text:
         return True
-    if "patch.txt" in text and "git diff" not in text:
+    if "patch.txt" in text:
         patch_write_markers = ("cat >", "tee ", "echo ", "printf ")
-        if any(marker in text for marker in patch_write_markers):
+        writes_patch = any(marker in text for marker in patch_write_markers)
+        manual_diff_markers = ("diff --git", "--- /dev/null", "new file mode", "index 0000000")
+        if writes_patch and any(marker in text for marker in manual_diff_markers):
+            return True
+        if writes_patch and "git diff" not in text:
             return True
     return False
 
@@ -187,7 +221,9 @@ def row_weight(
 def annotate_row(
     row: dict[str, Any],
     *,
+    target_idx: int,
     target_command: str,
+    raw_target_command: str,
     previous_command: str,
     target_cat: str,
     prev_cat: str,
@@ -196,6 +232,9 @@ def annotate_row(
     reason: str,
 ) -> dict[str, Any]:
     emitted = copy.deepcopy(row)
+    messages = emitted.get("messages") or []
+    if 0 <= target_idx < len(messages):
+        set_assistant_command(messages[target_idx], target_command)
     metadata = emitted.setdefault("metadata", {})
     metadata["v21_selection"] = {
         "previous_command": previous_command,
@@ -206,6 +245,8 @@ def annotate_row(
         "weight": weight,
         "reason": reason,
     }
+    if raw_target_command != target_command:
+        metadata["v21_selection"]["raw_target_command"] = raw_target_command
     return emitted
 
 
@@ -230,7 +271,8 @@ def build_source(source: Path, output_source: Path, seed: int) -> dict[str, Any]
                     stats["drop_missing_target"] += 1
                     continue
 
-                target_command = command_from_assistant(messages[target_idx])
+                raw_target_command = command_from_assistant(messages[target_idx])
+                target_command = normalize_target_command(raw_target_command)
                 previous_command = previous_assistant_command(messages, target_idx)
                 target_turn = sum(1 for message in messages[: target_idx + 1] if message.get("role") == "assistant") - 1
                 source_name = (
@@ -258,7 +300,9 @@ def build_source(source: Path, output_source: Path, seed: int) -> dict[str, Any]
                     rows.append(
                         annotate_row(
                             row,
+                            target_idx=target_idx,
                             target_command=target_command,
+                            raw_target_command=raw_target_command,
                             previous_command=previous_command,
                             target_cat=target_cat,
                             prev_cat=prev_cat,
