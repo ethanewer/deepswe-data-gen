@@ -8,8 +8,9 @@
 #
 # This mirrors the active Qwen3-4B SWE recipe: online packing at 65k, the
 # qwen3_thinking_acc.jinja2 chat template, assistant-turn loss with tool-call
-# content dropped, and guards against supervising manual patch writes or submits
-# whose patch content was not verified from git diff output.
+# content dropped, and guards against supervising manual patch writes, submits
+# whose patch content was not verified from git diff output, or turns after a
+# terminal submit command.
 
 recipe: TrainFinetuneRecipeForNextTokenPrediction
 
@@ -18,9 +19,9 @@ step_scheduler:
   # With 8 GPUs and 2 grad accum steps: 16 * 65,536 = 1,048,576 tokens/global update.
   global_batch_size: 16
   local_batch_size: 1
-  ckpt_every_steps: 50
+  ckpt_every_steps: 100
   val_every_steps: 1000
-  max_steps: 200
+  max_steps: 300
 
 dist_env:
   backend: nccl
@@ -50,7 +51,7 @@ fp8:
 
 checkpoint:
   enabled: true
-  checkpoint_dir: checkpoints/qwen3_8b_thinking_swe260612_prefix_weighted_v6_taintguard_65k_assistant_sft/
+  checkpoint_dir: checkpoints/qwen3_8b_thinking_swe260612_prefix_weighted_v7_terminalguard_65k_assistant_sft/
   model_save_format: torch_save
   save_consolidated: false
 
