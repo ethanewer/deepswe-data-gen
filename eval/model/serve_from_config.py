@@ -91,6 +91,29 @@ def cuda_visible_device_for_gpu(serve: dict[str, Any], gpu: int) -> str:
     return str(gpu)
 
 
+def vllm_port_for_backend(serve: dict[str, Any], backend_index: int, http_port: int) -> int:
+    explicit_ports = serve.get("vllm_ports")
+    if explicit_ports is not None:
+        return int(explicit_ports[backend_index])
+
+    stride = int(serve.get("vllm_port_stride", 100))
+    if stride < 1:
+        raise ValueError(f"vllm_port_stride must be positive; got {stride}")
+    explicit_base = serve.get("vllm_port_base")
+    if explicit_base is not None:
+        return int(explicit_base) + backend_index * stride
+
+    candidate = http_port + 10_000 + backend_index * (stride - 1)
+    if 1_024 <= candidate <= 65_535:
+        return candidate
+
+    candidate = http_port - 10_000 - backend_index * (stride - 1)
+    if 1_024 <= candidate <= 65_535:
+        return candidate
+
+    raise ValueError(f"Could not derive a valid VLLM_PORT from backend port {http_port}")
+
+
 def wait_health(url: str, timeout_s: float) -> None:
     deadline = time.time() + timeout_s
     last_error = ""
@@ -168,9 +191,10 @@ def main() -> None:
     }
 
     try:
-        for gpu, port in zip(gpus, ports, strict=True):
+        for backend_index, (gpu, port) in enumerate(zip(gpus, ports, strict=True)):
             env = os.environ.copy()
             env["CUDA_VISIBLE_DEVICES"] = cuda_visible_device_for_gpu(serve, gpu)
+            env["VLLM_PORT"] = str(vllm_port_for_backend(serve, backend_index, int(port)))
             command = build_vllm_command(config, gpu, port)
             process = start_process(
                 command,
@@ -184,6 +208,7 @@ def main() -> None:
                     "gpu": gpu,
                     "cuda_visible_devices": env["CUDA_VISIBLE_DEVICES"],
                     "port": port,
+                    "vllm_port": env["VLLM_PORT"],
                     "pid": process.pid,
                     "command": command,
                     "log": str(run_dir / f"vllm-gpu{gpu}-port{port}.log"),
