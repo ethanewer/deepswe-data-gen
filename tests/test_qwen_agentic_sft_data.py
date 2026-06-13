@@ -300,3 +300,46 @@ def test_loss_policy_taints_absolute_patch_txt_manual_write() -> None:
 
     assert filtered["messages"][1]["loss"] is False
     assert filtered["messages"][5]["loss"] is False
+
+
+def test_loss_policy_masks_turns_after_submit() -> None:
+    example = {
+        "messages": [
+            {"role": "user", "content": "Fix the bug."},
+            {
+                "role": "assistant",
+                "reasoning": "I should submit the patch.",
+                "tool_calls": [
+                    {
+                        "function": {
+                            "name": "bash",
+                            "arguments": {"command": "echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && cat patch.txt"},
+                        }
+                    }
+                ],
+            },
+            {"role": "tool", "content": "<returncode>1</returncode><output>cat: patch.txt: No such file</output>"},
+            {
+                "role": "assistant",
+                "reasoning": "I need to create the patch file now.",
+                "tool_calls": [{"function": {"name": "bash", "arguments": {"command": "git diff -- foo.py > patch.txt"}}}],
+            },
+            {"role": "tool", "content": "<returncode>0</returncode><output></output>"},
+            {
+                "role": "assistant",
+                "reasoning": "I should inspect the patch.",
+                "tool_calls": [{"function": {"name": "bash", "arguments": {"command": "cat patch.txt"}}}],
+            },
+        ]
+    }
+
+    filtered = apply_assistant_loss_policy(
+        example,
+        require_assistant_reasoning_for_loss=True,
+        require_assistant_tool_calls_for_loss=True,
+        reject_unverified_submit_targets=True,
+    )
+
+    assert filtered["messages"][1]["loss"] is False
+    assert filtered["messages"][3]["loss"] is False
+    assert filtered["messages"][5]["loss"] is False
