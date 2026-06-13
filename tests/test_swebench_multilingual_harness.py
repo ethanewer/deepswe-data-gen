@@ -162,6 +162,10 @@ def test_docker_evaluation_env_starts_stdio_proxy_when_sdk_socket_is_unusable(
     env = {"SWEBENCH_DOCKER_PROXY_DIR": str(tmp_path)}
     with run.docker_evaluation_env(env, tmp_path):
         assert env["DOCKER_HOST"] == f"unix://{tmp_path / 'proxy' / 'docker.sock'}"
+        assert env["SWEBENCH_DOCKER_TIMEOUT"] == "300"
+        assert str(run.SUBSET_DIR / "docker_sdk_sitecustomize") in env[
+            "PYTHONPATH"
+        ].split(run.os.pathsep)
 
     assert events == [
         ("start", tmp_path / "proxy" / "docker.sock"),

@@ -268,6 +268,14 @@ class DockerStdioProxy:
 
 @contextlib.contextmanager
 def docker_evaluation_env(env: dict[str, str], output_dir: Path):
+    docker_patch_path = SUBSET_DIR / "docker_sdk_sitecustomize"
+    env["PYTHONPATH"] = (
+        str(docker_patch_path)
+        if not env.get("PYTHONPATH")
+        else f"{docker_patch_path}{os.pathsep}{env['PYTHONPATH']}"
+    )
+    env.setdefault("SWEBENCH_DOCKER_TIMEOUT", "300")
+
     if env.get("SWEBENCH_DOCKER_STDIO_PROXY") == "0" or docker_sdk_usable(env):
         yield
         return
