@@ -3,9 +3,9 @@ set -euo pipefail
 
 export CONFIG="${CONFIG:-configs/qwen3_4b_thinking_swe260612_highquality_65k_online_packed_sft_8gpu.yaml}"
 export MODEL="${MODEL:-Qwen/Qwen3-4B-Thinking-2507}"
-export TRAIN_RAW_ROOT="${TRAIN_RAW_ROOT:-/wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260612/qwen3-4b-thinking-prefix-weighted-v2-emptydiff-mix}"
-export CHECKPOINT_DIR="${CHECKPOINT_DIR:-checkpoints/qwen3_4b_thinking_swe260612_prefix_weighted_v2_emptydiff_65k_toolcalls_sft/}"
-export RUN_NAME="${RUN_NAME:-qwen3_4b_thinking_swe260612_prefix_weighted_v2_emptydiff_65k_toolcalls_sft}"
+export TRAIN_RAW_ROOT="${TRAIN_RAW_ROOT:-/wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260612/qwen3-4b-thinking-prefix-weighted-v3-emptydiffx4-mix}"
+export CHECKPOINT_DIR="${CHECKPOINT_DIR:-checkpoints/qwen3_4b_thinking_swe260612_prefix_weighted_v3_emptydiffx4_65k_assistant_sft/}"
+export RUN_NAME="${RUN_NAME:-qwen3_4b_thinking_swe260612_prefix_weighted_v3_emptydiffx4_65k_assistant_sft}"
 
 export PACK_SIZE="${PACK_SIZE:-65536}"
 export LOCAL_BATCH_SIZE="${LOCAL_BATCH_SIZE:-2}"
@@ -14,8 +14,8 @@ export MAX_STEPS="${MAX_STEPS:-200}"
 export CKPT_EVERY_STEPS="${CKPT_EVERY_STEPS:-50}"
 export VAL_EVERY_STEPS="${VAL_EVERY_STEPS:-1000}"
 
-export LR="${LR:-1.0e-6}"
-export MIN_LR="${MIN_LR:-1.0e-7}"
+export LR="${LR:-1.5e-6}"
+export MIN_LR="${MIN_LR:-1.5e-7}"
 export LR_WARMUP_STEPS="${LR_WARMUP_STEPS:-10}"
 
 export CHECKPOINT_ENABLED="${CHECKPOINT_ENABLED:-true}"
@@ -33,7 +33,7 @@ export OVERLENGTH_STRATEGY="${OVERLENGTH_STRATEGY:-split}"
 export REQUIRE_ASSISTANT_REASONING_FOR_LOSS="${REQUIRE_ASSISTANT_REASONING_FOR_LOSS:-true}"
 export REQUIRE_ASSISTANT_TOOL_CALLS_FOR_LOSS="${REQUIRE_ASSISTANT_TOOL_CALLS_FOR_LOSS:-true}"
 export DROP_ASSISTANT_CONTENT_FOR_TOOL_CALLS="${DROP_ASSISTANT_CONTENT_FOR_TOOL_CALLS:-true}"
-export ASSISTANT_LOSS_TARGET="${ASSISTANT_LOSS_TARGET:-tool_calls}"
+export ASSISTANT_LOSS_TARGET="${ASSISTANT_LOSS_TARGET:-assistant}"
 export NUM_WORKERS="${NUM_WORKERS:-2}"
 export PREFETCH_FACTOR="${PREFETCH_FACTOR:-2}"
 
