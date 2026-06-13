@@ -34,8 +34,13 @@ def iter_jsonl_files(root: Path) -> list[Path]:
     return sorted(root.rglob("*.jsonl"))
 
 
-def source_dirs(root: Path) -> list[Path]:
-    return sorted(path for path in root.iterdir() if path.is_dir())
+def source_roots(root: Path) -> list[Path]:
+    dirs = sorted(path for path in root.iterdir() if path.is_dir())
+    if dirs:
+        return dirs
+    if iter_jsonl_files(root):
+        return [root]
+    return []
 
 
 def command_from_assistant(message: dict[str, Any]) -> str:
@@ -124,7 +129,13 @@ def stable_fraction(*parts: object) -> float:
 
 def bad_target_command(command: str) -> bool:
     text = command.lower()
-    return "/path/to/" in text or "placeholder" in text
+    if "/path/to/" in text or "placeholder" in text:
+        return True
+    if "patch.txt" in text and "git diff" not in text:
+        patch_write_markers = ("cat >", "tee ", "echo ", "printf ")
+        if any(marker in text for marker in patch_write_markers):
+            return True
+    return False
 
 
 def row_weight(
@@ -294,7 +305,7 @@ def main() -> int:
 
     summaries = [
         build_source(source, args.output_root / source.name.replace("_v17", "_v21"), args.seed)
-        for source in source_dirs(args.input_root)
+        for source in source_roots(args.input_root)
     ]
     input_manifest = args.input_root / "manifest.json"
     manifest: dict[str, Any] = {

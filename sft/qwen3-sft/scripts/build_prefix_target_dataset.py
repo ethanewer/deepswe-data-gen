@@ -24,8 +24,13 @@ def iter_jsonl_files(root: Path) -> list[Path]:
     return sorted(root.rglob("*.jsonl"))
 
 
-def source_dirs(root: Path) -> list[Path]:
-    return sorted(path for path in root.iterdir() if path.is_dir())
+def source_roots(root: Path) -> list[Path]:
+    dirs = sorted(path for path in root.iterdir() if path.is_dir())
+    if dirs:
+        return dirs
+    if iter_jsonl_files(root):
+        return [root]
+    return []
 
 
 def assistant_indices(messages: list[dict[str, Any]]) -> list[int]:
@@ -42,7 +47,6 @@ def normalize_prefix_messages(messages: list[dict[str, Any]], target_idx: int) -
             message.pop("trainable", None)
             message.pop("loss", None)
         else:
-            message.pop("reasoning_content", None)
             message["trainable"] = False
     return prefix
 
@@ -108,7 +112,7 @@ def main() -> int:
 
     summaries = [
         convert_source(source, args.output_root / source.name.replace("_v12", "_prefix_v13"), args.max_assistant_turns)
-        for source in source_dirs(args.input_root)
+        for source in source_roots(args.input_root)
     ]
     manifest = {
         "input_root": str(args.input_root),
