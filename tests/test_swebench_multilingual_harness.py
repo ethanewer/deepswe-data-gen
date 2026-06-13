@@ -135,6 +135,35 @@ def test_build_evaluation_command_uses_multilingual_dataset(tmp_path: Path):
     assert command[command.index("--predictions_path") + 1] == str(tmp_path / "preds.json")
 
 
+def test_docker_evaluation_env_starts_stdio_proxy_when_sdk_socket_is_unusable(
+    tmp_path: Path, monkeypatch
+):
+    calls = iter([False, True])
+    events = []
+
+    class FakeProxy:
+        def __init__(self, socket_path: Path):
+            self.socket_path = socket_path
+
+        def start(self):
+            events.append(("start", self.socket_path))
+
+        def stop(self):
+            events.append(("stop", self.socket_path))
+
+    monkeypatch.setattr(run, "docker_sdk_usable", lambda env: next(calls))
+    monkeypatch.setattr(run, "DockerStdioProxy", FakeProxy)
+
+    env = {}
+    with run.docker_evaluation_env(env, tmp_path):
+        assert env["DOCKER_HOST"] == f"unix://{tmp_path / '.docker-stdio-proxy' / 'docker.sock'}"
+
+    assert events == [
+        ("start", tmp_path / ".docker-stdio-proxy" / "docker.sock"),
+        ("stop", tmp_path / ".docker-stdio-proxy" / "docker.sock"),
+    ]
+
+
 def test_resolve_cli_paths_anchors_relative_paths_to_invocation_cwd(
     tmp_path: Path, monkeypatch
 ):

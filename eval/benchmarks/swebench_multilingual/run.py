@@ -5,12 +5,15 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import contextlib
 import json
 import os
 import re
 import shlex
 import shutil
+import socket
 import subprocess
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -34,6 +37,7 @@ OPENCODE_DEFAULT_COMMAND = "npx --yes opencode-ai"
 OPENCODE_DEFAULT_CONTEXT_LIMIT = 128000
 OPENCODE_MIN_OUTPUT_LIMIT = 8192
 OPENCODE_BENCHMARK_AGENT = "swebench"
+DOCKER_CLI = os.environ.get("DOCKER_CLI", "/usr/bin/docker")
 OPENCODE_OPTIONAL_SUBMODULES_TO_SKIP = {
     "sharkdp/bat": {
         # These syntax bundle repositories are unavailable at older bat base
@@ -133,6 +137,151 @@ def default_env() -> dict[str, str]:
     env = os.environ.copy()
     configure_ca_bundle(env)
     return env
+
+
+def docker_sdk_usable(env: dict[str, str]) -> bool:
+    try:
+        import docker
+
+        client = docker.from_env(timeout=3, environment=env)
+        client.ping()
+    except Exception:
+        return False
+    return True
+
+
+class DockerStdioProxy:
+    """Expose Docker CLI stdio transport through a user-owned Unix socket."""
+
+    def __init__(self, socket_path: Path):
+        self.socket_path = socket_path
+        self._server: socket.socket | None = None
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._connections: list[socket.socket] = []
+
+    def start(self) -> None:
+        self.socket_path.parent.mkdir(parents=True, exist_ok=True)
+        self.socket_path.unlink(missing_ok=True)
+        server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        server.bind(str(self.socket_path))
+        server.listen()
+        server.settimeout(0.5)
+        self._server = server
+        self._thread = threading.Thread(target=self._serve, daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._server is not None:
+            with contextlib.suppress(OSError):
+                self._server.close()
+        for conn in self._connections:
+            with contextlib.suppress(OSError):
+                conn.close()
+        if self._thread is not None:
+            self._thread.join(timeout=2)
+        self.socket_path.unlink(missing_ok=True)
+
+    def _serve(self) -> None:
+        assert self._server is not None
+        while not self._stop.is_set():
+            try:
+                conn, _ = self._server.accept()
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+            self._connections.append(conn)
+            threading.Thread(target=self._handle, args=(conn,), daemon=True).start()
+
+    def _handle(self, conn: socket.socket) -> None:
+        env = os.environ.copy()
+        env.pop("DOCKER_HOST", None)
+        proc = subprocess.Popen(
+            [DOCKER_CLI, "system", "dial-stdio"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+        )
+        assert proc.stdin is not None
+        assert proc.stdout is not None
+        assert proc.stderr is not None
+        to_proc = threading.Thread(
+            target=self._socket_to_pipe, args=(conn, proc.stdin), daemon=True
+        )
+        from_proc = threading.Thread(
+            target=self._pipe_to_socket, args=(proc.stdout, conn), daemon=True
+        )
+        stderr = threading.Thread(target=self._drain_stderr, args=(proc,), daemon=True)
+        to_proc.start()
+        from_proc.start()
+        stderr.start()
+        to_proc.join()
+        from_proc.join()
+        with contextlib.suppress(Exception):
+            proc.terminate()
+        with contextlib.suppress(Exception):
+            proc.wait(timeout=2)
+        with contextlib.suppress(OSError):
+            conn.close()
+
+    @staticmethod
+    def _socket_to_pipe(src: socket.socket, dst) -> None:
+        try:
+            while True:
+                data = src.recv(65536)
+                if not data:
+                    break
+                dst.write(data)
+                dst.flush()
+        except Exception:
+            pass
+        finally:
+            with contextlib.suppress(Exception):
+                dst.close()
+
+    @staticmethod
+    def _pipe_to_socket(src, dst: socket.socket) -> None:
+        try:
+            while True:
+                data = os.read(src.fileno(), 65536)
+                if not data:
+                    break
+                dst.sendall(data)
+        except Exception:
+            pass
+        finally:
+            with contextlib.suppress(OSError):
+                dst.shutdown(socket.SHUT_WR)
+
+    @staticmethod
+    def _drain_stderr(proc: subprocess.Popen) -> None:
+        assert proc.stderr is not None
+        for line in proc.stderr:
+            text = line.decode(errors="replace").strip()
+            if text:
+                print(f"[docker-stdio-proxy] {text}", flush=True)
+
+
+@contextlib.contextmanager
+def docker_evaluation_env(env: dict[str, str], output_dir: Path):
+    if env.get("SWEBENCH_DOCKER_STDIO_PROXY") == "0" or docker_sdk_usable(env):
+        yield
+        return
+
+    proxy = DockerStdioProxy(output_dir / ".docker-stdio-proxy" / "docker.sock")
+    proxy.start()
+    env["DOCKER_HOST"] = f"unix://{proxy.socket_path}"
+    print(f"Started Docker stdio proxy at {proxy.socket_path}", flush=True)
+    if not docker_sdk_usable(env):
+        proxy.stop()
+        raise RuntimeError("Docker SDK could not access Docker directly or via stdio proxy")
+    try:
+        yield
+    finally:
+        proxy.stop()
 
 
 def run_capture_json(cmd: list[str], env: dict[str, str], cwd: Path = REPO_ROOT) -> dict[str, Any]:
@@ -1643,7 +1792,8 @@ def main() -> None:
         evaluation_cmd = build_evaluation_command(
             python, predictions_path, instance_ids, args.eval_workers, run_id, defaults
         )
-        run(evaluation_cmd, evaluation_env)
+        with docker_evaluation_env(evaluation_env, output_dir):
+            run(evaluation_cmd, evaluation_env)
 
 
 if __name__ == "__main__":
