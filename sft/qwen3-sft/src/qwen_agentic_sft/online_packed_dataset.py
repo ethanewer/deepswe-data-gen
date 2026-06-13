@@ -103,7 +103,8 @@ def assistant_reasoning_from_content(message: dict[str, Any]) -> str:
 def drop_assistant_content_preserving_reasoning(message: dict[str, Any]) -> None:
     reasoning = assistant_reasoning_from_content(message)
     if reasoning:
-        message["content"] = f"{THINK_OPEN}{reasoning}{THINK_CLOSE}"
+        message["reasoning_content"] = reasoning
+        message["content"] = ""
     else:
         message["content"] = ""
 
