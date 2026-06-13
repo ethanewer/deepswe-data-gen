@@ -43,10 +43,10 @@ export GRAD_ACCUM_STEPS="${GRAD_ACCUM_STEPS:-4}"
 export GLOBAL_BATCH_SIZE="${GLOBAL_BATCH_SIZE:-16}"
 export PYTORCH_ALLOC_CONF="${PYTORCH_ALLOC_CONF:-expandable_segments:True}"
 
-export CHECKPOINT_DIR="${CHECKPOINT_DIR:-checkpoints/qwen3_4b_thinking_swe260612_highquality_65k_toolcall_only_h200_4gpu_sft/}"
-export RUN_NAME="${RUN_NAME:-qwen3_4b_thinking_swe260612_highquality_65k_toolcall_only_h200_4gpu_sft}"
+export CHECKPOINT_DIR="${CHECKPOINT_DIR:-checkpoints/qwen3_4b_thinking_swe260612_miniswe_aligned_65k_toolcall_only_h200_4gpu_sft/}"
+export RUN_NAME="${RUN_NAME:-qwen3_4b_thinking_swe260612_miniswe_aligned_65k_toolcall_only_h200_4gpu_sft}"
 export CKPT_EVERY_STEPS="${CKPT_EVERY_STEPS:-50}"
-export MAX_STEPS="${MAX_STEPS:-300}"
+export MAX_STEPS="${MAX_STEPS:-600}"
 
 export MASTER_ADDR="${MASTER_ADDR:-127.0.0.1}"
 export MASTER_PORT="${MASTER_PORT:-$((20000 + (${SLURM_JOB_ID:-0} % 20000)))}"

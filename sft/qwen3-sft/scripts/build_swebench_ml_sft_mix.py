@@ -1801,18 +1801,25 @@ def rewrite_json_command_prompt(content: str) -> tuple[str, bool]:
 
 
 def extract_task_text(content: str) -> str:
-    start_tag = "<pr_description>"
-    end_tag = "</pr_description>"
-    if start_tag in content and end_tag in content:
-        start = content.find(start_tag) + len(start_tag)
-        end = content.find(end_tag, start)
-        inner = content[start:end].strip()
-        if inner.startswith("Consider the following PR description:"):
-            inner = inner.split("Consider the following PR description:", 1)[1].strip()
-        if inner:
-            return inner
+    for start_tag, end_tag in (
+        ("<pr_description>", "</pr_description>"),
+        ("<issue_description>", "</issue_description>"),
+        ("<issue>", "</issue>"),
+    ):
+        if start_tag in content and end_tag in content:
+            start = content.find(start_tag) + len(start_tag)
+            end = content.find(end_tag, start)
+            inner = content[start:end].strip()
+            if inner.startswith("Consider the following PR description:"):
+                inner = inner.split("Consider the following PR description:", 1)[1].strip()
+            if inner:
+                return inner
     if "Task Description:" in content:
         task = content.split("Task Description:", 1)[1].strip()
+        if task:
+            return task
+    if content.strip().startswith("Please solve this issue:"):
+        task = content.split("Please solve this issue:", 1)[1].strip()
         if task:
             return task
     return content.strip()
@@ -1888,6 +1895,9 @@ def parse_wrapped_tool_observation(content: str) -> tuple[str, str] | None:
 
 def normalize_tool_observation(content: str) -> str:
     stripped = content.strip()
+    json_observation = format_json_tool_observation(stripped)
+    if json_observation is not None:
+        return json_observation
     for prefix in TOOL_OBSERVATION_PREFIXES:
         if stripped.startswith(prefix):
             stripped = stripped[len(prefix) :].strip()
@@ -1921,6 +1931,28 @@ def format_tool_observation(returncode: str, output: str) -> str:
             ]
         )
     return "\n".join(parts)
+
+
+def format_json_tool_observation(content: str) -> str | None:
+    if not content.startswith("{"):
+        return None
+    try:
+        payload = json.loads(content)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    if not any(key in payload for key in ("returncode", "output", "exception_info")):
+        return None
+    returncode = str(payload.get("returncode", 0))
+    output = payload.get("output", "")
+    if not isinstance(output, str):
+        output = json_dumps(output)
+    observation = format_tool_observation(returncode, output)
+    exception = payload.get("exception_info")
+    if exception:
+        return f"<exception>{exception}</exception>\n{observation}"
+    return observation
 
 
 def strip_shell_echo_lines(output: str) -> str:

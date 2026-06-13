@@ -26,7 +26,7 @@ if [ ! -x "$PYTHON" ]; then
   exit 1
 fi
 
-CHECKPOINT_DIR="${CHECKPOINT_DIR:-$REPO_ROOT/sft/qwen3-sft/checkpoints/qwen3_4b_thinking_swe260612_highquality_65k_online_packed_sft_fixed_h200_4gpu}"
+CHECKPOINT_DIR="${CHECKPOINT_DIR:-$REPO_ROOT/sft/qwen3-sft/checkpoints/qwen3_4b_thinking_swe260612_miniswe_aligned_65k_toolcall_only_h200_4gpu_sft}"
 CHECKPOINT_STEP_DIR="${CHECKPOINT_STEP_DIR:-$CHECKPOINT_DIR/epoch_0_step_49}"
 CHECKPOINT_LABEL="${CHECKPOINT_LABEL:-step50}"
 BASE_MODEL_NAME="${BASE_MODEL_NAME:-Qwen/Qwen3-4B-Thinking-2507}"

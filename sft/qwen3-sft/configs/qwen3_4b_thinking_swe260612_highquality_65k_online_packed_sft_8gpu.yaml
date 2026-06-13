@@ -4,9 +4,11 @@
 # /wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260612/
 #   highquality-1x-duplicate-reasoning-90pct-30k-full
 #
-# Use the sharded raw data view to avoid every dataloader worker scanning the
-# same 40G monolithic JSONL:
-#   highquality-1x-duplicate-reasoning-90pct-30k-full-raw-sharded/data
+# Use the mini-swe-agent-aligned sharded raw view. It preserves the requested
+# 260612 traces, but rewrites the system/user scaffold and tool observations to
+# match eval/chat_templates/qwen3_thinking_acc.jinja2 and the mini-swe-agent
+# evaluation prompt.
+#   highquality-1x-duplicate-reasoning-90pct-30k-full-miniswe-aligned/data
 
 recipe: TrainFinetuneRecipeForNextTokenPrediction
 
@@ -17,7 +19,7 @@ step_scheduler:
   local_batch_size: 2
   ckpt_every_steps: 50
   val_every_steps: 1000
-  max_steps: 300
+  max_steps: 600
 
 dist_env:
   backend: nccl
@@ -47,7 +49,7 @@ fp8:
 
 checkpoint:
   enabled: true
-  checkpoint_dir: checkpoints/qwen3_4b_thinking_swe260612_highquality_65k_toolcall_only_sft/
+  checkpoint_dir: checkpoints/qwen3_4b_thinking_swe260612_miniswe_aligned_65k_toolcall_only_sft/
   model_save_format: torch_save
   save_consolidated: false
 
@@ -74,7 +76,7 @@ loss_fn:
 
 dataset:
   _target_: qwen_agentic_sft.online_packed_dataset.OnlinePackedChatDataset
-  raw_root: /wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260612/highquality-1x-duplicate-reasoning-90pct-30k-full-raw-sharded/data
+  raw_root: /wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260612/highquality-1x-duplicate-reasoning-90pct-30k-full-miniswe-aligned/data
   chat_template_path: /wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/eval/chat_templates/qwen3_thinking_acc.jinja2
   sequence_length: 65536
   max_rows_per_file: 0
@@ -138,11 +140,11 @@ optimizer:
   _target_: torch.optim.AdamW
   betas: [0.9, 0.95]
   eps: 1.0e-8
-  lr: 2.0e-6
+  lr: 5.0e-6
   weight_decay: 0.01
   fused: true
 
 lr_scheduler:
   lr_decay_style: cosine
   lr_warmup_steps: 20
-  min_lr: 2.0e-7
+  min_lr: 5.0e-7

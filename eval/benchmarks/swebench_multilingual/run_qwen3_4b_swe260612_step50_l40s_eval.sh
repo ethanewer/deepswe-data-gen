@@ -22,7 +22,7 @@ if ! [[ "$EVAL_GPU_COUNT" =~ ^[1-9][0-9]*$ ]]; then
 fi
 
 BASELINE_MODEL="${BASELINE_MODEL:-false}"
-CHECKPOINT_DIR="${CHECKPOINT_DIR:-$REPO_ROOT/sft/qwen3-sft/checkpoints/qwen3_4b_thinking_swe260612_highquality_65k_online_packed_sft_fixed_h200_4gpu}"
+CHECKPOINT_DIR="${CHECKPOINT_DIR:-$REPO_ROOT/sft/qwen3-sft/checkpoints/qwen3_4b_thinking_swe260612_miniswe_aligned_65k_toolcall_only_h200_4gpu_sft}"
 CHECKPOINT_STEP_DIR="${CHECKPOINT_STEP_DIR:-$CHECKPOINT_DIR/epoch_0_step_49}"
 if [ "$BASELINE_MODEL" = "true" ]; then
   CHECKPOINT_LABEL="${CHECKPOINT_LABEL:-base}"
@@ -34,7 +34,29 @@ MODEL_NAME="${MODEL_NAME:-Qwen/Qwen3-4B-Thinking-2507}"
 CONSOLIDATED_DIR="${CONSOLIDATED_DIR:-$CHECKPOINT_STEP_DIR/model/consolidated}"
 CONSOLIDATED_READY="$CONSOLIDATED_DIR/.complete"
 CONSOLIDATED_LOCK="$CHECKPOINT_STEP_DIR/model/.consolidate.lock"
-INSTANCE_IDS_PATH="${INSTANCE_IDS_PATH:-$REPO_ROOT/eval/benchmarks/swebench_multilingual/predictive_30_instance_ids.txt}"
+BENCHMARK="${BENCHMARK:-multilingual}"
+case "$BENCHMARK" in
+  multilingual)
+    DEFAULT_BENCHMARK_MODULE="eval.benchmarks.swebench_multilingual.run"
+    DEFAULT_INSTANCE_IDS_PATH="$REPO_ROOT/eval/benchmarks/swebench_multilingual/predictive_30_instance_ids.txt"
+    DEFAULT_BENCHMARK_OUTPUT_ROOT="$REPO_ROOT/runs/swebench_ml"
+    DEFAULT_BENCHMARK_LABEL="swebench-ml-p30"
+    ;;
+  verified)
+    DEFAULT_BENCHMARK_MODULE="eval.benchmarks.swebench_verified.run"
+    DEFAULT_INSTANCE_IDS_PATH="$REPO_ROOT/eval/benchmarks/swebench_verified/predictive_20_instance_ids.txt"
+    DEFAULT_BENCHMARK_OUTPUT_ROOT="$REPO_ROOT/runs/swebench_verified"
+    DEFAULT_BENCHMARK_LABEL="swebench-verified-p20"
+    ;;
+  *)
+    echo "BENCHMARK must be multilingual or verified; got $BENCHMARK" >&2
+    exit 1
+    ;;
+esac
+BENCHMARK_MODULE="${BENCHMARK_MODULE:-$DEFAULT_BENCHMARK_MODULE}"
+INSTANCE_IDS_PATH="${INSTANCE_IDS_PATH:-$DEFAULT_INSTANCE_IDS_PATH}"
+BENCHMARK_OUTPUT_ROOT="${BENCHMARK_OUTPUT_ROOT:-$DEFAULT_BENCHMARK_OUTPUT_ROOT}"
+BENCHMARK_LABEL="${BENCHMARK_LABEL:-$DEFAULT_BENCHMARK_LABEL}"
 MAX_TOKENS="${MAX_TOKENS:-16384}"
 TEMPERATURE="${TEMPERATURE:-0.6}"
 GENERATION_STEP_LIMIT="${GENERATION_STEP_LIMIT:-250}"
@@ -95,12 +117,13 @@ done
 if [ "$BASELINE_MODEL" = "true" ]; then
   RUN_STEM="qwen3-4b-thinking-base-${CHECKPOINT_LABEL}-${CONTEXT_LABEL}"
 else
-  RUN_STEM="qwen3-4b-thinking-swe260612-fixed-${CHECKPOINT_LABEL}-${CONTEXT_LABEL}"
+  RUN_STEM="qwen3-4b-thinking-swe260612-miniswe-${CHECKPOINT_LABEL}-${CONTEXT_LABEL}"
 fi
-RUN_NAME="${RUN_STEM}-l40s-${EVAL_GPU_COUNT}gpu-swebench-ml-p30${RUN_SUFFIX:+-$RUN_SUFFIX}-${SLURM_JOB_ID:-manual}"
+RUN_NAME="${RUN_STEM}-l40s-${EVAL_GPU_COUNT}gpu-${BENCHMARK_LABEL}${RUN_SUFFIX:+-$RUN_SUFFIX}-${SLURM_JOB_ID:-manual}"
 CONFIG_PATH="$REPO_ROOT/runs/serving_configs/${RUN_NAME}.json"
 SERVE_DIR="$REPO_ROOT/runs/serving/$RUN_NAME"
-OUTPUT_DIR="$REPO_ROOT/runs/swebench_ml/$RUN_NAME"
+OUTPUT_DIR="$BENCHMARK_OUTPUT_ROOT/$RUN_NAME"
+mkdir -p "$BENCHMARK_OUTPUT_ROOT"
 
 "$PYTHON" - "$CONFIG_PATH" "$MODEL_SOURCE" "$MODEL_NAME" "$PROXY_PORT" "${BACKEND_PORTS[@]}" <<'PY'
 import json
@@ -177,7 +200,7 @@ EVAL_WORKERS="${EVAL_WORKERS:-$EVAL_GPU_COUNT}"
 GENERATION_WORKERS="${GENERATION_WORKERS:-$EVAL_GPU_COUNT}"
 EXTRA_BODY="${EXTRA_BODY_JSON:-{\"top_p\":0.95,\"top_k\":20,\"min_p\":0,\"presence_penalty\":0}}"
 RUN_ARGS=(
-  "$PYTHON" -m eval.benchmarks.swebench_multilingual.run
+  "$PYTHON" -m "$BENCHMARK_MODULE"
   --harness mini-swe-agent \
   --output "$OUTPUT_DIR" \
   --run-id "$RUN_NAME" \
