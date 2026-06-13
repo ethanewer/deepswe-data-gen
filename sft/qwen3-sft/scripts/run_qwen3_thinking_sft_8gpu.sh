@@ -10,8 +10,14 @@ if [ ! -x .venv/bin/python ]; then
 fi
 VENV_PYTHON="$ROOT_DIR/.venv/bin/python"
 AUTOMODEL_BIN="$ROOT_DIR/.venv/bin/automodel"
+AUTOMODEL_ROOT="${AUTOMODEL_ROOT:-$ROOT_DIR/third_party/Automodel}"
+if [ ! -d "$AUTOMODEL_ROOT/nemo_automodel" ]; then
+  echo "Missing nemo_automodel under AUTOMODEL_ROOT=$AUTOMODEL_ROOT" >&2
+  echo "Set AUTOMODEL_ROOT to an Automodel checkout containing nemo_automodel." >&2
+  exit 1
+fi
 
-export PYTHONPATH="$ROOT_DIR/third_party/Automodel:$ROOT_DIR/src${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONPATH="$AUTOMODEL_ROOT:$ROOT_DIR/src${PYTHONPATH:+:$PYTHONPATH}"
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}"
 export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"
 export WANDB_MODE="${WANDB_MODE:-disabled}"
