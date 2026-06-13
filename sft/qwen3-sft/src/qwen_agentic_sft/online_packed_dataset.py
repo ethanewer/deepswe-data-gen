@@ -139,7 +139,7 @@ def assistant_has_manual_patch_target(message: dict[str, Any]) -> bool:
         return True
     if "diff -u /dev/null" in text:
         return True
-    patch_writer = re.search(r"(^|[;&|]\s*)(cat|tee|echo|printf)\b", text, flags=re.DOTALL)
+    patch_writer = re.search(r"(^|[;&|\n]\s*)(cat|tee|echo|printf)\b", text, flags=re.DOTALL)
     patch_redirect = re.search(r"(>\s*patch\.txt|\btee\s+(-a\s+)?patch\.txt)", text, flags=re.DOTALL)
     writes_patch = bool(patch_writer and patch_redirect)
     manual_diff_markers = ("diff --git", "--- /dev/null", "+++ /dev/null", "new file mode", "index 0000000")
@@ -158,9 +158,9 @@ def command_prepares_patch_for_submit(command: str) -> bool:
     text = command.lower()
     if "patch.txt" not in text or is_submit_command(text):
         return False
-    if "git diff" in text and re.search(r"(>\s*patch\.txt|\|\s*tee\s+patch\.txt)", text):
+    if "git diff" in text and re.search(r"\|\s*tee\s+(-a\s+)?(?:/testbed/)?patch\.txt", text):
         return True
-    if re.search(r"(^|[;&|]\s*)(cat|grep|sed|head|tail)\b[^;&]*patch\.txt", text, flags=re.DOTALL):
+    if re.search(r"(^|[;&|\n]\s*)(cat|grep|sed|head|tail)\b[^;&]*(?:/testbed/)?patch\.txt", text, flags=re.DOTALL):
         return True
     return False
 
