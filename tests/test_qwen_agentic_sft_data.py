@@ -200,7 +200,8 @@ def test_loss_policy_can_drop_visible_content_on_tool_call_turn() -> None:
 
     assistant = filtered["messages"][1]
     assert assistant.get("loss") is not False
-    assert "I should list files." in assistant["content"]
+    assert "I should list files." in assistant["reasoning_content"]
+    assert assistant["content"] == ""
     assert "Let me inspect" not in assistant["content"]
 
 
@@ -238,3 +239,64 @@ def test_tool_call_loss_target_masks_reasoning_and_visible_content() -> None:
     assert "Let me inspect" not in labelled
     assert '"command": "ls"' in labelled
     assert labelled.endswith("<|im_end|>\n")
+
+
+def test_loss_policy_taints_absolute_patch_txt_manual_write() -> None:
+    example = {
+        "messages": [
+            {"role": "user", "content": "Fix the bug."},
+            {
+                "role": "assistant",
+                "reasoning": "I should create the final patch.",
+                "tool_calls": [
+                    {
+                        "function": {
+                            "name": "bash",
+                            "arguments": {
+                                "command": (
+                                    "cat > /testbed/patch.txt <<'EOF'\n"
+                                    "diff --git a/foo.py b/foo.py\n"
+                                    "--- a/foo.py\n"
+                                    "+++ b/foo.py\n"
+                                    "@@ -1 +1 @@\n"
+                                    "-bad\n"
+                                    "+good\n"
+                                    "EOF"
+                                )
+                            },
+                        }
+                    }
+                ],
+            },
+            {"role": "tool", "content": "<returncode>0</returncode><output></output>"},
+            {
+                "role": "assistant",
+                "reasoning": "I should inspect the patch before submitting.",
+                "tool_calls": [{"function": {"name": "bash", "arguments": {"command": "cat /testbed/patch.txt"}}}],
+            },
+            {"role": "tool", "content": "<returncode>0</returncode><output>diff --git a/foo.py b/foo.py</output>"},
+            {
+                "role": "assistant",
+                "reasoning": "The patch is ready.",
+                "tool_calls": [
+                    {
+                        "function": {
+                            "name": "bash",
+                            "arguments": {"command": "echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && cat patch.txt"},
+                        }
+                    }
+                ],
+            },
+        ]
+    }
+
+    filtered = apply_assistant_loss_policy(
+        example,
+        require_assistant_reasoning_for_loss=True,
+        require_assistant_tool_calls_for_loss=True,
+        reject_manual_patch_targets=True,
+        reject_unverified_submit_targets=True,
+    )
+
+    assert filtered["messages"][1]["loss"] is False
+    assert filtered["messages"][5]["loss"] is False

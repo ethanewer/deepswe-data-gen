@@ -38,6 +38,7 @@ THINK_OPEN = "<think>\n"
 THINK_CLOSE = "\n</think>"
 ASSISTANT_LOSS_TARGETS = ("assistant", "tool_calls")
 MINI_SWE_SUBMIT_COMMAND = "echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && cat patch.txt"
+PATCH_TXT_PATH_PATTERN = r"(?:\./|/testbed/)?patch\.txt"
 
 
 def _rank_world() -> tuple[int, int]:
@@ -135,12 +136,16 @@ def assistant_has_manual_patch_target(message: dict[str, Any]) -> bool:
         return False
     if text.strip() == MINI_SWE_SUBMIT_COMMAND.lower():
         return False
-    if re.search(r">>\s*patch\.txt", text):
+    if re.search(rf">>\s*{PATCH_TXT_PATH_PATTERN}", text):
         return True
     if "diff -u /dev/null" in text:
         return True
     patch_writer = re.search(r"(^|[;&|\n]\s*)(cat|tee|echo|printf)\b", text, flags=re.DOTALL)
-    patch_redirect = re.search(r"(>\s*patch\.txt|\btee\s+(-a\s+)?patch\.txt)", text, flags=re.DOTALL)
+    patch_redirect = re.search(
+        rf"(>\s*{PATCH_TXT_PATH_PATTERN}|\btee\s+(-a\s+)?{PATCH_TXT_PATH_PATTERN})",
+        text,
+        flags=re.DOTALL,
+    )
     writes_patch = bool(patch_writer and patch_redirect)
     manual_diff_markers = ("diff --git", "--- /dev/null", "+++ /dev/null", "new file mode", "index 0000000")
     if writes_patch and any(marker in text for marker in manual_diff_markers):
@@ -158,9 +163,13 @@ def command_prepares_patch_for_submit(command: str) -> bool:
     text = command.lower()
     if "patch.txt" not in text or is_submit_command(text):
         return False
-    if "git diff" in text and re.search(r"\|\s*tee\s+(-a\s+)?(?:/testbed/)?patch\.txt", text):
+    if "git diff" in text and re.search(rf"\|\s*tee\s+(-a\s+)?{PATCH_TXT_PATH_PATTERN}", text):
         return True
-    if re.search(r"(^|[;&|\n]\s*)(cat|grep|sed|head|tail)\b[^;&]*(?:/testbed/)?patch\.txt", text, flags=re.DOTALL):
+    if re.search(
+        rf"(^|[;&|\n]\s*)(cat|grep|sed|head|tail)\b[^;&]*{PATCH_TXT_PATH_PATTERN}",
+        text,
+        flags=re.DOTALL,
+    ):
         return True
     return False
 
@@ -169,7 +178,7 @@ def command_writes_patch_file(command: str) -> bool:
     text = command.lower()
     if "patch.txt" not in text or is_submit_command(text):
         return False
-    return bool(re.search(r"(>\s*(?:/testbed/)?patch\.txt|\|\s*tee\s+(-a\s+)?(?:/testbed/)?patch\.txt)", text))
+    return bool(re.search(rf"(>\s*{PATCH_TXT_PATH_PATTERN}|\|\s*tee\s+(-a\s+)?{PATCH_TXT_PATH_PATTERN})", text))
 
 
 def observation_has_visible_patch_output(observation: str) -> bool:
