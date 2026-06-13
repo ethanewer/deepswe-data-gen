@@ -10,7 +10,13 @@ if [ ! -x .venv/bin/python ]; then
 fi
 VENV_PYTHON="$ROOT_DIR/.venv/bin/python"
 AUTOMODEL_BIN="$ROOT_DIR/.venv/bin/automodel"
-AUTOMODEL_ROOT="${AUTOMODEL_ROOT:-$ROOT_DIR/third_party/Automodel}"
+DEFAULT_AUTOMODEL_ROOT="$ROOT_DIR/third_party/Automodel"
+SHARED_AUTOMODEL_ROOT="/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/sft/qwen3-sft/third_party/Automodel"
+if [ -z "${AUTOMODEL_ROOT:-}" ] && [ ! -d "$DEFAULT_AUTOMODEL_ROOT/nemo_automodel" ] && [ -d "$SHARED_AUTOMODEL_ROOT/nemo_automodel" ]; then
+  AUTOMODEL_ROOT="$SHARED_AUTOMODEL_ROOT"
+else
+  AUTOMODEL_ROOT="${AUTOMODEL_ROOT:-$DEFAULT_AUTOMODEL_ROOT}"
+fi
 if [ ! -d "$AUTOMODEL_ROOT/nemo_automodel" ]; then
   echo "Missing nemo_automodel under AUTOMODEL_ROOT=$AUTOMODEL_ROOT" >&2
   echo "Set AUTOMODEL_ROOT to an Automodel checkout containing nemo_automodel." >&2
