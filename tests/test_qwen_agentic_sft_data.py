@@ -300,6 +300,7 @@ def test_loss_policy_taints_absolute_patch_txt_manual_write() -> None:
     )
 
     assert filtered["messages"][1]["loss"] is False
+    assert filtered["messages"][3]["loss"] is False
     assert filtered["messages"][5]["loss"] is False
 
 
