@@ -125,7 +125,7 @@ def assistant_tool_command(message: dict[str, Any]) -> str:
             return args
     if not isinstance(args, dict):
         return ""
-    return str(args.get("command") or "")
+    return str(args.get("command") or args.get("cmd") or "")
 
 
 def assistant_has_manual_patch_target(message: dict[str, Any]) -> bool:

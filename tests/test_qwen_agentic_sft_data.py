@@ -16,6 +16,7 @@ from qwen_agentic_sft.data import (  # noqa: E402
 from qwen_agentic_sft.online_packed_dataset import (  # noqa: E402
     IGNORE_INDEX,
     apply_assistant_loss_policy,
+    assistant_has_manual_patch_target,
     tokenize_chat_example,
 )
 
@@ -300,6 +301,62 @@ def test_loss_policy_taints_absolute_patch_txt_manual_write() -> None:
 
     assert filtered["messages"][1]["loss"] is False
     assert filtered["messages"][5]["loss"] is False
+
+
+def test_loss_policy_recognizes_cmd_tool_arguments() -> None:
+    example = {
+        "messages": [
+            {"role": "user", "content": "Fix the bug."},
+            {
+                "role": "assistant",
+                "reasoning": "I should create the final patch.",
+                "tool_calls": [
+                    {
+                        "function": {
+                            "name": "bash",
+                            "arguments": {
+                                "cmd": (
+                                    "cat > /testbed/patch.txt <<'EOF'\n"
+                                    "diff --git a/foo.py b/foo.py\n"
+                                    "--- a/foo.py\n"
+                                    "+++ b/foo.py\n"
+                                    "@@ -1 +1 @@\n"
+                                    "-bad\n"
+                                    "+good\n"
+                                    "EOF"
+                                )
+                            },
+                        }
+                    }
+                ],
+            },
+            {"role": "tool", "content": "<returncode>0</returncode><output></output>"},
+            {
+                "role": "assistant",
+                "reasoning": "I should submit the patch.",
+                "tool_calls": [
+                    {
+                        "function": {
+                            "name": "bash",
+                            "arguments": '{"cmd": "echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && cat patch.txt"}',
+                        }
+                    }
+                ],
+            },
+        ]
+    }
+
+    filtered = apply_assistant_loss_policy(
+        example,
+        require_assistant_reasoning_for_loss=True,
+        require_assistant_tool_calls_for_loss=True,
+        reject_manual_patch_targets=True,
+        reject_unverified_submit_targets=True,
+    )
+
+    assert assistant_has_manual_patch_target(filtered["messages"][1])
+    assert filtered["messages"][1]["loss"] is False
+    assert filtered["messages"][3]["loss"] is False
 
 
 def test_loss_policy_masks_turns_after_submit() -> None:
