@@ -15,6 +15,7 @@ import copy
 import hashlib
 import json
 import random
+import re
 import shutil
 from collections import Counter
 from pathlib import Path
@@ -159,12 +160,20 @@ def stable_fraction(*parts: object) -> float:
 
 def bad_target_command(command: str) -> bool:
     text = command.lower()
+    if text.strip() == MINI_SWE_SUBMIT_COMMAND.lower():
+        return False
     if "/path/to/" in text or "placeholder" in text:
         return True
     if "patch.txt" in text:
+        if re.search(r"\b(echo|printf)\b[^;&|]*>>\s*patch\.txt", text):
+            return True
+        if re.search(r"\b(cat|find)\b[^;&|]*>>\s*patch\.txt", text):
+            return True
+        if "diff -u /dev/null" in text:
+            return True
         patch_write_markers = ("cat >", "tee ", "echo ", "printf ")
         writes_patch = any(marker in text for marker in patch_write_markers)
-        manual_diff_markers = ("diff --git", "--- /dev/null", "new file mode", "index 0000000")
+        manual_diff_markers = ("diff --git", "--- /dev/null", "+++ /dev/null", "new file mode", "index 0000000")
         if writes_patch and any(marker in text for marker in manual_diff_markers):
             return True
         if writes_patch and "git diff" not in text:
