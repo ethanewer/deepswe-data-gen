@@ -8,6 +8,7 @@ import copy
 import json
 import os
 import random
+import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,6 +37,7 @@ DEFAULT_CHAT_TEMPLATE = Path(
 THINK_OPEN = "<think>\n"
 THINK_CLOSE = "\n</think>"
 ASSISTANT_LOSS_TARGETS = ("assistant", "tool_calls")
+MINI_SWE_SUBMIT_COMMAND = "echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && cat patch.txt"
 
 
 def _rank_world() -> tuple[int, int]:
@@ -109,17 +111,58 @@ def drop_assistant_content_preserving_reasoning(message: dict[str, Any]) -> None
         message["content"] = ""
 
 
+def assistant_tool_command(message: dict[str, Any]) -> str:
+    calls = message.get("tool_calls") or []
+    if not calls or not isinstance(calls[0], dict):
+        return ""
+    function = calls[0].get("function", {})
+    args = function.get("arguments", {})
+    if isinstance(args, str):
+        try:
+            args = json.loads(args)
+        except json.JSONDecodeError:
+            return args
+    if not isinstance(args, dict):
+        return ""
+    return str(args.get("command") or "")
+
+
+def assistant_has_manual_patch_target(message: dict[str, Any]) -> bool:
+    """Detect targets that hand-write patch.txt instead of editing the tree."""
+    command = assistant_tool_command(message)
+    text = command.lower()
+    if "patch.txt" not in text:
+        return False
+    if text.strip() == MINI_SWE_SUBMIT_COMMAND.lower():
+        return False
+    if re.search(r">>\s*patch\.txt", text):
+        return True
+    if "diff -u /dev/null" in text:
+        return True
+    patch_writer = re.search(r"(^|[;&|]\s*)(cat|tee|echo|printf)\b", text, flags=re.DOTALL)
+    patch_redirect = re.search(r"(>\s*patch\.txt|\btee\s+(-a\s+)?patch\.txt)", text, flags=re.DOTALL)
+    writes_patch = bool(patch_writer and patch_redirect)
+    manual_diff_markers = ("diff --git", "--- /dev/null", "+++ /dev/null", "new file mode", "index 0000000")
+    if writes_patch and any(marker in text for marker in manual_diff_markers):
+        return True
+    if writes_patch and "git diff" not in text:
+        return True
+    return False
+
+
 def apply_assistant_loss_policy(
     example: dict[str, Any],
     *,
     require_assistant_reasoning_for_loss: bool = False,
     require_assistant_tool_calls_for_loss: bool = False,
     drop_assistant_content_for_tool_calls: bool = False,
+    reject_manual_patch_targets: bool = False,
 ) -> dict[str, Any]:
     if (
         not require_assistant_reasoning_for_loss
         and not require_assistant_tool_calls_for_loss
         and not drop_assistant_content_for_tool_calls
+        and not reject_manual_patch_targets
     ):
         return example
 
@@ -129,6 +172,8 @@ def apply_assistant_loss_policy(
         has_tool_calls = assistant_has_valid_tool_calls(message)
         if drop_assistant_content_for_tool_calls and has_tool_calls:
             drop_assistant_content_preserving_reasoning(message)
+        if reject_manual_patch_targets and assistant_has_manual_patch_target(message):
+            message["loss"] = False
         if require_assistant_reasoning_for_loss and not assistant_has_reasoning(message):
             message["loss"] = False
         if require_assistant_tool_calls_for_loss and not has_tool_calls:
@@ -330,6 +375,7 @@ class OnlinePackedChatDataset(IterableDataset):
         require_assistant_tool_calls_for_loss: bool = False,
         drop_assistant_content_for_tool_calls: bool = False,
         assistant_loss_target: str = "assistant",
+        reject_manual_patch_targets: bool = False,
     ):
         super().__init__()
         self.tokenizer = tokenizer
@@ -352,6 +398,7 @@ class OnlinePackedChatDataset(IterableDataset):
         self.require_assistant_reasoning_for_loss = bool(require_assistant_reasoning_for_loss)
         self.require_assistant_tool_calls_for_loss = bool(require_assistant_tool_calls_for_loss)
         self.drop_assistant_content_for_tool_calls = bool(drop_assistant_content_for_tool_calls)
+        self.reject_manual_patch_targets = bool(reject_manual_patch_targets)
         if assistant_loss_target not in ASSISTANT_LOSS_TARGETS:
             raise ValueError(f"assistant_loss_target must be one of {ASSISTANT_LOSS_TARGETS}; got {assistant_loss_target}")
         self.assistant_loss_target = assistant_loss_target
@@ -447,6 +494,7 @@ class OnlinePackedChatDataset(IterableDataset):
                     require_assistant_reasoning_for_loss=self.require_assistant_reasoning_for_loss,
                     require_assistant_tool_calls_for_loss=self.require_assistant_tool_calls_for_loss,
                     drop_assistant_content_for_tool_calls=self.drop_assistant_content_for_tool_calls,
+                    reject_manual_patch_targets=self.reject_manual_patch_targets,
                 )
                 for input_ids, labels in tokenize_chat_example(
                     example,
@@ -504,6 +552,7 @@ def inspect_packer(args: argparse.Namespace) -> int:
         require_assistant_tool_calls_for_loss=args.require_assistant_tool_calls_for_loss,
         drop_assistant_content_for_tool_calls=args.drop_assistant_content_for_tool_calls,
         assistant_loss_target=args.assistant_loss_target,
+        reject_manual_patch_targets=args.reject_manual_patch_targets,
     )
     stats = {
         "packs": 0,
@@ -539,6 +588,7 @@ def parse_args() -> argparse.Namespace:
     inspect.add_argument("--require-assistant-tool-calls-for-loss", action="store_true")
     inspect.add_argument("--drop-assistant-content-for-tool-calls", action="store_true")
     inspect.add_argument("--assistant-loss-target", choices=ASSISTANT_LOSS_TARGETS, default="assistant")
+    inspect.add_argument("--reject-manual-patch-targets", action="store_true")
     inspect.add_argument("--local-files-only", action=argparse.BooleanOptionalAction, default=True)
     return parser.parse_args()
 
