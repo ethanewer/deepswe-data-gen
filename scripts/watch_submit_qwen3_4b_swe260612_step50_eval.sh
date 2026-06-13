@@ -4,6 +4,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CHECKPOINT_DIR="${CHECKPOINT_DIR:-$REPO_ROOT/sft/qwen3-sft/checkpoints/qwen3_4b_thinking_swe260612_miniswe_aligned_65k_toolcall_only_h200_4gpu_sft}"
 CHECKPOINT_STEP_DIR="${CHECKPOINT_STEP_DIR:-$CHECKPOINT_DIR/epoch_0_step_49}"
+CHECKPOINT_LABEL="${CHECKPOINT_LABEL:-step50}"
 EVAL_SBATCH_8GPU="${EVAL_SBATCH_8GPU:-$REPO_ROOT/eval/benchmarks/swebench_multilingual/slurm_qwen3_4b_swe260612_step50_l40s_8gpu.sbatch}"
 EVAL_SBATCH_4GPU="${EVAL_SBATCH_4GPU:-$REPO_ROOT/eval/benchmarks/swebench_multilingual/slurm_qwen3_4b_swe260612_step50_l40s_4gpu.sbatch}"
 POLL_SECONDS="${POLL_SECONDS:-60}"
@@ -40,6 +41,6 @@ choose_eval_sbatch() {
   selected_eval_sbatch="$(choose_eval_sbatch)"
   echo "[$(date -Is)] Submitting L40S eval job with $selected_eval_sbatch"
   sbatch \
-    --export=ALL,CHECKPOINT_STEP_DIR="$CHECKPOINT_STEP_DIR",CHECKPOINT_LABEL=step50 \
+    --export=ALL,CHECKPOINT_STEP_DIR="$CHECKPOINT_STEP_DIR",CHECKPOINT_LABEL="$CHECKPOINT_LABEL" \
     "$selected_eval_sbatch"
 } >>"$LOG_PATH" 2>&1
