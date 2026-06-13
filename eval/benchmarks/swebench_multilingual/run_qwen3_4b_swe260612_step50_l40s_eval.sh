@@ -20,6 +20,7 @@ if ! [[ "$EVAL_GPU_COUNT" =~ ^[1-9][0-9]*$ ]]; then
   echo "EVAL_GPU_COUNT must be a positive integer; got $EVAL_GPU_COUNT" >&2
   exit 1
 fi
+EVAL_ACCELERATOR_LABEL="${EVAL_ACCELERATOR_LABEL:-l40s}"
 
 BASELINE_MODEL="${BASELINE_MODEL:-false}"
 CHECKPOINT_DIR="${CHECKPOINT_DIR:-$REPO_ROOT/sft/qwen3-sft/checkpoints/qwen3_4b_thinking_swe260612_miniswe_aligned_passed_65k_reasoning_toolcall_h200_4gpu_sft}"
@@ -121,7 +122,7 @@ if [ "$BASELINE_MODEL" = "true" ]; then
 else
   RUN_STEM="qwen3-4b-thinking-swe260612-miniswe-${CHECKPOINT_LABEL}-${CONTEXT_LABEL}"
 fi
-RUN_NAME="${RUN_STEM}-l40s-${EVAL_GPU_COUNT}gpu-${BENCHMARK_LABEL}${RUN_SUFFIX:+-$RUN_SUFFIX}-${SLURM_JOB_ID:-manual}"
+RUN_NAME="${RUN_STEM}-${EVAL_ACCELERATOR_LABEL}-${EVAL_GPU_COUNT}gpu-${BENCHMARK_LABEL}${RUN_SUFFIX:+-$RUN_SUFFIX}-${SLURM_JOB_ID:-manual}"
 CONFIG_PATH="$REPO_ROOT/runs/serving_configs/${RUN_NAME}.json"
 SERVE_DIR="$REPO_ROOT/runs/serving/$RUN_NAME"
 OUTPUT_DIR="$BENCHMARK_OUTPUT_ROOT/$RUN_NAME"
@@ -136,7 +137,7 @@ config_path, model_dir, model_name, proxy_port, serve_cache_dir, *backend_ports 
 gpu_count = len(backend_ports)
 payload = {
     "model": model_dir,
-    "description": f"Qwen3-4B Thinking SWE260612 fixed SFT checkpoint on {gpu_count} L40S GPUs.",
+    "description": f"Qwen3-4B Thinking SWE260612 fixed SFT checkpoint on {gpu_count} GPUs.",
     "sources": [model_name, "eval/chat_templates/qwen3_thinking_acc.jinja2"],
     "serve": {
         "gpus": list(range(gpu_count)),
