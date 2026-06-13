@@ -200,6 +200,7 @@ def apply_assistant_loss_policy(
     previous_assistant_command = ""
     previous_assistant_observations: list[str] = []
     visible_patch_since_write = False
+    patch_file_tainted = False
     for message in example.get("messages", []):
         if message.get("role") != "assistant":
             if previous_assistant_command:
@@ -213,7 +214,8 @@ def apply_assistant_loss_policy(
             visible_patch_since_write = True
         if drop_assistant_content_for_tool_calls and has_tool_calls:
             drop_assistant_content_preserving_reasoning(message)
-        if reject_manual_patch_targets and assistant_has_manual_patch_target(message):
+        has_manual_patch_target = assistant_has_manual_patch_target(message)
+        if reject_manual_patch_targets and has_manual_patch_target:
             message["loss"] = False
         if (
             reject_unverified_submit_targets
@@ -221,6 +223,7 @@ def apply_assistant_loss_policy(
             and (
                 not command_prepares_patch_for_submit(previous_assistant_command)
                 or not visible_patch_since_write
+                or patch_file_tainted
             )
         ):
             message["loss"] = False
@@ -231,6 +234,7 @@ def apply_assistant_loss_policy(
         if command:
             if command_writes_patch_file(command):
                 visible_patch_since_write = False
+                patch_file_tainted = bool(has_manual_patch_target)
             previous_assistant_command = command
             previous_assistant_observations = []
     return example
