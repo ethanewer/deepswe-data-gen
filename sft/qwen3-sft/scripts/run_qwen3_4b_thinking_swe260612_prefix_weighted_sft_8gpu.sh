@@ -4,8 +4,8 @@ set -euo pipefail
 export CONFIG="${CONFIG:-configs/qwen3_4b_thinking_swe260612_highquality_65k_online_packed_sft_8gpu.yaml}"
 export MODEL="${MODEL:-Qwen/Qwen3-4B-Thinking-2507}"
 export TRAIN_RAW_ROOT="${TRAIN_RAW_ROOT:-/wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260612/qwen3-4b-thinking-prefix-weighted-v3-emptydiffx4-mix}"
-export CHECKPOINT_DIR="${CHECKPOINT_DIR:-checkpoints/qwen3_4b_thinking_swe260612_prefix_weighted_v3_emptydiffx4_65k_assistant_sft/}"
-export RUN_NAME="${RUN_NAME:-qwen3_4b_thinking_swe260612_prefix_weighted_v3_emptydiffx4_65k_assistant_sft}"
+export CHECKPOINT_DIR="${CHECKPOINT_DIR:-checkpoints/qwen3_4b_thinking_swe260612_prefix_weighted_v4_filtermanual_65k_assistant_sft/}"
+export RUN_NAME="${RUN_NAME:-qwen3_4b_thinking_swe260612_prefix_weighted_v4_filtermanual_65k_assistant_sft}"
 
 export PACK_SIZE="${PACK_SIZE:-65536}"
 export LOCAL_BATCH_SIZE="${LOCAL_BATCH_SIZE:-2}"
