@@ -19,6 +19,10 @@ if [ ! -d "$REPO_ROOT/eval/benchmarks/swebench_multilingual" ]; then
 fi
 cd "$REPO_ROOT"
 mkdir -p logs runs/serving_configs runs/serving runs/swebench_ml
+REAL_EVAL_SCRIPT="$REPO_ROOT/eval/benchmarks/swebench_multilingual/run_qwen3_4b_swe260612_step50_l40s_eval.sh"
+EVAL_SCRIPT_COPY="$REPO_ROOT/runs/serving_configs/run_qwen3_4b_swe260612_eval_${SLURM_JOB_ID:-manual}_$$.sh"
+cp "$REAL_EVAL_SCRIPT" "$EVAL_SCRIPT_COPY"
+chmod +x "$EVAL_SCRIPT_COPY"
 
 PYTHON="${PYTHON:-$REPO_ROOT/.venv/bin/python}"
 if [ ! -x "$PYTHON" ]; then
@@ -26,7 +30,7 @@ if [ ! -x "$PYTHON" ]; then
   exit 1
 fi
 
-CHECKPOINT_DIR="${CHECKPOINT_DIR:-$REPO_ROOT/sft/qwen3-sft/checkpoints/qwen3_4b_thinking_swe260612_miniswe_aligned_65k_toolcall_only_h200_4gpu_sft}"
+CHECKPOINT_DIR="${CHECKPOINT_DIR:-$REPO_ROOT/sft/qwen3-sft/checkpoints/qwen3_4b_thinking_swe260612_miniswe_aligned_passed_65k_reasoning_toolcall_h200_4gpu_sft}"
 CHECKPOINT_STEP_DIR="${CHECKPOINT_STEP_DIR:-$CHECKPOINT_DIR/epoch_0_step_49}"
 CHECKPOINT_LABEL="${CHECKPOINT_LABEL:-step50}"
 BASE_MODEL_NAME="${BASE_MODEL_NAME:-Qwen/Qwen3-4B-Thinking-2507}"
@@ -208,4 +212,4 @@ echo "Starting real step-50 eval on warmed L40S allocation"
 export CHECKPOINT_STEP_DIR
 export CHECKPOINT_LABEL
 export EVAL_GPU_COUNT
-exec "$REPO_ROOT/eval/benchmarks/swebench_multilingual/run_qwen3_4b_swe260612_step50_l40s_eval.sh"
+exec "$EVAL_SCRIPT_COPY"

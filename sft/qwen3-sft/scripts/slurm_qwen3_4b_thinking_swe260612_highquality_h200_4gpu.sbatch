@@ -43,10 +43,10 @@ export GRAD_ACCUM_STEPS="${GRAD_ACCUM_STEPS:-4}"
 export GLOBAL_BATCH_SIZE="${GLOBAL_BATCH_SIZE:-16}"
 export PYTORCH_ALLOC_CONF="${PYTORCH_ALLOC_CONF:-expandable_segments:True}"
 
-export CHECKPOINT_DIR="${CHECKPOINT_DIR:-checkpoints/qwen3_4b_thinking_swe260612_miniswe_aligned_65k_reasoning_toolcall_h200_4gpu_sft/}"
-export RUN_NAME="${RUN_NAME:-qwen3_4b_thinking_swe260612_miniswe_aligned_65k_reasoning_toolcall_h200_4gpu_sft}"
+export CHECKPOINT_DIR="${CHECKPOINT_DIR:-checkpoints/qwen3_4b_thinking_swe260612_miniswe_aligned_passed_65k_reasoning_toolcall_h200_4gpu_sft/}"
+export RUN_NAME="${RUN_NAME:-qwen3_4b_thinking_swe260612_miniswe_aligned_passed_65k_reasoning_toolcall_h200_4gpu_sft}"
 export CKPT_EVERY_STEPS="${CKPT_EVERY_STEPS:-50}"
-export MAX_STEPS="${MAX_STEPS:-600}"
+export MAX_STEPS="${MAX_STEPS:-150}"
 export ASSISTANT_LOSS_TARGET="${ASSISTANT_LOSS_TARGET:-assistant}"
 
 export MASTER_ADDR="${MASTER_ADDR:-127.0.0.1}"

@@ -17,7 +17,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from build_swebench_ml_sft_mix import BASH_TOOL, adapt_to_bash_tool, json_dumps
-from qwen_agentic_sft.data import iter_normalized_examples_from_files
+from qwen_agentic_sft.data import iter_jsonl_rows, normalize_row
 
 
 DEFAULT_INPUT_JSONL = Path(
@@ -39,6 +39,29 @@ def aggregate_stats(total: dict[str, int], stats: dict[str, int]) -> None:
         total[key] = total.get(key, 0) + int(value)
 
 
+def is_trueish(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "passed", "pass"}
+    return False
+
+
+def is_positive_reward(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value > 0
+    if isinstance(value, str):
+        try:
+            return float(value.strip()) > 0
+        except ValueError:
+            return is_trueish(value)
+    return False
+
+
 def build(args: argparse.Namespace) -> dict[str, Any]:
     if args.output_root.exists():
         if not args.overwrite:
@@ -52,12 +75,29 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
     rows_skipped = 0
     transform_stats: dict[str, int] = {}
     try:
-        for example in iter_normalized_examples_from_files(
-            [args.input_jsonl],
-            parquet_batch_size=args.parquet_batch_size,
-            max_examples=args.max_rows,
-        ):
+        for row in iter_jsonl_rows(args.input_jsonl):
+            if args.max_rows and rows_seen >= args.max_rows:
+                break
             rows_seen += 1
+            if not args.include_failed and not is_trueish(row.get("passed")):
+                rows_skipped += 1
+                transform_stats["rows_filtered_not_passed"] = (
+                    transform_stats.get("rows_filtered_not_passed", 0) + 1
+                )
+                continue
+            if not args.include_nonpositive_reward and not is_positive_reward(row.get("reward")):
+                rows_skipped += 1
+                transform_stats["rows_filtered_nonpositive_reward"] = (
+                    transform_stats.get("rows_filtered_nonpositive_reward", 0) + 1
+                )
+                continue
+            example = normalize_row(row)
+            if example is None:
+                rows_skipped += 1
+                transform_stats["rows_filtered_normalization"] = (
+                    transform_stats.get("rows_filtered_normalization", 0) + 1
+                )
+                continue
             transformed, stats = adapt_to_bash_tool(
                 example,
                 reasoning_tool_boundary=True,
@@ -73,12 +113,18 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
             row = {
                 "messages": transformed["messages"],
                 "tools": transformed.get("tools", BASH_TOOL),
-                "source": "swe260612_highquality_miniswe_aligned",
+                "source": "swe260612_highquality_miniswe_aligned_passed",
                 "source_note": (
-                    "260612 high-quality synthetic SWE traces normalized to the "
+                    "260612 passed high-quality synthetic SWE traces normalized to the "
                     "strict mini-swe-agent prompt, XML tool observations, and "
                     "reasoning/tool-call assistant format."
                 ),
+                "source_outcome": {
+                    "passed": row.get("passed"),
+                    "reward": row.get("reward"),
+                    "task_id": row.get("task_id"),
+                    "uuid": row.get("uuid"),
+                },
             }
             handles[rows_written % args.shards].write(json_dumps(row) + "\n")
             rows_written += 1
@@ -113,6 +159,10 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
             + ("_single" if args.single_tool_calls else "")
             + "_submit"
         ),
+        "outcome_filter": {
+            "include_failed": args.include_failed,
+            "include_nonpositive_reward": args.include_nonpositive_reward,
+        },
         "rows_seen": rows_seen,
         "rows_written": rows_written,
         "rows_skipped": rows_skipped,
@@ -135,6 +185,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--shards", type=int, default=64)
     parser.add_argument("--max-rows", type=int, default=0)
     parser.add_argument("--parquet-batch-size", type=int, default=128)
+    parser.add_argument(
+        "--include-failed",
+        action="store_true",
+        help="include rows where passed is false; disabled by default",
+    )
+    parser.add_argument(
+        "--include-nonpositive-reward",
+        action="store_true",
+        help="include rows with reward <= 0; disabled by default",
+    )
     parser.add_argument("--single-tool-calls", action="store_true")
     parser.add_argument("--log-every", type=int, default=1000)
     parser.add_argument("--overwrite", action="store_true")

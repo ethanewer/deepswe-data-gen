@@ -22,7 +22,7 @@ if ! [[ "$EVAL_GPU_COUNT" =~ ^[1-9][0-9]*$ ]]; then
 fi
 
 BASELINE_MODEL="${BASELINE_MODEL:-false}"
-CHECKPOINT_DIR="${CHECKPOINT_DIR:-$REPO_ROOT/sft/qwen3-sft/checkpoints/qwen3_4b_thinking_swe260612_miniswe_aligned_65k_toolcall_only_h200_4gpu_sft}"
+CHECKPOINT_DIR="${CHECKPOINT_DIR:-$REPO_ROOT/sft/qwen3-sft/checkpoints/qwen3_4b_thinking_swe260612_miniswe_aligned_passed_65k_reasoning_toolcall_h200_4gpu_sft}"
 CHECKPOINT_STEP_DIR="${CHECKPOINT_STEP_DIR:-$CHECKPOINT_DIR/epoch_0_step_49}"
 if [ "$BASELINE_MODEL" = "true" ]; then
   CHECKPOINT_LABEL="${CHECKPOINT_LABEL:-base}"
