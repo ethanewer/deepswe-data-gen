@@ -165,6 +165,20 @@ def command_prepares_patch_for_submit(command: str) -> bool:
     return False
 
 
+def command_writes_patch_file(command: str) -> bool:
+    text = command.lower()
+    if "patch.txt" not in text or is_submit_command(text):
+        return False
+    return bool(re.search(r"(>\s*(?:/testbed/)?patch\.txt|\|\s*tee\s+(-a\s+)?(?:/testbed/)?patch\.txt)", text))
+
+
+def observation_has_visible_patch_output(observation: str) -> bool:
+    matches = re.findall(r"<output>\n?(.*?)</output>", observation, flags=re.DOTALL)
+    if matches:
+        return any(match.strip() for match in matches)
+    return bool(observation.strip())
+
+
 def apply_assistant_loss_policy(
     example: dict[str, Any],
     *,
@@ -184,11 +198,19 @@ def apply_assistant_loss_policy(
         return example
 
     previous_assistant_command = ""
+    previous_assistant_observations: list[str] = []
+    visible_patch_since_write = False
     for message in example.get("messages", []):
         if message.get("role") != "assistant":
+            if previous_assistant_command:
+                previous_assistant_observations.append(str(message.get("content") or ""))
             continue
         command = assistant_tool_command(message)
         has_tool_calls = assistant_has_valid_tool_calls(message)
+        if previous_assistant_command and observation_has_visible_patch_output(
+            "\n".join(previous_assistant_observations)
+        ):
+            visible_patch_since_write = True
         if drop_assistant_content_for_tool_calls and has_tool_calls:
             drop_assistant_content_preserving_reasoning(message)
         if reject_manual_patch_targets and assistant_has_manual_patch_target(message):
@@ -196,7 +218,10 @@ def apply_assistant_loss_policy(
         if (
             reject_unverified_submit_targets
             and is_submit_command(command)
-            and not command_prepares_patch_for_submit(previous_assistant_command)
+            and (
+                not command_prepares_patch_for_submit(previous_assistant_command)
+                or not visible_patch_since_write
+            )
         ):
             message["loss"] = False
         if require_assistant_reasoning_for_loss and not assistant_has_reasoning(message):
@@ -204,7 +229,10 @@ def apply_assistant_loss_policy(
         if require_assistant_tool_calls_for_loss and not has_tool_calls:
             message["loss"] = False
         if command:
+            if command_writes_patch_file(command):
+                visible_patch_since_write = False
             previous_assistant_command = command
+            previous_assistant_observations = []
     return example
 
 
