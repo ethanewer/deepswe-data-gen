@@ -110,9 +110,10 @@ fi
 
 BASE_PORT=$((20000 + (${SLURM_JOB_ID:-0} % 20000)))
 PROXY_PORT="$BASE_PORT"
+BACKEND_PORT_GAP="${BACKEND_PORT_GAP:-100}"
 BACKEND_PORTS=()
 for offset in $(seq 1 "$EVAL_GPU_COUNT"); do
-  BACKEND_PORTS+=("$((BASE_PORT + offset))")
+  BACKEND_PORTS+=("$((BASE_PORT + BACKEND_PORT_GAP + offset))")
 done
 
 if [ "$BASELINE_MODEL" = "true" ]; then

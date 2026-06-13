@@ -53,9 +53,10 @@ nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv,noheader
 
 BASE_PORT=$((10000 + (${SLURM_JOB_ID:-0} % 10000)))
 SMOKE_PROXY_PORT="$BASE_PORT"
+SMOKE_BACKEND_PORT_GAP="${SMOKE_BACKEND_PORT_GAP:-100}"
 SMOKE_BACKEND_PORTS=()
 for offset in $(seq 1 "$EVAL_GPU_COUNT"); do
-  SMOKE_BACKEND_PORTS+=("$((BASE_PORT + offset))")
+  SMOKE_BACKEND_PORTS+=("$((BASE_PORT + SMOKE_BACKEND_PORT_GAP + offset))")
 done
 
 SMOKE_RUN_NAME="qwen3-4b-thinking-base-l40s-${EVAL_GPU_COUNT}gpu-smoke-${SLURM_JOB_ID:-manual}"
