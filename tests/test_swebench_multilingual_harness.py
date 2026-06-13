@@ -153,14 +153,19 @@ def test_docker_evaluation_env_starts_stdio_proxy_when_sdk_socket_is_unusable(
 
     monkeypatch.setattr(run, "docker_sdk_usable", lambda env: next(calls))
     monkeypatch.setattr(run, "DockerStdioProxy", FakeProxy)
+    monkeypatch.setattr(
+        run.tempfile,
+        "mkdtemp",
+        lambda prefix, dir: str(tmp_path / "proxy"),
+    )
 
-    env = {}
+    env = {"SWEBENCH_DOCKER_PROXY_DIR": str(tmp_path)}
     with run.docker_evaluation_env(env, tmp_path):
-        assert env["DOCKER_HOST"] == f"unix://{tmp_path / '.docker-stdio-proxy' / 'docker.sock'}"
+        assert env["DOCKER_HOST"] == f"unix://{tmp_path / 'proxy' / 'docker.sock'}"
 
     assert events == [
-        ("start", tmp_path / ".docker-stdio-proxy" / "docker.sock"),
-        ("stop", tmp_path / ".docker-stdio-proxy" / "docker.sock"),
+        ("start", tmp_path / "proxy" / "docker.sock"),
+        ("stop", tmp_path / "proxy" / "docker.sock"),
     ]
 
 

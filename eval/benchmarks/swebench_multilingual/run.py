@@ -13,6 +13,7 @@ import shlex
 import shutil
 import socket
 import subprocess
+import tempfile
 import threading
 import time
 from datetime import datetime
@@ -271,17 +272,25 @@ def docker_evaluation_env(env: dict[str, str], output_dir: Path):
         yield
         return
 
-    proxy = DockerStdioProxy(output_dir / ".docker-stdio-proxy" / "docker.sock")
+    proxy_dir = Path(
+        tempfile.mkdtemp(
+            prefix="swebench-docker-",
+            dir=env.get("SWEBENCH_DOCKER_PROXY_DIR", os.environ.get("TMPDIR", "/tmp")),
+        )
+    )
+    proxy = DockerStdioProxy(proxy_dir / "docker.sock")
     proxy.start()
     env["DOCKER_HOST"] = f"unix://{proxy.socket_path}"
     print(f"Started Docker stdio proxy at {proxy.socket_path}", flush=True)
     if not docker_sdk_usable(env):
         proxy.stop()
+        shutil.rmtree(proxy_dir, ignore_errors=True)
         raise RuntimeError("Docker SDK could not access Docker directly or via stdio proxy")
     try:
         yield
     finally:
         proxy.stop()
+        shutil.rmtree(proxy_dir, ignore_errors=True)
 
 
 def run_capture_json(cmd: list[str], env: dict[str, str], cwd: Path = REPO_ROOT) -> dict[str, Any]:
