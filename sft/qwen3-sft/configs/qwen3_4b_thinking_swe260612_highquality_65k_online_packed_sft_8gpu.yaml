@@ -94,6 +94,7 @@ dataset:
   drop_assistant_content_for_tool_calls: true
   assistant_loss_target: assistant
   reject_manual_patch_targets: true
+  reject_unverified_submit_targets: true
 
 dataloader:
   _target_: torchdata.stateful_dataloader.StatefulDataLoader
@@ -126,6 +127,7 @@ validation_dataset:
   drop_assistant_content_for_tool_calls: true
   assistant_loss_target: assistant
   reject_manual_patch_targets: true
+  reject_unverified_submit_targets: true
 
 validation_dataloader:
   _target_: torchdata.stateful_dataloader.StatefulDataLoader

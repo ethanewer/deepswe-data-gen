@@ -78,6 +78,7 @@ dataset:
   drop_assistant_content_for_tool_calls: true
   assistant_loss_target: assistant
   reject_manual_patch_targets: true
+  reject_unverified_submit_targets: true
   shuffle_files: true
   seed: 33333
   repeat: true
@@ -110,6 +111,7 @@ validation_dataset:
   drop_assistant_content_for_tool_calls: true
   assistant_loss_target: assistant
   reject_manual_patch_targets: true
+  reject_unverified_submit_targets: true
   shuffle_files: false
   seed: 33333
   repeat: false

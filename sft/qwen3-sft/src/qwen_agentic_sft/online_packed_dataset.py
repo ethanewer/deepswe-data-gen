@@ -150,6 +150,21 @@ def assistant_has_manual_patch_target(message: dict[str, Any]) -> bool:
     return False
 
 
+def is_submit_command(command: str) -> bool:
+    return "complete_task_and_submit_final_output" in command.lower()
+
+
+def command_prepares_patch_for_submit(command: str) -> bool:
+    text = command.lower()
+    if "patch.txt" not in text or is_submit_command(text):
+        return False
+    if "git diff" in text and re.search(r"(>\s*patch\.txt|\|\s*tee\s+patch\.txt)", text):
+        return True
+    if re.search(r"(^|[;&|]\s*)(cat|grep|sed|head|tail)\b[^;&]*patch\.txt", text, flags=re.DOTALL):
+        return True
+    return False
+
+
 def apply_assistant_loss_policy(
     example: dict[str, Any],
     *,
@@ -157,27 +172,39 @@ def apply_assistant_loss_policy(
     require_assistant_tool_calls_for_loss: bool = False,
     drop_assistant_content_for_tool_calls: bool = False,
     reject_manual_patch_targets: bool = False,
+    reject_unverified_submit_targets: bool = False,
 ) -> dict[str, Any]:
     if (
         not require_assistant_reasoning_for_loss
         and not require_assistant_tool_calls_for_loss
         and not drop_assistant_content_for_tool_calls
         and not reject_manual_patch_targets
+        and not reject_unverified_submit_targets
     ):
         return example
 
+    previous_assistant_command = ""
     for message in example.get("messages", []):
         if message.get("role") != "assistant":
             continue
+        command = assistant_tool_command(message)
         has_tool_calls = assistant_has_valid_tool_calls(message)
         if drop_assistant_content_for_tool_calls and has_tool_calls:
             drop_assistant_content_preserving_reasoning(message)
         if reject_manual_patch_targets and assistant_has_manual_patch_target(message):
             message["loss"] = False
+        if (
+            reject_unverified_submit_targets
+            and is_submit_command(command)
+            and not command_prepares_patch_for_submit(previous_assistant_command)
+        ):
+            message["loss"] = False
         if require_assistant_reasoning_for_loss and not assistant_has_reasoning(message):
             message["loss"] = False
         if require_assistant_tool_calls_for_loss and not has_tool_calls:
             message["loss"] = False
+        if command:
+            previous_assistant_command = command
     return example
 
 
@@ -376,6 +403,7 @@ class OnlinePackedChatDataset(IterableDataset):
         drop_assistant_content_for_tool_calls: bool = False,
         assistant_loss_target: str = "assistant",
         reject_manual_patch_targets: bool = False,
+        reject_unverified_submit_targets: bool = False,
     ):
         super().__init__()
         self.tokenizer = tokenizer
@@ -399,6 +427,7 @@ class OnlinePackedChatDataset(IterableDataset):
         self.require_assistant_tool_calls_for_loss = bool(require_assistant_tool_calls_for_loss)
         self.drop_assistant_content_for_tool_calls = bool(drop_assistant_content_for_tool_calls)
         self.reject_manual_patch_targets = bool(reject_manual_patch_targets)
+        self.reject_unverified_submit_targets = bool(reject_unverified_submit_targets)
         if assistant_loss_target not in ASSISTANT_LOSS_TARGETS:
             raise ValueError(f"assistant_loss_target must be one of {ASSISTANT_LOSS_TARGETS}; got {assistant_loss_target}")
         self.assistant_loss_target = assistant_loss_target
@@ -495,6 +524,7 @@ class OnlinePackedChatDataset(IterableDataset):
                     require_assistant_tool_calls_for_loss=self.require_assistant_tool_calls_for_loss,
                     drop_assistant_content_for_tool_calls=self.drop_assistant_content_for_tool_calls,
                     reject_manual_patch_targets=self.reject_manual_patch_targets,
+                    reject_unverified_submit_targets=self.reject_unverified_submit_targets,
                 )
                 for input_ids, labels in tokenize_chat_example(
                     example,
@@ -553,6 +583,7 @@ def inspect_packer(args: argparse.Namespace) -> int:
         drop_assistant_content_for_tool_calls=args.drop_assistant_content_for_tool_calls,
         assistant_loss_target=args.assistant_loss_target,
         reject_manual_patch_targets=args.reject_manual_patch_targets,
+        reject_unverified_submit_targets=args.reject_unverified_submit_targets,
     )
     stats = {
         "packs": 0,
@@ -589,6 +620,7 @@ def parse_args() -> argparse.Namespace:
     inspect.add_argument("--drop-assistant-content-for-tool-calls", action="store_true")
     inspect.add_argument("--assistant-loss-target", choices=ASSISTANT_LOSS_TARGETS, default="assistant")
     inspect.add_argument("--reject-manual-patch-targets", action="store_true")
+    inspect.add_argument("--reject-unverified-submit-targets", action="store_true")
     inspect.add_argument("--local-files-only", action=argparse.BooleanOptionalAction, default=True)
     return parser.parse_args()
 

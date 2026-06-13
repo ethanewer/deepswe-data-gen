@@ -110,6 +110,7 @@ REQUIRE_ASSISTANT_TOOL_CALLS_FOR_LOSS="${REQUIRE_ASSISTANT_TOOL_CALLS_FOR_LOSS:-
 DROP_ASSISTANT_CONTENT_FOR_TOOL_CALLS="${DROP_ASSISTANT_CONTENT_FOR_TOOL_CALLS:-}"
 ASSISTANT_LOSS_TARGET="${ASSISTANT_LOSS_TARGET:-}"
 REJECT_MANUAL_PATCH_TARGETS="${REJECT_MANUAL_PATCH_TARGETS:-}"
+REJECT_UNVERIFIED_SUBMIT_TARGETS="${REJECT_UNVERIFIED_SUBMIT_TARGETS:-}"
 ENABLE_COMPILE="${ENABLE_COMPILE:-$DEFAULT_ENABLE_COMPILE}"
 ACTIVATION_CHECKPOINTING="${ACTIVATION_CHECKPOINTING:-true}"
 ENABLE_FSDP2_PREFETCH="${ENABLE_FSDP2_PREFETCH:-true}"
@@ -163,6 +164,9 @@ if [ -n "$DROP_ASSISTANT_CONTENT_FOR_TOOL_CALLS" ] || [ -n "$ASSISTANT_LOSS_TARG
 fi
 if [ -n "$REJECT_MANUAL_PATCH_TARGETS" ]; then
   echo "Reject manual patch targets: $REJECT_MANUAL_PATCH_TARGETS"
+fi
+if [ -n "$REJECT_UNVERIFIED_SUBMIT_TARGETS" ]; then
+  echo "Reject unverified submit targets: $REJECT_UNVERIFIED_SUBMIT_TARGETS"
 fi
 if [ "$CHAT_TEMPLATE_SOURCE" = "tokenizer" ]; then
   echo "Chat template: tokenizer default"
@@ -252,6 +256,10 @@ if [ -n "$REJECT_MANUAL_PATCH_TARGETS" ]; then
   args+=(--dataset.reject_manual_patch_targets "$REJECT_MANUAL_PATCH_TARGETS")
 fi
 
+if [ -n "$REJECT_UNVERIFIED_SUBMIT_TARGETS" ]; then
+  args+=(--dataset.reject_unverified_submit_targets "$REJECT_UNVERIFIED_SUBMIT_TARGETS")
+fi
+
 if [ "$CHAT_TEMPLATE_SOURCE" != "tokenizer" ]; then
   args+=(--dataset.chat_template_path "$CHAT_TEMPLATE")
 fi
@@ -282,6 +290,9 @@ if [ "$VALIDATION_ENABLED" = "true" ]; then
   fi
   if [ -n "$REJECT_MANUAL_PATCH_TARGETS" ]; then
     args+=(--validation_dataset.reject_manual_patch_targets "$REJECT_MANUAL_PATCH_TARGETS")
+  fi
+  if [ -n "$REJECT_UNVERIFIED_SUBMIT_TARGETS" ]; then
+    args+=(--validation_dataset.reject_unverified_submit_targets "$REJECT_UNVERIFIED_SUBMIT_TARGETS")
   fi
   if [ "$CHAT_TEMPLATE_SOURCE" != "tokenizer" ]; then
     args+=(--validation_dataset.chat_template_path "$CHAT_TEMPLATE")
