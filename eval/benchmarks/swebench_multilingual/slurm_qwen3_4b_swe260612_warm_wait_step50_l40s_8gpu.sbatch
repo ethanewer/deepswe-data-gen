@@ -57,12 +57,13 @@ done
 SMOKE_RUN_NAME="qwen3-4b-thinking-base-l40s-${EVAL_GPU_COUNT}gpu-smoke-${SLURM_JOB_ID:-manual}"
 SMOKE_CONFIG_PATH="$REPO_ROOT/runs/serving_configs/${SMOKE_RUN_NAME}.json"
 SMOKE_SERVE_DIR="$REPO_ROOT/runs/serving/$SMOKE_RUN_NAME"
+SMOKE_SERVE_CACHE_DIR="${SMOKE_SERVE_CACHE_DIR:-/tmp/q3eval-${SLURM_JOB_ID:-manual}-smoke}"
 
-"$PYTHON" - "$SMOKE_CONFIG_PATH" "$BASE_MODEL_NAME" "$SMOKE_PROXY_PORT" "$SMOKE_MAX_MODEL_LEN" "$SMOKE_GPU_MEMORY_UTILIZATION" "${SMOKE_BACKEND_PORTS[@]}" <<'PY'
+"$PYTHON" - "$SMOKE_CONFIG_PATH" "$BASE_MODEL_NAME" "$SMOKE_PROXY_PORT" "$SMOKE_MAX_MODEL_LEN" "$SMOKE_GPU_MEMORY_UTILIZATION" "$SMOKE_SERVE_CACHE_DIR" "${SMOKE_BACKEND_PORTS[@]}" <<'PY'
 import json
 import sys
 
-config_path, model_name, proxy_port, max_model_len, gpu_memory_utilization, *backend_ports = sys.argv[1:]
+config_path, model_name, proxy_port, max_model_len, gpu_memory_utilization, serve_cache_dir, *backend_ports = sys.argv[1:]
 gpu_count = len(backend_ports)
 payload = {
     "model": model_name,
@@ -83,6 +84,13 @@ payload = {
         "trust_remote_code": True,
         "chat_template": "eval/chat_templates/qwen3_thinking_acc.jinja2",
         "chat_template_content_format": "string",
+        "env": {
+            "TORCHINDUCTOR_CACHE_DIR": f"{serve_cache_dir}/backend-{{backend_index}}/torchinductor",
+            "TRITON_CACHE_DIR": f"{serve_cache_dir}/backend-{{backend_index}}/triton",
+            "CUDA_CACHE_PATH": f"{serve_cache_dir}/backend-{{backend_index}}/cuda",
+            "VLLM_CACHE_ROOT": f"{serve_cache_dir}/backend-{{backend_index}}/vllm",
+            "TMPDIR": f"{serve_cache_dir}/backend-{{backend_index}}/tmp",
+        },
         "vllm_args": [
             "--reasoning-parser",
             "deepseek_r1",

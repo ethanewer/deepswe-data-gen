@@ -114,6 +114,27 @@ def vllm_port_for_backend(serve: dict[str, Any], backend_index: int, http_port: 
     raise ValueError(f"Could not derive a valid VLLM_PORT from backend port {http_port}")
 
 
+def apply_serve_env(
+    env: dict[str, str],
+    serve: dict[str, Any],
+    *,
+    backend_index: int | None = None,
+    gpu: int | None = None,
+    port: int | None = None,
+    run_dir: Path | None = None,
+) -> None:
+    for key, value in serve.get("env", {}).items():
+        formatted = str(value).format(
+            backend_index=backend_index if backend_index is not None else "",
+            gpu=gpu if gpu is not None else "",
+            port=port if port is not None else "",
+            run_dir=str(run_dir) if run_dir is not None else "",
+        )
+        env[str(key)] = formatted
+        if key.endswith("_DIR") or key.endswith("_HOME") or key in {"TMPDIR", "CUDA_CACHE_PATH", "VLLM_CACHE_ROOT"}:
+            Path(formatted).mkdir(parents=True, exist_ok=True)
+
+
 def wait_health(url: str, timeout_s: float) -> None:
     deadline = time.time() + timeout_s
     last_error = ""
@@ -195,6 +216,7 @@ def main() -> None:
             env = os.environ.copy()
             env["CUDA_VISIBLE_DEVICES"] = cuda_visible_device_for_gpu(serve, gpu)
             env["VLLM_PORT"] = str(vllm_port_for_backend(serve, backend_index, int(port)))
+            apply_serve_env(env, serve, backend_index=backend_index, gpu=gpu, port=int(port), run_dir=run_dir)
             command = build_vllm_command(config, gpu, port)
             process = start_process(
                 command,
@@ -226,6 +248,7 @@ def main() -> None:
             proxy_env["OPENAI_BACKENDS"] = ",".join(backend_urls(serve))
             proxy_env["HOST"] = serve.get("proxy_host", "0.0.0.0")
             proxy_env["PORT"] = str(serve.get("proxy_port", 8000))
+            apply_serve_env(proxy_env, serve, run_dir=run_dir)
             proxy_command = [sys.executable, "-m", "eval.model.round_robin_proxy"]
             proxy_process = start_process(
                 proxy_command,
