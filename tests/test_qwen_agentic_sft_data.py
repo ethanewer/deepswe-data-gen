@@ -176,6 +176,33 @@ def test_loss_policy_masks_assistant_turn_without_tool_call() -> None:
     assert filtered["messages"][1]["loss"] is False
 
 
+def test_loss_policy_drops_no_reasoning_tool_call_context() -> None:
+    example = {
+        "messages": [
+            {"role": "user", "content": "Fix the bug."},
+            {
+                "role": "assistant",
+                "tool_calls": [{"function": {"name": "bash", "arguments": {"command": "sed -i 's/bad/good/' foo.py"}}}],
+            },
+            {"role": "tool", "content": "<returncode>0</returncode><output></output>"},
+            {
+                "role": "assistant",
+                "reasoning": "I should inspect the patch before submitting.",
+                "tool_calls": [{"function": {"name": "bash", "arguments": {"command": "git diff -- foo.py"}}}],
+            },
+        ]
+    }
+
+    filtered = apply_assistant_loss_policy(
+        example,
+        require_assistant_reasoning_for_loss=True,
+        require_assistant_tool_calls_for_loss=True,
+    )
+
+    assert filtered["messages"][1]["loss"] is False
+    assert filtered.get("drop") is True
+
+
 def test_loss_policy_can_drop_visible_content_on_tool_call_turn() -> None:
     row = {
         "messages": [

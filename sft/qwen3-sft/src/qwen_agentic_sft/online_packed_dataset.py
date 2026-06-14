@@ -285,6 +285,7 @@ def apply_assistant_loss_policy(
             drop_example = True
         if require_assistant_reasoning_for_loss and not assistant_has_reasoning(message):
             message["loss"] = False
+            drop_example = True
         if require_assistant_tool_calls_for_loss and not has_tool_calls:
             message["loss"] = False
             drop_example = True
