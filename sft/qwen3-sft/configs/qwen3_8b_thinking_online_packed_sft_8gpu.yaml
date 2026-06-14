@@ -51,7 +51,7 @@ fp8:
 
 checkpoint:
   enabled: true
-  checkpoint_dir: checkpoints/qwen3_8b_thinking_swe260612_prefix_weighted_v7_terminalguard_65k_assistant_sft/
+  checkpoint_dir: checkpoints/qwen3_8b_thinking_swe260612_prefix_weighted_v8_manualcontextguard_65k_assistant_sft/
   model_save_format: torch_save
   save_consolidated: false
 

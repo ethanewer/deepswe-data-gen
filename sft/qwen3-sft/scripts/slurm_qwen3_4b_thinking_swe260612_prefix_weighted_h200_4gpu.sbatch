@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=qwen3-4b-swe260612-wp7tg4g
+#SBATCH --job-name=qwen3-4b-swe260612-wp8mc4g
 #SBATCH --partition=h200
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -7,8 +7,8 @@
 #SBATCH --cpus-per-task=96
 #SBATCH --mem=850G
 #SBATCH --time=12:00:00
-#SBATCH --output=logs/slurm-qwen3-4b-swe260612-prefix-weighted-v7-terminalguard-h200-4g-%j.out
-#SBATCH --error=logs/slurm-qwen3-4b-swe260612-prefix-weighted-v7-terminalguard-h200-4g-%j.err
+#SBATCH --output=logs/slurm-qwen3-4b-swe260612-prefix-weighted-v8-manualcontextguard-h200-4g-%j.out
+#SBATCH --error=logs/slurm-qwen3-4b-swe260612-prefix-weighted-v8-manualcontextguard-h200-4g-%j.err
 
 set -euo pipefail
 
@@ -41,12 +41,12 @@ export NPROC_PER_NODE=4
 export LOCAL_BATCH_SIZE="${LOCAL_BATCH_SIZE:-1}"
 export GRAD_ACCUM_STEPS="${GRAD_ACCUM_STEPS:-4}"
 export GLOBAL_BATCH_SIZE="${GLOBAL_BATCH_SIZE:-16}"
-export PYTORCH_ALLOC_CONF="${PYTORCH_ALLOC_CONF:-expandable_segments:True}"
+export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
-export CHECKPOINT_DIR="${CHECKPOINT_DIR:-checkpoints/qwen3_4b_thinking_swe260612_prefix_weighted_v7_terminalguard_65k_assistant_h200_4gpu_sft/}"
-export RUN_NAME="${RUN_NAME:-qwen3_4b_thinking_swe260612_prefix_weighted_v7_terminalguard_65k_assistant_h200_4gpu_sft}"
-export CKPT_EVERY_STEPS="${CKPT_EVERY_STEPS:-100}"
-export MAX_STEPS="${MAX_STEPS:-300}"
+export CHECKPOINT_DIR="${CHECKPOINT_DIR:-checkpoints/qwen3_4b_thinking_swe260612_prefix_weighted_v8_manualcontextguard_65k_assistant_h200_4gpu_sft/}"
+export RUN_NAME="${RUN_NAME:-qwen3_4b_thinking_swe260612_prefix_weighted_v8_manualcontextguard_65k_assistant_h200_4gpu_sft}"
+export CKPT_EVERY_STEPS="${CKPT_EVERY_STEPS:-50}"
+export MAX_STEPS="${MAX_STEPS:-400}"
 export ASSISTANT_LOSS_TARGET="${ASSISTANT_LOSS_TARGET:-assistant}"
 
 export MASTER_ADDR="${MASTER_ADDR:-127.0.0.1}"

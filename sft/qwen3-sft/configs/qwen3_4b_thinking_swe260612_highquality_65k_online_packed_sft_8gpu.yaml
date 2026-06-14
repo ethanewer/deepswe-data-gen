@@ -50,7 +50,7 @@ fp8:
 
 checkpoint:
   enabled: true
-  checkpoint_dir: checkpoints/qwen3_4b_thinking_swe260612_miniswe_aligned_passed_65k_reasoning_toolcall_sft/
+  checkpoint_dir: checkpoints/qwen3_4b_thinking_swe260612_prefix_weighted_v8_manualcontextguard_65k_assistant_h200_8gpu_sft/
   model_save_format: torch_save
   save_consolidated: false
 
