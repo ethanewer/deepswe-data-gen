@@ -23,14 +23,14 @@ fi
 EVAL_ACCELERATOR_LABEL="${EVAL_ACCELERATOR_LABEL:-l40s}"
 
 BASELINE_MODEL="${BASELINE_MODEL:-false}"
-CHECKPOINT_DIR="${CHECKPOINT_DIR:-$REPO_ROOT/sft/qwen3-sft/checkpoints/qwen3_4b_thinking_swe260612_miniswe_aligned_passed_65k_reasoning_toolcall_h200_4gpu_sft}"
+CHECKPOINT_DIR="${CHECKPOINT_DIR:-$REPO_ROOT/sft/qwen3-sft/checkpoints/qwen3_4b_thinking_swe260612_v23_highquality_exact_contextguard_131k_s300_assistant_h200_8gpu_sft}"
 CHECKPOINT_STEP_DIR="${CHECKPOINT_STEP_DIR:-$CHECKPOINT_DIR/epoch_0_step_49}"
 if [ "$BASELINE_MODEL" = "true" ]; then
   CHECKPOINT_LABEL="${CHECKPOINT_LABEL:-base}"
 else
-  CHECKPOINT_LABEL="${CHECKPOINT_LABEL:-step50}"
+  CHECKPOINT_LABEL="${CHECKPOINT_LABEL:-v23-exact-s50}"
 fi
-CONTEXT_LABEL="${CONTEXT_LABEL:-65k}"
+CONTEXT_LABEL="${CONTEXT_LABEL:-131k}"
 MODEL_NAME="${MODEL_NAME:-Qwen/Qwen3-4B-Thinking-2507}"
 MODEL_SOURCE_MODEL_NAME="${MODEL_SOURCE_MODEL_NAME:-$MODEL_NAME}"
 MODEL_VARIANT_LABEL="${MODEL_VARIANT_LABEL:-qwen3-4b-thinking}"
