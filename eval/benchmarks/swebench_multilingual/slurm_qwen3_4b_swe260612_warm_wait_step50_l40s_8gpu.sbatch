@@ -40,6 +40,7 @@ STABILIZE_SECONDS="${STABILIZE_SECONDS:-120}"
 SMOKE_MAX_MODEL_LEN="${SMOKE_MAX_MODEL_LEN:-65536}"
 SMOKE_GPU_MEMORY_UTILIZATION="${SMOKE_GPU_MEMORY_UTILIZATION:-0.9}"
 SMOKE_REQUIRE_TOOL_CALL="${SMOKE_REQUIRE_TOOL_CALL:-false}"
+SKIP_SMOKE="${SKIP_SMOKE:-false}"
 TRAIN_LOG_GLOB="${TRAIN_LOG_GLOB:-$REPO_ROOT/logs/slurm-qwen3-4b-swe260612-h200-4g-*.err}"
 
 export PYTHONPATH="$REPO_ROOT/sft/qwen3-sft/third_party/Automodel:$REPO_ROOT/sft/qwen3-sft/src${PYTHONPATH:+:$PYTHONPATH}"
@@ -51,6 +52,7 @@ echo "checkpoint_step_dir=$CHECKPOINT_STEP_DIR"
 echo "eval_gpu_count=$EVAL_GPU_COUNT"
 nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv,noheader,nounits
 
+if [ "$SKIP_SMOKE" != "true" ]; then
 BASE_PORT=$((10000 + (${SLURM_JOB_ID:-0} % 10000)))
 SMOKE_PROXY_PORT="$BASE_PORT"
 SMOKE_BACKEND_PORT_GAP="${SMOKE_BACKEND_PORT_GAP:-100}"
@@ -194,6 +196,9 @@ echo "Stopping base-model smoke serve"
 cleanup_smoke
 trap - EXIT
 nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv,noheader,nounits
+else
+  echo "Skipping base-model smoke serve because SKIP_SMOKE=true"
+fi
 
 echo "Waiting for checkpoint metadata: $CHECKPOINT_STEP_DIR/model/.metadata"
 while [ ! -f "$CHECKPOINT_STEP_DIR/model/.metadata" ]; do
