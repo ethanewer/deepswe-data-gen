@@ -42,6 +42,12 @@ SMOKE_GPU_MEMORY_UTILIZATION="${SMOKE_GPU_MEMORY_UTILIZATION:-0.9}"
 SMOKE_REQUIRE_TOOL_CALL="${SMOKE_REQUIRE_TOOL_CALL:-false}"
 SKIP_SMOKE="${SKIP_SMOKE:-false}"
 TRAIN_LOG_GLOB="${TRAIN_LOG_GLOB:-$REPO_ROOT/logs/slurm-qwen3-4b-swe260612-h200-4g-*.err}"
+VLLM_EVAL_CACHE_ROOT="${VLLM_EVAL_CACHE_ROOT:-$REPO_ROOT/runs/vllm_cache}"
+VLLM_MODEL_INSPECTION_PREWARM_TIMEOUT="${VLLM_MODEL_INSPECTION_PREWARM_TIMEOUT:-3600}"
+SMOKE_SERVE_HEALTH_TIMEOUT="${SMOKE_SERVE_HEALTH_TIMEOUT:-5400}"
+export VLLM_EVAL_CACHE_ROOT
+export SERVE_HEALTH_TIMEOUT="${SERVE_HEALTH_TIMEOUT:-5400}"
+mkdir -p "$VLLM_EVAL_CACHE_ROOT"
 
 export PYTHONPATH="$REPO_ROOT/sft/qwen3-sft/third_party/Automodel:$REPO_ROOT/sft/qwen3-sft/src${PYTHONPATH:+:$PYTHONPATH}"
 
@@ -66,11 +72,11 @@ SMOKE_CONFIG_PATH="$REPO_ROOT/runs/serving_configs/${SMOKE_RUN_NAME}.json"
 SMOKE_SERVE_DIR="$REPO_ROOT/runs/serving/$SMOKE_RUN_NAME"
 SMOKE_SERVE_CACHE_DIR="${SMOKE_SERVE_CACHE_DIR:-/tmp/q3eval-${SLURM_JOB_ID:-manual}-smoke}"
 
-"$PYTHON" - "$SMOKE_CONFIG_PATH" "$BASE_MODEL_NAME" "$SMOKE_PROXY_PORT" "$SMOKE_MAX_MODEL_LEN" "$SMOKE_GPU_MEMORY_UTILIZATION" "$SMOKE_SERVE_CACHE_DIR" "${SMOKE_BACKEND_PORTS[@]}" <<'PY'
+"$PYTHON" - "$SMOKE_CONFIG_PATH" "$BASE_MODEL_NAME" "$SMOKE_PROXY_PORT" "$SMOKE_MAX_MODEL_LEN" "$SMOKE_GPU_MEMORY_UTILIZATION" "$SMOKE_SERVE_CACHE_DIR" "$VLLM_EVAL_CACHE_ROOT" "${SMOKE_BACKEND_PORTS[@]}" <<'PY'
 import json
 import sys
 
-config_path, model_name, proxy_port, max_model_len, gpu_memory_utilization, serve_cache_dir, *backend_ports = sys.argv[1:]
+config_path, model_name, proxy_port, max_model_len, gpu_memory_utilization, serve_cache_dir, vllm_cache_root, *backend_ports = sys.argv[1:]
 gpu_count = len(backend_ports)
 payload = {
     "model": model_name,
@@ -95,7 +101,8 @@ payload = {
             "TORCHINDUCTOR_CACHE_DIR": f"{serve_cache_dir}/backend-{{backend_index}}/torchinductor",
             "TRITON_CACHE_DIR": f"{serve_cache_dir}/backend-{{backend_index}}/triton",
             "CUDA_CACHE_PATH": f"{serve_cache_dir}/backend-{{backend_index}}/cuda",
-            "VLLM_CACHE_ROOT": f"{serve_cache_dir}/backend-{{backend_index}}/vllm",
+            "VLLM_CACHE_ROOT": vllm_cache_root,
+            "VLLM_LOG_MODEL_INSPECTION": "1",
             "TMPDIR": f"{serve_cache_dir}/backend-{{backend_index}}/tmp",
         },
         "vllm_args": [
@@ -111,6 +118,14 @@ with open(config_path, "w", encoding="utf-8") as handle:
     json.dump(payload, handle, indent=2)
     handle.write("\n")
 print(config_path)
+PY
+
+echo "Prewarming vLLM model inspection cache at $VLLM_EVAL_CACHE_ROOT"
+timeout "$VLLM_MODEL_INSPECTION_PREWARM_TIMEOUT" env VLLM_CACHE_ROOT="$VLLM_EVAL_CACHE_ROOT" VLLM_LOG_MODEL_INSPECTION=1 "$PYTHON" - <<'PY'
+from vllm.model_executor.models.registry import ModelRegistry
+
+ModelRegistry.models["Qwen3ForCausalLM"].inspect_model_cls()
+print("Prewarmed Qwen3ForCausalLM model inspection cache")
 PY
 
 cleanup_smoke() {
@@ -143,7 +158,7 @@ echo "Starting base-model smoke serve"
   --config "$SMOKE_CONFIG_PATH" \
   --run-dir "$SMOKE_SERVE_DIR" \
   --background \
-  --health-timeout 1800
+  --health-timeout "$SMOKE_SERVE_HEALTH_TIMEOUT"
 
 echo "Running base-model smoke chat request"
 "$PYTHON" - "$BASE_MODEL_NAME" "$SMOKE_PROXY_PORT" "$SMOKE_REQUIRE_TOOL_CALL" <<'PY'

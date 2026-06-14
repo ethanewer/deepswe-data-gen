@@ -127,13 +127,17 @@ CONFIG_PATH="$REPO_ROOT/runs/serving_configs/${RUN_NAME}.json"
 SERVE_DIR="$REPO_ROOT/runs/serving/$RUN_NAME"
 OUTPUT_DIR="$BENCHMARK_OUTPUT_ROOT/$RUN_NAME"
 SERVE_CACHE_DIR="${SERVE_CACHE_DIR:-/tmp/q3eval-${SLURM_JOB_ID:-manual}-real}"
+VLLM_EVAL_CACHE_ROOT="${VLLM_EVAL_CACHE_ROOT:-$REPO_ROOT/runs/vllm_cache}"
+VLLM_MODEL_INSPECTION_PREWARM_TIMEOUT="${VLLM_MODEL_INSPECTION_PREWARM_TIMEOUT:-3600}"
+SERVE_HEALTH_TIMEOUT="${SERVE_HEALTH_TIMEOUT:-5400}"
 mkdir -p "$BENCHMARK_OUTPUT_ROOT"
+mkdir -p "$VLLM_EVAL_CACHE_ROOT"
 
-"$PYTHON" - "$CONFIG_PATH" "$MODEL_SOURCE" "$MODEL_NAME" "$PROXY_PORT" "$SERVE_CACHE_DIR" "${BACKEND_PORTS[@]}" <<'PY'
+"$PYTHON" - "$CONFIG_PATH" "$MODEL_SOURCE" "$MODEL_NAME" "$PROXY_PORT" "$SERVE_CACHE_DIR" "$VLLM_EVAL_CACHE_ROOT" "${BACKEND_PORTS[@]}" <<'PY'
 import json
 import sys
 
-config_path, model_dir, model_name, proxy_port, serve_cache_dir, *backend_ports = sys.argv[1:]
+config_path, model_dir, model_name, proxy_port, serve_cache_dir, vllm_cache_root, *backend_ports = sys.argv[1:]
 gpu_count = len(backend_ports)
 payload = {
     "model": model_dir,
@@ -158,7 +162,8 @@ payload = {
             "TORCHINDUCTOR_CACHE_DIR": f"{serve_cache_dir}/backend-{{backend_index}}/torchinductor",
             "TRITON_CACHE_DIR": f"{serve_cache_dir}/backend-{{backend_index}}/triton",
             "CUDA_CACHE_PATH": f"{serve_cache_dir}/backend-{{backend_index}}/cuda",
-            "VLLM_CACHE_ROOT": f"{serve_cache_dir}/backend-{{backend_index}}/vllm",
+            "VLLM_CACHE_ROOT": vllm_cache_root,
+            "VLLM_LOG_MODEL_INSPECTION": "1",
             "TMPDIR": f"{serve_cache_dir}/backend-{{backend_index}}/tmp",
         },
         "vllm_args": [
@@ -174,6 +179,14 @@ with open(config_path, "w", encoding="utf-8") as handle:
     json.dump(payload, handle, indent=2)
     handle.write("\n")
 print(config_path)
+PY
+
+echo "Prewarming vLLM model inspection cache at $VLLM_EVAL_CACHE_ROOT"
+timeout "$VLLM_MODEL_INSPECTION_PREWARM_TIMEOUT" env VLLM_CACHE_ROOT="$VLLM_EVAL_CACHE_ROOT" VLLM_LOG_MODEL_INSPECTION=1 "$PYTHON" - <<'PY'
+from vllm.model_executor.models.registry import ModelRegistry
+
+ModelRegistry.models["Qwen3ForCausalLM"].inspect_model_cls()
+print("Prewarmed Qwen3ForCausalLM model inspection cache")
 PY
 
 cleanup() {
@@ -205,7 +218,7 @@ trap cleanup EXIT
   --config "$CONFIG_PATH" \
   --run-dir "$SERVE_DIR" \
   --background \
-  --health-timeout 1800
+  --health-timeout "$SERVE_HEALTH_TIMEOUT"
 
 EVAL_WORKERS="${EVAL_WORKERS:-$EVAL_GPU_COUNT}"
 GENERATION_WORKERS="${GENERATION_WORKERS:-$EVAL_GPU_COUNT}"
