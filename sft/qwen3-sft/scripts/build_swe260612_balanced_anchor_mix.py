@@ -5,7 +5,9 @@ The v9 empty-diff recipe over-sampled recovery rows whose target is always a
 `git diff` command. This builder keeps the current 260612 weighted prefix data,
 keeps only a small amount of empty-diff recovery, and adds older v38
 edit/submit anchor shards to restore the inspect->edit->diff->submit balance.
-It writes symlinks instead of copying large JSONL files.
+The v38 patch-recovery bucket is excluded by default because its targets are
+all rejected by the online SWE loss policy. The builder writes symlinks instead
+of copying large JSONL files.
 """
 
 from __future__ import annotations
@@ -20,7 +22,7 @@ from typing import Any
 
 DEFAULT_OUTPUT_ROOT = Path(
     "/wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260612/"
-    "qwen3-4b-thinking-prefix-weighted-v10-balancededit-mix"
+    "qwen3-4b-thinking-prefix-weighted-v12-cleanbalanced-mix"
 )
 DEFAULT_WEIGHTED_V2 = Path(
     "/wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260612/"
@@ -34,6 +36,7 @@ DEFAULT_V38_ANCHOR = Path(
     "/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/sft/qwen3-sft/data/"
     "swebench_ml_v38_clean_sourceedit_shortthought_raw_sharded"
 )
+DEFAULT_EXCLUDED_V38_ANCHORS = ("v23_patch_recovery_v38",)
 
 
 def json_dumps(value: Any) -> str:
@@ -78,6 +81,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--empty-diff-root", type=Path, default=DEFAULT_EMPTY_DIFF)
     parser.add_argument("--v38-anchor-root", type=Path, default=DEFAULT_V38_ANCHOR)
     parser.add_argument("--empty-diff-copies", type=int, default=1)
+    parser.add_argument(
+        "--exclude-v38-anchor",
+        action="append",
+        default=list(DEFAULT_EXCLUDED_V38_ANCHORS),
+        help="v38 anchor subdirectory name to skip; may be repeated",
+    )
+    parser.add_argument(
+        "--include-all-v38-anchors",
+        action="store_true",
+        help="ignore the default v38 anchor exclusion list",
+    )
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
 
@@ -107,7 +121,18 @@ def main() -> int:
                 f"empty_diff_recovery_v1_x{copy_index}",
             )
         )
+    excluded_v38_anchors = set() if args.include_all_v38_anchors else set(args.exclude_v38_anchor or [])
+    skipped_sources: list[dict[str, Any]] = []
     for anchor_dir in sorted(path for path in args.v38_anchor_root.iterdir() if path.is_dir()):
+        if anchor_dir.name in excluded_v38_anchors:
+            skipped_sources.append(
+                {
+                    "name": f"v38_{anchor_dir.name}",
+                    "source_root": str(anchor_dir),
+                    "reason": "excluded by --exclude-v38-anchor",
+                }
+            )
+            continue
         sources.append(
             symlink_files(
                 anchor_dir,
@@ -120,11 +145,14 @@ def main() -> int:
         "output_root": str(args.output_root),
         "selection": (
             "260612 weighted prefix data plus one-copy empty-diff recovery and "
-            "v38 edit/submit anchors. This avoids the v9 x12 diff-target skew "
-            "while preserving explicit recovery examples."
+            "v38 edit/submit anchors, excluding v38 buckets that are rejected "
+            "by the online SWE loss policy. This avoids the v9 x12 diff-target "
+            "skew while preserving explicit recovery examples."
         ),
         "empty_diff_copies": args.empty_diff_copies,
+        "excluded_v38_anchors": sorted(excluded_v38_anchors),
         "sources": sources,
+        "skipped_sources": skipped_sources,
         "files": sum(int(source["files"]) for source in sources),
     }
     (args.output_root / "manifest.json").write_text(json_dumps(manifest) + "\n", encoding="utf-8")
