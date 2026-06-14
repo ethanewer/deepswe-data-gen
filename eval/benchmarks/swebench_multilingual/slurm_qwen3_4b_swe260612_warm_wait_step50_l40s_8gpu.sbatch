@@ -44,7 +44,7 @@ SMOKE_MAX_MODEL_LEN="${SMOKE_MAX_MODEL_LEN:-65536}"
 SMOKE_GPU_MEMORY_UTILIZATION="${SMOKE_GPU_MEMORY_UTILIZATION:-0.9}"
 SMOKE_REQUIRE_TOOL_CALL="${SMOKE_REQUIRE_TOOL_CALL:-false}"
 SKIP_SMOKE="${SKIP_SMOKE:-false}"
-TRAIN_LOG_GLOB="${TRAIN_LOG_GLOB:-$REPO_ROOT/logs/local-qwen3-4b-v*-highquality*131k*8g*.log}"
+TRAIN_LOG_GLOB="${TRAIN_LOG_GLOB:-$REPO_ROOT/sft/qwen3-sft/logs/local-qwen3-4b-v*-highquality*131k*8g*.log}"
 VLLM_EVAL_CACHE_ROOT="${VLLM_EVAL_CACHE_ROOT:-$REPO_ROOT/runs/vllm_cache}"
 VLLM_MODEL_INSPECTION_PREWARM_TIMEOUT="${VLLM_MODEL_INSPECTION_PREWARM_TIMEOUT:-3600}"
 VLLM_PREWARM_REGISTRY_MODEL="${VLLM_PREWARM_REGISTRY_MODEL:-Qwen3ForCausalLM}"
@@ -240,7 +240,9 @@ fi
 
 echo "Waiting for checkpoint metadata: $CHECKPOINT_STEP_DIR/model/.metadata"
 while [ ! -f "$CHECKPOINT_STEP_DIR/model/.metadata" ]; do
-  latest_train_log="$(find "$REPO_ROOT/logs" -maxdepth 1 -type f -name "$(basename "$TRAIN_LOG_GLOB")" -printf '%T@ %p\n' 2>/dev/null | sort -nr | awk 'NR == 1 {print $2}')"
+  train_log_dir="$(dirname "$TRAIN_LOG_GLOB")"
+  train_log_name="$(basename "$TRAIN_LOG_GLOB")"
+  latest_train_log="$(find "$train_log_dir" -maxdepth 1 -type f -name "$train_log_name" -printf '%T@ %p\n' 2>/dev/null | sort -nr | awk 'NR == 1 {print $2}')"
   latest_step=""
   if [ -n "$latest_train_log" ]; then
     latest_step="$(tail -n 120 "$latest_train_log" 2>/dev/null | grep -E 'step [0-9]+ \\|' | tail -n 1 || true)"
