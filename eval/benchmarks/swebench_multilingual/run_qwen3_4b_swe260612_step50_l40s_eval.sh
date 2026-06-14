@@ -32,6 +32,10 @@ else
 fi
 CONTEXT_LABEL="${CONTEXT_LABEL:-65k}"
 MODEL_NAME="${MODEL_NAME:-Qwen/Qwen3-4B-Thinking-2507}"
+MODEL_SOURCE_MODEL_NAME="${MODEL_SOURCE_MODEL_NAME:-$MODEL_NAME}"
+MODEL_VARIANT_LABEL="${MODEL_VARIANT_LABEL:-qwen3-4b-thinking}"
+LITELLM_MODEL="${LITELLM_MODEL:-openai/$MODEL_NAME}"
+DESCRIPTION="${DESCRIPTION:-Qwen3 SWE260612 fixed SFT checkpoint on ${EVAL_GPU_COUNT} GPUs.}"
 CONSOLIDATED_DIR="${CONSOLIDATED_DIR:-$CHECKPOINT_STEP_DIR/model/consolidated}"
 CONSOLIDATED_READY="$CONSOLIDATED_DIR/.complete"
 CONSOLIDATED_LOCK="$CHECKPOINT_STEP_DIR/model/.consolidate.lock"
@@ -73,7 +77,7 @@ fi
 export PYTHONPATH="$REPO_ROOT/sft/qwen3-sft/third_party/Automodel:$REPO_ROOT/sft/qwen3-sft/src${PYTHONPATH:+:$PYTHONPATH}"
 
 if [ "$BASELINE_MODEL" = "true" ]; then
-  MODEL_SOURCE="$MODEL_NAME"
+  MODEL_SOURCE="$MODEL_SOURCE_MODEL_NAME"
 else
   MODEL_SOURCE="$CONSOLIDATED_DIR"
 fi
@@ -90,14 +94,14 @@ if [ "$BASELINE_MODEL" != "true" ] && { ! compgen -G "$CONSOLIDATED_DIR/*.safete
         "$REPO_ROOT/sft/qwen3-sft/.venv/bin/python" \
           "$REPO_ROOT/sft/qwen3-sft/third_party/Automodel/tools/offline_hf_consolidation.py" \
           --backend gloo \
-          --model-name "$MODEL_NAME" \
+          --model-name "$MODEL_SOURCE_MODEL_NAME" \
           --input-dir "$CHECKPOINT_STEP_DIR/model" \
           --output-dir "$TMP_CONSOLIDATED_DIR" \
           --cast-dtype bf16
       else
         "$REPO_ROOT/sft/qwen3-sft/.venv/bin/python" \
           "$REPO_ROOT/eval/benchmarks/swebench_multilingual/export_dcp_torchsave_to_hf.py" \
-          --model-name "$MODEL_NAME" \
+          --model-name "$MODEL_SOURCE_MODEL_NAME" \
           --input-dir "$CHECKPOINT_STEP_DIR/model" \
           --output-dir "$TMP_CONSOLIDATED_DIR" \
           --dtype bf16
@@ -118,9 +122,9 @@ for offset in $(seq 1 "$EVAL_GPU_COUNT"); do
 done
 
 if [ "$BASELINE_MODEL" = "true" ]; then
-  RUN_STEM="qwen3-4b-thinking-base-${CHECKPOINT_LABEL}-${CONTEXT_LABEL}"
+  RUN_STEM="${MODEL_VARIANT_LABEL}-base-${CHECKPOINT_LABEL}-${CONTEXT_LABEL}"
 else
-  RUN_STEM="qwen3-4b-thinking-swe260612-miniswe-${CHECKPOINT_LABEL}-${CONTEXT_LABEL}"
+  RUN_STEM="${MODEL_VARIANT_LABEL}-swe260612-miniswe-${CHECKPOINT_LABEL}-${CONTEXT_LABEL}"
 fi
 RUN_NAME="${RUN_STEM}-${EVAL_ACCELERATOR_LABEL}-${EVAL_GPU_COUNT}gpu-${BENCHMARK_LABEL}${RUN_SUFFIX:+-$RUN_SUFFIX}-${SLURM_JOB_ID:-manual}"
 CONFIG_PATH="$REPO_ROOT/runs/serving_configs/${RUN_NAME}.json"
@@ -129,20 +133,34 @@ OUTPUT_DIR="$BENCHMARK_OUTPUT_ROOT/$RUN_NAME"
 SERVE_CACHE_DIR="${SERVE_CACHE_DIR:-/tmp/q3eval-${SLURM_JOB_ID:-manual}-real}"
 VLLM_EVAL_CACHE_ROOT="${VLLM_EVAL_CACHE_ROOT:-$REPO_ROOT/runs/vllm_cache}"
 VLLM_MODEL_INSPECTION_PREWARM_TIMEOUT="${VLLM_MODEL_INSPECTION_PREWARM_TIMEOUT:-3600}"
+VLLM_PREWARM_REGISTRY_MODEL="${VLLM_PREWARM_REGISTRY_MODEL:-Qwen3ForCausalLM}"
+SKIP_VLLM_PREWARM="${SKIP_VLLM_PREWARM:-false}"
 SERVE_HEALTH_TIMEOUT="${SERVE_HEALTH_TIMEOUT:-5400}"
+SERVE_MAX_MODEL_LEN="${SERVE_MAX_MODEL_LEN:-65536}"
 mkdir -p "$BENCHMARK_OUTPUT_ROOT"
 mkdir -p "$VLLM_EVAL_CACHE_ROOT"
 
-"$PYTHON" - "$CONFIG_PATH" "$MODEL_SOURCE" "$MODEL_NAME" "$PROXY_PORT" "$SERVE_CACHE_DIR" "$VLLM_EVAL_CACHE_ROOT" "${BACKEND_PORTS[@]}" <<'PY'
+"$PYTHON" - "$CONFIG_PATH" "$MODEL_SOURCE" "$MODEL_NAME" "$MODEL_SOURCE_MODEL_NAME" "$DESCRIPTION" "$PROXY_PORT" "$SERVE_CACHE_DIR" "$VLLM_EVAL_CACHE_ROOT" "$SERVE_MAX_MODEL_LEN" "${BACKEND_PORTS[@]}" <<'PY'
 import json
 import sys
 
-config_path, model_dir, model_name, proxy_port, serve_cache_dir, vllm_cache_root, *backend_ports = sys.argv[1:]
+(
+    config_path,
+    model_dir,
+    model_name,
+    model_source_model_name,
+    description,
+    proxy_port,
+    serve_cache_dir,
+    vllm_cache_root,
+    max_model_len,
+    *backend_ports,
+) = sys.argv[1:]
 gpu_count = len(backend_ports)
 payload = {
     "model": model_dir,
-    "description": f"Qwen3-4B Thinking SWE260612 fixed SFT checkpoint on {gpu_count} GPUs.",
-    "sources": [model_name, "eval/chat_templates/qwen3_thinking_acc.jinja2"],
+    "description": description,
+    "sources": [model_source_model_name, model_name, "eval/chat_templates/qwen3_thinking_acc.jinja2"],
     "serve": {
         "gpus": list(range(gpu_count)),
         "map_gpus_from_cuda_visible_devices": True,
@@ -153,7 +171,7 @@ payload = {
         "proxy_port": int(proxy_port),
         "served_model_name": model_name,
         "tensor_parallel_size": 1,
-        "max_model_len": 65536,
+        "max_model_len": int(max_model_len),
         "gpu_memory_utilization": 0.9,
         "trust_remote_code": True,
         "chat_template": "eval/chat_templates/qwen3_thinking_acc.jinja2",
@@ -181,13 +199,20 @@ with open(config_path, "w", encoding="utf-8") as handle:
 print(config_path)
 PY
 
-echo "Prewarming vLLM model inspection cache at $VLLM_EVAL_CACHE_ROOT"
-timeout "$VLLM_MODEL_INSPECTION_PREWARM_TIMEOUT" env VLLM_CACHE_ROOT="$VLLM_EVAL_CACHE_ROOT" VLLM_LOG_MODEL_INSPECTION=1 "$PYTHON" - <<'PY'
+if [ "$SKIP_VLLM_PREWARM" != "true" ]; then
+echo "Prewarming vLLM model inspection cache for $VLLM_PREWARM_REGISTRY_MODEL at $VLLM_EVAL_CACHE_ROOT"
+timeout "$VLLM_MODEL_INSPECTION_PREWARM_TIMEOUT" env VLLM_CACHE_ROOT="$VLLM_EVAL_CACHE_ROOT" VLLM_LOG_MODEL_INSPECTION=1 "$PYTHON" - "$VLLM_PREWARM_REGISTRY_MODEL" <<'PY'
+import sys
+
 from vllm.model_executor.models.registry import ModelRegistry
 
-ModelRegistry.models["Qwen3ForCausalLM"].inspect_model_cls()
-print("Prewarmed Qwen3ForCausalLM model inspection cache")
+registry_key = sys.argv[1]
+ModelRegistry.models[registry_key].inspect_model_cls()
+print(f"Prewarmed {registry_key} model inspection cache")
 PY
+else
+  echo "Skipping vLLM model inspection prewarm because SKIP_VLLM_PREWARM=true"
+fi
 
 cleanup() {
   if [ -f "$SERVE_DIR/manifest.json" ]; then
@@ -233,7 +258,7 @@ RUN_ARGS=(
   --generation-step-limit "$GENERATION_STEP_LIMIT" \
   --eval-workers "$EVAL_WORKERS" \
   --model "$MODEL_NAME" \
-  --litellm-model "openai/$MODEL_NAME" \
+  --litellm-model "$LITELLM_MODEL" \
   --api-base "http://127.0.0.1:${PROXY_PORT}/v1" \
   --no-require-api-key \
   --temperature "$TEMPERATURE" \

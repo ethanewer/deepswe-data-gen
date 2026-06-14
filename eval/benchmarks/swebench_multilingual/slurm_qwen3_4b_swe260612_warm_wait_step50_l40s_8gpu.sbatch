@@ -34,7 +34,10 @@ CHECKPOINT_DIR="${CHECKPOINT_DIR:-$REPO_ROOT/sft/qwen3-sft/checkpoints/qwen3_4b_
 CHECKPOINT_STEP_DIR="${CHECKPOINT_STEP_DIR:-$CHECKPOINT_DIR/epoch_0_step_49}"
 CHECKPOINT_LABEL="${CHECKPOINT_LABEL:-step50}"
 BASE_MODEL_NAME="${BASE_MODEL_NAME:-Qwen/Qwen3-4B-Thinking-2507}"
+BASE_MODEL_SOURCE_MODEL_NAME="${BASE_MODEL_SOURCE_MODEL_NAME:-$BASE_MODEL_NAME}"
+BASE_MODEL_VARIANT_LABEL="${BASE_MODEL_VARIANT_LABEL:-qwen3-4b-thinking}"
 EVAL_GPU_COUNT="${EVAL_GPU_COUNT:-8}"
+SMOKE_DESCRIPTION="${SMOKE_DESCRIPTION:-Base Qwen3 smoke serve on ${EVAL_GPU_COUNT} L40S GPUs.}"
 POLL_SECONDS="${POLL_SECONDS:-30}"
 STABILIZE_SECONDS="${STABILIZE_SECONDS:-120}"
 SMOKE_MAX_MODEL_LEN="${SMOKE_MAX_MODEL_LEN:-65536}"
@@ -44,6 +47,8 @@ SKIP_SMOKE="${SKIP_SMOKE:-false}"
 TRAIN_LOG_GLOB="${TRAIN_LOG_GLOB:-$REPO_ROOT/logs/slurm-qwen3-4b-swe260612-h200-4g-*.err}"
 VLLM_EVAL_CACHE_ROOT="${VLLM_EVAL_CACHE_ROOT:-$REPO_ROOT/runs/vllm_cache}"
 VLLM_MODEL_INSPECTION_PREWARM_TIMEOUT="${VLLM_MODEL_INSPECTION_PREWARM_TIMEOUT:-3600}"
+VLLM_PREWARM_REGISTRY_MODEL="${VLLM_PREWARM_REGISTRY_MODEL:-Qwen3ForCausalLM}"
+SKIP_VLLM_PREWARM="${SKIP_VLLM_PREWARM:-false}"
 SMOKE_SERVE_HEALTH_TIMEOUT="${SMOKE_SERVE_HEALTH_TIMEOUT:-5400}"
 export VLLM_EVAL_CACHE_ROOT
 export SERVE_HEALTH_TIMEOUT="${SERVE_HEALTH_TIMEOUT:-5400}"
@@ -67,21 +72,32 @@ for offset in $(seq 1 "$EVAL_GPU_COUNT"); do
   SMOKE_BACKEND_PORTS+=("$((BASE_PORT + SMOKE_BACKEND_PORT_GAP + offset))")
 done
 
-SMOKE_RUN_NAME="qwen3-4b-thinking-base-l40s-${EVAL_GPU_COUNT}gpu-smoke-${SLURM_JOB_ID:-manual}"
+SMOKE_RUN_NAME="${BASE_MODEL_VARIANT_LABEL}-base-l40s-${EVAL_GPU_COUNT}gpu-smoke-${SLURM_JOB_ID:-manual}"
 SMOKE_CONFIG_PATH="$REPO_ROOT/runs/serving_configs/${SMOKE_RUN_NAME}.json"
 SMOKE_SERVE_DIR="$REPO_ROOT/runs/serving/$SMOKE_RUN_NAME"
 SMOKE_SERVE_CACHE_DIR="${SMOKE_SERVE_CACHE_DIR:-/tmp/q3eval-${SLURM_JOB_ID:-manual}-smoke}"
 
-"$PYTHON" - "$SMOKE_CONFIG_PATH" "$BASE_MODEL_NAME" "$SMOKE_PROXY_PORT" "$SMOKE_MAX_MODEL_LEN" "$SMOKE_GPU_MEMORY_UTILIZATION" "$SMOKE_SERVE_CACHE_DIR" "$VLLM_EVAL_CACHE_ROOT" "${SMOKE_BACKEND_PORTS[@]}" <<'PY'
+"$PYTHON" - "$SMOKE_CONFIG_PATH" "$BASE_MODEL_SOURCE_MODEL_NAME" "$BASE_MODEL_NAME" "$SMOKE_DESCRIPTION" "$SMOKE_PROXY_PORT" "$SMOKE_MAX_MODEL_LEN" "$SMOKE_GPU_MEMORY_UTILIZATION" "$SMOKE_SERVE_CACHE_DIR" "$VLLM_EVAL_CACHE_ROOT" "${SMOKE_BACKEND_PORTS[@]}" <<'PY'
 import json
 import sys
 
-config_path, model_name, proxy_port, max_model_len, gpu_memory_utilization, serve_cache_dir, vllm_cache_root, *backend_ports = sys.argv[1:]
+(
+    config_path,
+    model_source_model_name,
+    model_name,
+    description,
+    proxy_port,
+    max_model_len,
+    gpu_memory_utilization,
+    serve_cache_dir,
+    vllm_cache_root,
+    *backend_ports,
+) = sys.argv[1:]
 gpu_count = len(backend_ports)
 payload = {
-    "model": model_name,
-    "description": f"Base Qwen3-4B Thinking smoke serve on {gpu_count} L40S GPUs.",
-    "sources": [model_name, "eval/chat_templates/qwen3_thinking_acc.jinja2"],
+    "model": model_source_model_name,
+    "description": description,
+    "sources": [model_source_model_name, model_name, "eval/chat_templates/qwen3_thinking_acc.jinja2"],
     "serve": {
         "gpus": list(range(gpu_count)),
         "map_gpus_from_cuda_visible_devices": True,
@@ -120,13 +136,20 @@ with open(config_path, "w", encoding="utf-8") as handle:
 print(config_path)
 PY
 
-echo "Prewarming vLLM model inspection cache at $VLLM_EVAL_CACHE_ROOT"
-timeout "$VLLM_MODEL_INSPECTION_PREWARM_TIMEOUT" env VLLM_CACHE_ROOT="$VLLM_EVAL_CACHE_ROOT" VLLM_LOG_MODEL_INSPECTION=1 "$PYTHON" - <<'PY'
+if [ "$SKIP_VLLM_PREWARM" != "true" ]; then
+echo "Prewarming vLLM model inspection cache for $VLLM_PREWARM_REGISTRY_MODEL at $VLLM_EVAL_CACHE_ROOT"
+timeout "$VLLM_MODEL_INSPECTION_PREWARM_TIMEOUT" env VLLM_CACHE_ROOT="$VLLM_EVAL_CACHE_ROOT" VLLM_LOG_MODEL_INSPECTION=1 "$PYTHON" - "$VLLM_PREWARM_REGISTRY_MODEL" <<'PY'
+import sys
+
 from vllm.model_executor.models.registry import ModelRegistry
 
-ModelRegistry.models["Qwen3ForCausalLM"].inspect_model_cls()
-print("Prewarmed Qwen3ForCausalLM model inspection cache")
+registry_key = sys.argv[1]
+ModelRegistry.models[registry_key].inspect_model_cls()
+print(f"Prewarmed {registry_key} model inspection cache")
 PY
+else
+  echo "Skipping vLLM model inspection prewarm because SKIP_VLLM_PREWARM=true"
+fi
 
 cleanup_smoke() {
   if [ -f "$SMOKE_SERVE_DIR/manifest.json" ]; then
