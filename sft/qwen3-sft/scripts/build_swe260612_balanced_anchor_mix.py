@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""Build a balanced SWE260612 mix with edit/submit anchors.
+"""Build a balanced SWE260612 mix with safe action anchors.
 
 The v9 empty-diff recipe over-sampled recovery rows whose target is always a
 `git diff` command. This builder keeps the current 260612 weighted prefix data,
-keeps only a small amount of empty-diff recovery, and adds older v38
-edit/submit anchor shards to restore the inspect->edit->diff->submit balance.
-The v38 patch-recovery bucket is excluded by default because its targets are
-all rejected by the online SWE loss policy. The builder writes symlinks instead
-of copying large JSONL files.
+keeps only a small amount of empty-diff recovery, and adds older v38 anchor
+shards that do not teach direct synthetic-diff submission. The v38
+patch-recovery bucket is excluded by default because its targets are all
+rejected by the online SWE loss policy. The v1 edit/submit prefix anchor is
+also excluded by default because step-50 evals showed it encourages manual
+`diff --git` submissions with fabricated metadata instead of source edits.
+The builder writes symlinks instead of copying large JSONL files.
 """
 
 from __future__ import annotations
@@ -36,7 +38,10 @@ DEFAULT_V38_ANCHOR = Path(
     "/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/sft/qwen3-sft/data/"
     "swebench_ml_v38_clean_sourceedit_shortthought_raw_sharded"
 )
-DEFAULT_EXCLUDED_V38_ANCHORS = ("v23_patch_recovery_v38",)
+DEFAULT_EXCLUDED_V38_ANCHORS = (
+    "v1_edit_submit_prefix_anchor_v38",
+    "v23_patch_recovery_v38",
+)
 
 
 def json_dumps(value: Any) -> str:
@@ -145,9 +150,10 @@ def main() -> int:
         "output_root": str(args.output_root),
         "selection": (
             "260612 weighted prefix data plus one-copy empty-diff recovery and "
-            "v38 edit/submit anchors, excluding v38 buckets that are rejected "
-            "by the online SWE loss policy. This avoids the v9 x12 diff-target "
-            "skew while preserving explicit recovery examples."
+            "safe v38 anchors, excluding v38 buckets that are rejected by the "
+            "online SWE loss policy or that teach direct synthetic-diff "
+            "submission. This avoids the v9 x12 diff-target skew while "
+            "preserving explicit recovery examples."
         ),
         "empty_diff_copies": args.empty_diff_copies,
         "excluded_v38_anchors": sorted(excluded_v38_anchors),
