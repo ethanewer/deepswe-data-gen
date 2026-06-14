@@ -30,6 +30,8 @@ export ENABLE_FSDP2_PREFETCH="${ENABLE_FSDP2_PREFETCH:-true}"
 export FSDP2_BACKWARD_PREFETCH_DEPTH="${FSDP2_BACKWARD_PREFETCH_DEPTH:-3}"
 export FSDP2_FORWARD_PREFETCH_DEPTH="${FSDP2_FORWARD_PREFETCH_DEPTH:-1}"
 
+# Keep overlength rows split, not truncated: about 16% of rows are above 65k,
+# and the 1200-step budget assumes those row tails remain trainable.
 export OVERLENGTH_STRATEGY="${OVERLENGTH_STRATEGY:-split}"
 export SHUFFLE_JSONL_ROWS="${SHUFFLE_JSONL_ROWS:-true}"
 export REQUIRE_ASSISTANT_REASONING_FOR_LOSS="${REQUIRE_ASSISTANT_REASONING_FOR_LOSS:-true}"
