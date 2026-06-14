@@ -43,6 +43,8 @@ STABILIZE_SECONDS="${STABILIZE_SECONDS:-120}"
 SMOKE_MAX_MODEL_LEN="${SMOKE_MAX_MODEL_LEN:-65536}"
 SMOKE_GPU_MEMORY_UTILIZATION="${SMOKE_GPU_MEMORY_UTILIZATION:-0.9}"
 SMOKE_REQUIRE_TOOL_CALL="${SMOKE_REQUIRE_TOOL_CALL:-false}"
+SMOKE_REASONING_PARSER="${SMOKE_REASONING_PARSER:-deepseek_r1}"
+SMOKE_TOOL_CALL_PARSER="${SMOKE_TOOL_CALL_PARSER:-hermes}"
 SKIP_SMOKE="${SKIP_SMOKE:-false}"
 TRAIN_LOG_GLOB="${TRAIN_LOG_GLOB:-$REPO_ROOT/sft/qwen3-sft/logs/local-qwen3-4b-v*-highquality*131k*8g*.log}"
 VLLM_EVAL_CACHE_ROOT="${VLLM_EVAL_CACHE_ROOT:-$REPO_ROOT/runs/vllm_cache}"
@@ -77,7 +79,7 @@ SMOKE_CONFIG_PATH="$REPO_ROOT/runs/serving_configs/${SMOKE_RUN_NAME}.json"
 SMOKE_SERVE_DIR="$REPO_ROOT/runs/serving/$SMOKE_RUN_NAME"
 SMOKE_SERVE_CACHE_DIR="${SMOKE_SERVE_CACHE_DIR:-/tmp/q3eval-${SLURM_JOB_ID:-manual}-smoke}"
 
-"$PYTHON" - "$SMOKE_CONFIG_PATH" "$BASE_MODEL_SOURCE_MODEL_NAME" "$BASE_MODEL_NAME" "$SMOKE_DESCRIPTION" "$SMOKE_PROXY_PORT" "$SMOKE_MAX_MODEL_LEN" "$SMOKE_GPU_MEMORY_UTILIZATION" "$SMOKE_SERVE_CACHE_DIR" "$VLLM_EVAL_CACHE_ROOT" "${SMOKE_BACKEND_PORTS[@]}" <<'PY'
+"$PYTHON" - "$SMOKE_CONFIG_PATH" "$BASE_MODEL_SOURCE_MODEL_NAME" "$BASE_MODEL_NAME" "$SMOKE_DESCRIPTION" "$SMOKE_PROXY_PORT" "$SMOKE_MAX_MODEL_LEN" "$SMOKE_GPU_MEMORY_UTILIZATION" "$SMOKE_SERVE_CACHE_DIR" "$VLLM_EVAL_CACHE_ROOT" "$SMOKE_REASONING_PARSER" "$SMOKE_TOOL_CALL_PARSER" "${SMOKE_BACKEND_PORTS[@]}" <<'PY'
 import json
 import sys
 
@@ -91,6 +93,8 @@ import sys
     gpu_memory_utilization,
     serve_cache_dir,
     vllm_cache_root,
+    reasoning_parser,
+    tool_call_parser,
     *backend_ports,
 ) = sys.argv[1:]
 gpu_count = len(backend_ports)
@@ -123,10 +127,10 @@ payload = {
         },
         "vllm_args": [
             "--reasoning-parser",
-            "deepseek_r1",
+            reasoning_parser,
             "--enable-auto-tool-choice",
             "--tool-call-parser",
-            "hermes",
+            tool_call_parser,
         ],
     },
 }

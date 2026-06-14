@@ -137,10 +137,12 @@ VLLM_PREWARM_REGISTRY_MODEL="${VLLM_PREWARM_REGISTRY_MODEL:-Qwen3ForCausalLM}"
 SKIP_VLLM_PREWARM="${SKIP_VLLM_PREWARM:-false}"
 SERVE_HEALTH_TIMEOUT="${SERVE_HEALTH_TIMEOUT:-5400}"
 SERVE_MAX_MODEL_LEN="${SERVE_MAX_MODEL_LEN:-65536}"
+REASONING_PARSER="${REASONING_PARSER:-deepseek_r1}"
+TOOL_CALL_PARSER="${TOOL_CALL_PARSER:-hermes}"
 mkdir -p "$BENCHMARK_OUTPUT_ROOT"
 mkdir -p "$VLLM_EVAL_CACHE_ROOT"
 
-"$PYTHON" - "$CONFIG_PATH" "$MODEL_SOURCE" "$MODEL_NAME" "$MODEL_SOURCE_MODEL_NAME" "$DESCRIPTION" "$PROXY_PORT" "$SERVE_CACHE_DIR" "$VLLM_EVAL_CACHE_ROOT" "$SERVE_MAX_MODEL_LEN" "${BACKEND_PORTS[@]}" <<'PY'
+"$PYTHON" - "$CONFIG_PATH" "$MODEL_SOURCE" "$MODEL_NAME" "$MODEL_SOURCE_MODEL_NAME" "$DESCRIPTION" "$PROXY_PORT" "$SERVE_CACHE_DIR" "$VLLM_EVAL_CACHE_ROOT" "$SERVE_MAX_MODEL_LEN" "$REASONING_PARSER" "$TOOL_CALL_PARSER" "${BACKEND_PORTS[@]}" <<'PY'
 import json
 import sys
 
@@ -154,6 +156,8 @@ import sys
     serve_cache_dir,
     vllm_cache_root,
     max_model_len,
+    reasoning_parser,
+    tool_call_parser,
     *backend_ports,
 ) = sys.argv[1:]
 gpu_count = len(backend_ports)
@@ -186,10 +190,10 @@ payload = {
         },
         "vllm_args": [
             "--reasoning-parser",
-            "deepseek_r1",
+            reasoning_parser,
             "--enable-auto-tool-choice",
             "--tool-call-parser",
-            "hermes",
+            tool_call_parser,
         ],
     },
 }
