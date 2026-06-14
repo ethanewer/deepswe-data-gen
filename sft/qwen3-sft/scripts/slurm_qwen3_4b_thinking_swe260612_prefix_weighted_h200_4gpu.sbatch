@@ -14,7 +14,7 @@ set -euo pipefail
 
 DEFAULT_REPO_ROOT="/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen-mainpush"
 REPO_ROOT="${REPO_ROOT:-${SLURM_SUBMIT_DIR:-$DEFAULT_REPO_ROOT}}"
-if [ ! -x "$REPO_ROOT/sft/qwen3-sft/scripts/run_qwen3_4b_thinking_swe260612_prefix_weighted_balanced_sft_8gpu.sh" ]; then
+if [ ! -x "$REPO_ROOT/sft/qwen3-sft/scripts/run_qwen3_4b_thinking_swe260612_prefix_weighted_balanced_sft_4gpu.sh" ]; then
   REPO_ROOT="$DEFAULT_REPO_ROOT"
 fi
 QWEN_DIR="$REPO_ROOT/sft/qwen3-sft"
@@ -52,4 +52,4 @@ export ASSISTANT_LOSS_TARGET="${ASSISTANT_LOSS_TARGET:-assistant}"
 export MASTER_ADDR="${MASTER_ADDR:-127.0.0.1}"
 export MASTER_PORT="${MASTER_PORT:-$((20000 + (${SLURM_JOB_ID:-0} % 20000)))}"
 
-exec ./scripts/run_qwen3_4b_thinking_swe260612_prefix_weighted_balanced_sft_8gpu.sh "$@"
+exec ./scripts/run_qwen3_4b_thinking_swe260612_prefix_weighted_balanced_sft_4gpu.sh "$@"

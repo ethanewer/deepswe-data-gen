@@ -2,9 +2,9 @@
 set -euo pipefail
 
 export CONFIG="${CONFIG:-configs/qwen3_8b_thinking_online_packed_sft_8gpu.yaml}"
-export TRAIN_RAW_ROOT="${TRAIN_RAW_ROOT:-/wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260612/qwen3-4b-thinking-prefix-weighted-v3-emptydiffx4-mix}"
-export CHECKPOINT_DIR="${CHECKPOINT_DIR:-checkpoints/qwen3_8b_thinking_swe260612_prefix_weighted_v8_manualcontextguard_65k_assistant_sft/}"
-export RUN_NAME="${RUN_NAME:-qwen3_8b_thinking_swe260612_prefix_weighted_v8_manualcontextguard_65k_assistant_sft}"
+export TRAIN_RAW_ROOT="${TRAIN_RAW_ROOT:-/wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260612/qwen3-4b-thinking-prefix-weighted-v13-safeanchors-mix}"
+export CHECKPOINT_DIR="${CHECKPOINT_DIR:-checkpoints/qwen3_8b_thinking_swe260612_prefix_weighted_v15_contextguard_65k_assistant_sft/}"
+export RUN_NAME="${RUN_NAME:-qwen3_8b_thinking_swe260612_prefix_weighted_v15_contextguard_65k_assistant_sft}"
 
 export PACK_SIZE="${PACK_SIZE:-65536}"
 export LOCAL_BATCH_SIZE="${LOCAL_BATCH_SIZE:-1}"
