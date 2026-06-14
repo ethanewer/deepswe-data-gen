@@ -38,7 +38,7 @@ THINK_OPEN = "<think>\n"
 THINK_CLOSE = "\n</think>"
 ASSISTANT_LOSS_TARGETS = ("assistant", "tool_calls")
 MINI_SWE_SUBMIT_COMMAND = "echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && cat patch.txt"
-PATCH_TXT_PATH_PATTERN = r"(?:\./|/testbed/)?patch\.txt"
+PATCH_TXT_PATH_PATTERN = r"(?<![\w.-])(?:\./|/testbed/)?patch\.txt(?![\w.-])"
 PATCH_TXT_WRITE_PATTERN = (
     rf"(>\s*{PATCH_TXT_PATH_PATTERN}"
     rf"|\|\s*tee\s+(-a\s+)?{PATCH_TXT_PATH_PATTERN}"
@@ -54,9 +54,13 @@ def command_references_git_diff(command: str) -> bool:
     )
 
 
+def command_mentions_patch_file(command: str) -> bool:
+    return bool(re.search(PATCH_TXT_PATH_PATTERN, command.lower()))
+
+
 def command_has_script_patch_write(command: str) -> bool:
     text = command.lower()
-    if "patch.txt" not in text:
+    if not command_mentions_patch_file(command):
         return False
     return bool(
         re.search(r"\bopen\s*\([^)\n]*patch\.txt[^)\n]*['\"]w", text)
@@ -157,7 +161,7 @@ def assistant_has_manual_patch_target(message: dict[str, Any]) -> bool:
     """Detect targets that hand-write patch.txt instead of editing the tree."""
     command = assistant_tool_command(message)
     text = command.lower()
-    if "patch.txt" not in text:
+    if not command_mentions_patch_file(command):
         return False
     if text.strip() == MINI_SWE_SUBMIT_COMMAND.lower():
         return False
@@ -192,7 +196,7 @@ def is_submit_command(command: str) -> bool:
 
 def command_prepares_patch_for_submit(command: str) -> bool:
     text = command.lower()
-    if "patch.txt" not in text or is_submit_command(text):
+    if not command_mentions_patch_file(command) or is_submit_command(text):
         return False
     if command_references_git_diff(command) and re.search(rf"\|\s*tee\s+(-a\s+)?{PATCH_TXT_PATH_PATTERN}", text):
         return True
@@ -207,7 +211,7 @@ def command_prepares_patch_for_submit(command: str) -> bool:
 
 def command_writes_patch_file(command: str) -> bool:
     text = command.lower()
-    if "patch.txt" not in text or is_submit_command(text):
+    if not command_mentions_patch_file(command) or is_submit_command(text):
         return False
     return bool(re.search(PATCH_TXT_WRITE_PATTERN, text) or command_has_script_patch_write(command))
 
@@ -243,6 +247,7 @@ def apply_assistant_loss_policy(
     patch_file_tainted = False
     seen_submit_command = False
     seen_manual_patch_target = False
+    drop_example = False
     for message in example.get("messages", []):
         if message.get("role") != "assistant":
             if previous_assistant_command:
@@ -264,6 +269,7 @@ def apply_assistant_loss_policy(
             message["loss"] = False
         if reject_manual_patch_targets and has_manual_patch_target:
             message["loss"] = False
+            drop_example = True
         if (
             reject_unverified_submit_targets
             and is_submit
@@ -274,10 +280,12 @@ def apply_assistant_loss_policy(
             )
         ):
             message["loss"] = False
+            drop_example = True
         if require_assistant_reasoning_for_loss and not assistant_has_reasoning(message):
             message["loss"] = False
         if require_assistant_tool_calls_for_loss and not has_tool_calls:
             message["loss"] = False
+            drop_example = True
         if is_submit:
             seen_submit_command = True
         if reject_manual_patch_targets and has_manual_patch_target:
@@ -288,6 +296,8 @@ def apply_assistant_loss_policy(
                 patch_file_tainted = bool(has_manual_patch_target)
             previous_assistant_command = command
             previous_assistant_observations = []
+    if drop_example:
+        example["drop"] = True
     return example
 
 
@@ -323,7 +333,7 @@ def tokenize_chat_example(
 
     messages = example["messages"]
     tools = example.get("tools")
-    if not messages:
+    if example.get("drop") or not messages:
         return
 
     rendered = render_chat(tokenizer, messages, tools, chat_template)
