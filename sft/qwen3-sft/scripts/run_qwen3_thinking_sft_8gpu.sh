@@ -146,6 +146,29 @@ if [ "$GLOBAL_TOKENS" -lt 1000000 ] || [ "$GLOBAL_TOKENS" -gt 5000000 ]; then
   exit 1
 fi
 
+case "$SHUFFLE_JSONL_ROWS" in
+  true|True|TRUE|1|yes|YES)
+    if [ -z "$JSONL_OFFSETS_PATH" ]; then
+      mapfile -t train_jsonl_files < <(find "$TRAIN_RAW_ROOT" -maxdepth 1 -type f -name '*.jsonl' | sort)
+      if [ "${#train_jsonl_files[@]}" -eq 1 ]; then
+        jsonl_path="${train_jsonl_files[0]}"
+        offsets_path="${jsonl_path}.offsets.u64"
+        if [ ! -s "$offsets_path" ] || [ "$jsonl_path" -nt "$offsets_path" ]; then
+          echo "Building JSONL row offset index for online row shuffle: $offsets_path"
+          "$VENV_PYTHON" -m qwen_agentic_sft.data build-jsonl-offsets --jsonl "$jsonl_path"
+        else
+          echo "Using JSONL row offset index: $offsets_path"
+        fi
+        JSONL_OFFSETS_PATH="$offsets_path"
+      elif [ "${#train_jsonl_files[@]}" -gt 1 ]; then
+        echo "Warning: shuffle_jsonl_rows=true only supports a single JSONL file; $TRAIN_RAW_ROOT has ${#train_jsonl_files[@]} files, so only file-order shuffling will apply." >&2
+      else
+        echo "Warning: shuffle_jsonl_rows=true but no top-level JSONL files were found under $TRAIN_RAW_ROOT." >&2
+      fi
+    fi
+    ;;
+esac
+
 echo "Run: $RUN_NAME"
 echo "Packed sequence length: $PACK_SIZE"
 echo "Global packed sequences: $GLOBAL_BATCH_SIZE"
