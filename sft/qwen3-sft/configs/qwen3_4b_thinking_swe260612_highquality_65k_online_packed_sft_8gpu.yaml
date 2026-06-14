@@ -86,6 +86,8 @@ dataset:
   overlength_strategy: split
   min_label_tokens: 1
   shuffle_files: true
+  shuffle_jsonl_rows: false
+  jsonl_offsets_path: null
   seed: 33333
   repeat: true
   log_every_packs: 100
@@ -119,6 +121,8 @@ validation_dataset:
   overlength_strategy: split
   min_label_tokens: 1
   shuffle_files: false
+  shuffle_jsonl_rows: false
+  jsonl_offsets_path: null
   seed: 33333
   repeat: false
   log_every_packs: 0

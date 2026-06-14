@@ -82,6 +82,8 @@ dataset:
   reject_manual_patch_targets: true
   reject_unverified_submit_targets: true
   shuffle_files: true
+  shuffle_jsonl_rows: false
+  jsonl_offsets_path: null
   seed: 33333
   repeat: true
   log_every_packs: 100
@@ -115,6 +117,8 @@ validation_dataset:
   reject_manual_patch_targets: true
   reject_unverified_submit_targets: true
   shuffle_files: false
+  shuffle_jsonl_rows: false
+  jsonl_offsets_path: null
   seed: 33333
   repeat: false
   log_every_packs: 0

@@ -105,6 +105,8 @@ MULTIPROCESSING_CONTEXT="${MULTIPROCESSING_CONTEXT:-fork}"
 PERSISTENT_WORKERS="${PERSISTENT_WORKERS:-false}"
 PREFETCH_FACTOR="${PREFETCH_FACTOR:-2}"
 OVERLENGTH_STRATEGY="${OVERLENGTH_STRATEGY:-}"
+SHUFFLE_JSONL_ROWS="${SHUFFLE_JSONL_ROWS:-}"
+JSONL_OFFSETS_PATH="${JSONL_OFFSETS_PATH:-}"
 REQUIRE_ASSISTANT_REASONING_FOR_LOSS="${REQUIRE_ASSISTANT_REASONING_FOR_LOSS:-}"
 REQUIRE_ASSISTANT_TOOL_CALLS_FOR_LOSS="${REQUIRE_ASSISTANT_TOOL_CALLS_FOR_LOSS:-}"
 DROP_ASSISTANT_CONTENT_FOR_TOOL_CALLS="${DROP_ASSISTANT_CONTENT_FOR_TOOL_CALLS:-}"
@@ -236,6 +238,14 @@ if [ -n "$OVERLENGTH_STRATEGY" ]; then
   args+=(--dataset.overlength_strategy "$OVERLENGTH_STRATEGY")
 fi
 
+if [ -n "$SHUFFLE_JSONL_ROWS" ]; then
+  args+=(--dataset.shuffle_jsonl_rows "$SHUFFLE_JSONL_ROWS")
+fi
+
+if [ -n "$JSONL_OFFSETS_PATH" ]; then
+  args+=(--dataset.jsonl_offsets_path "$JSONL_OFFSETS_PATH")
+fi
+
 if [ -n "$REQUIRE_ASSISTANT_REASONING_FOR_LOSS" ]; then
   args+=(--dataset.require_assistant_reasoning_for_loss "$REQUIRE_ASSISTANT_REASONING_FOR_LOSS")
 fi
@@ -275,6 +285,9 @@ if [ "$VALIDATION_ENABLED" = "true" ]; then
   )
   if [ -n "$OVERLENGTH_STRATEGY" ]; then
     args+=(--validation_dataset.overlength_strategy "$OVERLENGTH_STRATEGY")
+  fi
+  if [ -n "$SHUFFLE_JSONL_ROWS" ]; then
+    args+=(--validation_dataset.shuffle_jsonl_rows false)
   fi
   if [ -n "$REQUIRE_ASSISTANT_REASONING_FOR_LOSS" ]; then
     args+=(--validation_dataset.require_assistant_reasoning_for_loss "$REQUIRE_ASSISTANT_REASONING_FOR_LOSS")

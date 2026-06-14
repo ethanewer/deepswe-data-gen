@@ -22,8 +22,11 @@ from .data import (
     RAW_ROOT,
     assistant_has_reasoning,
     assistant_has_valid_tool_calls,
+    default_jsonl_offsets_path,
     discover_raw_files,
     iter_normalized_examples_from_files,
+    iter_normalized_examples_from_jsonl_offsets,
+    load_jsonl_offsets,
     text_from_content,
 )
 
@@ -492,6 +495,8 @@ class OnlinePackedChatDataset(IterableDataset):
         overlength_strategy: str = "split",
         min_label_tokens: int = 1,
         shuffle_files: bool = True,
+        shuffle_jsonl_rows: bool = False,
+        jsonl_offsets_path: str | Path | None = None,
         seed: int = 33333,
         repeat: bool = True,
         skip_roots: list[str | Path] | None = None,
@@ -517,6 +522,8 @@ class OnlinePackedChatDataset(IterableDataset):
         self.overlength_strategy = overlength_strategy
         self.min_label_tokens = int(min_label_tokens)
         self.shuffle_files = bool(shuffle_files)
+        self.shuffle_jsonl_rows = bool(shuffle_jsonl_rows)
+        self.jsonl_offsets_path = None if jsonl_offsets_path is None or str(jsonl_offsets_path).strip() == "" else Path(jsonl_offsets_path)
         self.seed = int(seed)
         self.repeat = bool(repeat)
         self.skip_roots = [Path(root) for root in (skip_roots or [])]
@@ -592,6 +599,25 @@ class OnlinePackedChatDataset(IterableDataset):
             return files[shard_id::num_shards], rank, world_size, worker_id, num_workers, None, None
         return files, rank, world_size, worker_id, num_workers, shard_id, num_shards
 
+    def _indexed_jsonl_row_offsets(self, files: list[Path], epoch: int, shard_id: int, num_shards: int) -> tuple[Path, list[int]] | None:
+        if not self.shuffle_jsonl_rows or len(files) != 1 or files[0].suffix != ".jsonl":
+            return None
+        path = files[0]
+        offsets = load_jsonl_offsets(path, self.jsonl_offsets_path)
+        if offsets is None:
+            if epoch == 0 and shard_id == 0:
+                print(
+                    f"[online-pack] shuffle_jsonl_rows=true but no offset index was found at "
+                    f"{self.jsonl_offsets_path or default_jsonl_offsets_path(path)}; falling back to streaming row order",
+                    flush=True,
+                )
+            return None
+        order = list(range(len(offsets)))
+        rng = random.Random(self.seed + epoch)
+        rng.shuffle(order)
+        shard_order = order[shard_id::num_shards]
+        return path, [int(offsets[index]) for index in shard_order]
+
     def __iter__(self) -> Iterator[dict[str, Any]]:
         tokenizer = self._ensure_tokenizer()
         epoch = 0
@@ -599,6 +625,8 @@ class OnlinePackedChatDataset(IterableDataset):
         empty_epochs = 0
         while True:
             files, rank, world_size, worker_id, num_workers, row_shard_id, row_num_shards = self._sharded_files(epoch)
+            shard_id = row_shard_id if row_shard_id is not None else rank * num_workers + worker_id
+            num_shards = row_num_shards if row_num_shards is not None else max(1, world_size * num_workers)
             packer = StreamingTHDPacker(
                 sequence_length=self.sequence_length,
                 pad_token_id=self.pad_token_id,
@@ -606,17 +634,33 @@ class OnlinePackedChatDataset(IterableDataset):
             examples_seen = 0
             packs_emitted = 0
             start_time = time.time()
-            for row_idx, example in enumerate(iter_normalized_examples_from_files(
-                files,
-                max_rows_per_file=self.max_rows_per_file,
-                parquet_batch_size=self.parquet_batch_size,
-                max_examples=self.max_examples,
-            )):
-                if (
-                    row_shard_id is not None
-                    and row_num_shards is not None
-                    and row_idx % row_num_shards != row_shard_id
-                ):
+            indexed_jsonl = self._indexed_jsonl_row_offsets(files, epoch, shard_id, num_shards)
+            if indexed_jsonl is not None:
+                path, offsets = indexed_jsonl
+                if epoch == 0:
+                    print(
+                        f"[online-pack rank={rank} worker={worker_id}] "
+                        f"using indexed JSONL row shuffle file={path.name} rows={len(offsets):,} "
+                        f"shard={shard_id}/{num_shards}",
+                        flush=True,
+                    )
+                example_iter = iter_normalized_examples_from_jsonl_offsets(
+                    path,
+                    offsets,
+                    max_examples=self.max_examples,
+                )
+                needs_row_shard_filter = False
+            else:
+                example_iter = iter_normalized_examples_from_files(
+                    files,
+                    max_rows_per_file=self.max_rows_per_file,
+                    parquet_batch_size=self.parquet_batch_size,
+                    max_examples=self.max_examples,
+                )
+                needs_row_shard_filter = row_shard_id is not None and row_num_shards is not None
+
+            for row_idx, example in enumerate(example_iter):
+                if needs_row_shard_filter and row_idx % row_num_shards != row_shard_id:
                     continue
                 examples_seen += 1
                 example = apply_assistant_loss_policy(
@@ -690,6 +734,8 @@ def inspect_packer(args: argparse.Namespace) -> int:
         max_examples=args.max_examples,
         overlength_strategy=args.overlength_strategy,
         shuffle_files=False,
+        shuffle_jsonl_rows=args.shuffle_jsonl_rows,
+        jsonl_offsets_path=args.jsonl_offsets_path,
         repeat=False,
         log_every_packs=0,
         require_assistant_reasoning_for_loss=args.require_assistant_reasoning_for_loss,
@@ -729,6 +775,8 @@ def parse_args() -> argparse.Namespace:
     inspect.add_argument("--max-examples", type=int, default=64)
     inspect.add_argument("--max-packs", type=int, default=2)
     inspect.add_argument("--overlength-strategy", choices=["split", "truncate", "drop"], default="split")
+    inspect.add_argument("--shuffle-jsonl-rows", action=argparse.BooleanOptionalAction, default=False)
+    inspect.add_argument("--jsonl-offsets-path", type=Path, default=None)
     inspect.add_argument("--require-assistant-reasoning-for-loss", action="store_true")
     inspect.add_argument("--require-assistant-tool-calls-for-loss", action="store_true")
     inspect.add_argument("--drop-assistant-content-for-tool-calls", action="store_true")

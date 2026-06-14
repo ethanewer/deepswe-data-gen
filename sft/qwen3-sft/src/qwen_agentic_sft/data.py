@@ -9,6 +9,7 @@ normalization path.
 from __future__ import annotations
 
 import argparse
+import array
 import json
 import os
 import random
@@ -25,6 +26,7 @@ except ImportError:  # pragma: no cover - optional until setup is run.
 
 
 RAW_ROOT = Path("/wbl-fast/usrs/ee/code-swe-data/data/code-swe-terminal-agentic-sft")
+JSONL_OFFSET_SUFFIX = ".offsets.u64"
 EVENT_LOG_TYPES = {"session", "message", "model_change", "thinking_level_change"}
 THINK_OPEN = "<think>\n"
 THINK_CLOSE = "\n</think>\n"
@@ -493,6 +495,68 @@ def iter_jsonl_rows(path: Path, max_rows: int = 0) -> Iterator[dict[str, Any]]:
                 yield row
 
 
+def default_jsonl_offsets_path(path: Path) -> Path:
+    return path.with_name(path.name + JSONL_OFFSET_SUFFIX)
+
+
+def load_jsonl_offsets(path: Path, offsets_path: Path | None = None) -> array.array | None:
+    candidate = offsets_path or default_jsonl_offsets_path(path)
+    if not candidate.exists():
+        return None
+    if candidate.stat().st_size % 8 != 0:
+        raise ValueError(f"JSONL offset index has invalid byte length: {candidate}")
+    offsets = array.array("Q")
+    with candidate.open("rb") as handle:
+        offsets.fromfile(handle, candidate.stat().st_size // 8)
+    if offsets.itemsize != 8:
+        raise RuntimeError("array('Q') is not 64-bit on this platform")
+    if offsets and offsets[0] != 0:
+        raise ValueError(f"JSONL offset index should start at byte 0: {candidate}")
+    return offsets
+
+
+def build_jsonl_offsets(path: Path, output_path: Path | None = None) -> Path:
+    output_path = output_path or default_jsonl_offsets_path(path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    offsets = array.array("Q")
+    with path.open("rb") as handle:
+        while True:
+            offset = handle.tell()
+            line = handle.readline()
+            if not line:
+                break
+            offsets.append(offset)
+    tmp_path = output_path.with_name(output_path.name + ".tmp")
+    with tmp_path.open("wb") as handle:
+        offsets.tofile(handle)
+    tmp_path.replace(output_path)
+    return output_path
+
+
+def iter_jsonl_rows_at_offsets(
+    path: Path,
+    offsets: Iterable[int],
+    *,
+    max_rows: int = 0,
+) -> Iterator[dict[str, Any]]:
+    emitted = 0
+    with path.open("rb") as handle:
+        for offset in offsets:
+            if max_rows and emitted >= max_rows:
+                return
+            handle.seek(int(offset))
+            line = handle.readline().strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(row, dict):
+                emitted += 1
+                yield row
+
+
 def iter_parquet_rows(path: Path, batch_size: int = 128, max_rows: int = 0) -> Iterator[dict[str, Any]]:
     if pq is None:
         raise RuntimeError("pyarrow is required for parquet input")
@@ -545,6 +609,27 @@ def iter_normalized_examples_from_files(
             emitted += 1
             if max_examples and emitted >= max_examples:
                 return
+
+
+def iter_normalized_examples_from_jsonl_offsets(
+    path: Path,
+    offsets: Iterable[int],
+    *,
+    max_examples: int = 0,
+) -> Iterator[dict[str, Any]]:
+    stats = {"rows_in": 0, "rows_out": 0, "rows_dropped": 0, "bad_json": 0}
+    emitted = 0
+    for row in iter_jsonl_rows_at_offsets(path, offsets):
+        stats["rows_in"] += 1
+        normalized = normalize_row(row)
+        if normalized is None:
+            stats["rows_dropped"] += 1
+            continue
+        stats["rows_out"] += 1
+        yield normalized
+        emitted += 1
+        if max_examples and emitted >= max_examples:
+            return
 
 
 def iter_normalized_examples(
@@ -649,6 +734,10 @@ def parse_args() -> argparse.Namespace:
 
     summary = subparsers.add_parser("summarize")
     summary.add_argument("--raw-root", type=Path, default=RAW_ROOT)
+
+    offsets = subparsers.add_parser("build-jsonl-offsets")
+    offsets.add_argument("--jsonl", type=Path, required=True)
+    offsets.add_argument("--output-path", type=Path, default=None)
     return parser.parse_args()
 
 
@@ -666,6 +755,16 @@ def main() -> int:
         return 0
     if args.command == "summarize":
         print(json.dumps(summarize_raw_root(args.raw_root), indent=2, sort_keys=True))
+        return 0
+    if args.command == "build-jsonl-offsets":
+        output_path = build_jsonl_offsets(args.jsonl, args.output_path)
+        offsets = load_jsonl_offsets(args.jsonl, output_path)
+        result = {
+            "jsonl": str(args.jsonl),
+            "output_path": str(output_path),
+            "rows": 0 if offsets is None else len(offsets),
+        }
+        print(json.dumps(result, indent=2, sort_keys=True))
         return 0
     raise AssertionError(args.command)
 
