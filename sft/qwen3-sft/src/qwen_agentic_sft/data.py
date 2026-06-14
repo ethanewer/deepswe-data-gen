@@ -28,6 +28,7 @@ RAW_ROOT = Path("/wbl-fast/usrs/ee/code-swe-data/data/code-swe-terminal-agentic-
 EVENT_LOG_TYPES = {"session", "message", "model_change", "thinking_level_change"}
 THINK_OPEN = "<think>\n"
 THINK_CLOSE = "\n</think>\n"
+REASONING_TAGS = (("<think>", "</think>"), ("<thought>", "</thought>"))
 
 
 def json_dumps(value: Any) -> str:
@@ -115,6 +116,22 @@ def thinking_from_content(value: Any) -> str | None:
     return reasoning or None
 
 
+def split_tagged_reasoning(content: str) -> tuple[str, str] | None:
+    stripped = content.lstrip()
+    leading = len(content) - len(stripped)
+    for open_tag, close_tag in REASONING_TAGS:
+        if not stripped.startswith(open_tag):
+            continue
+        start = leading + len(open_tag)
+        end = content.find(close_tag, start)
+        if end == -1:
+            return None
+        reasoning = content[start:end].strip()
+        remainder = content[end + len(close_tag) :].lstrip("\n")
+        return reasoning, remainder
+    return None
+
+
 def ensure_json_value(value: Any) -> Any | None:
     value = parse_jsonish(value)
     if value in (None, "", [], {}):
@@ -124,8 +141,13 @@ def ensure_json_value(value: Any) -> Any | None:
 
 def merge_thinking(reasoning: Any, content: Any) -> str:
     content_text = text_from_content(content)
-    if reasoning is None and content_text.lstrip().startswith("<think>"):
-        return content_text
+    if reasoning is None:
+        tagged = split_tagged_reasoning(content_text)
+        if tagged is not None:
+            reasoning_text, remainder = tagged
+            if remainder:
+                return f"{THINK_OPEN}{reasoning_text}{THINK_CLOSE}{remainder}"
+            return f"{THINK_OPEN}{reasoning_text}{THINK_CLOSE}".rstrip("\n")
     reasoning_text = text_from_content(reasoning).strip()
     if content_text:
         return f"{THINK_OPEN}{reasoning_text}{THINK_CLOSE}{content_text}"
@@ -300,12 +322,8 @@ def assistant_has_reasoning(msg: dict[str, Any]) -> bool:
         if value not in (None, "", [], {}) and text_from_content(value).strip():
             return True
     content = str(msg.get("content") or "")
-    start = content.find("<think>")
-    end = content.find("</think>", start + len("<think>"))
-    if start == -1 or end == -1:
-        return False
-    reasoning = content[start + len("<think>") : end]
-    return bool(reasoning.strip())
+    tagged = split_tagged_reasoning(content)
+    return bool(tagged and tagged[0].strip())
 
 
 def assistant_has_valid_tool_calls(msg: dict[str, Any]) -> bool:

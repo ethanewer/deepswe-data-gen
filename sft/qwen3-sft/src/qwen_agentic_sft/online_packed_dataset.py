@@ -36,6 +36,7 @@ DEFAULT_CHAT_TEMPLATE = Path(
 )
 THINK_OPEN = "<think>\n"
 THINK_CLOSE = "\n</think>"
+REASONING_TAGS = (("<think>", "</think>"), ("<thought>", "</thought>"))
 ASSISTANT_LOSS_TARGETS = ("assistant", "tool_calls")
 MINI_SWE_SUBMIT_COMMAND = "echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && cat patch.txt"
 PATCH_TXT_PATH_PATTERN = r"(?<![\w.-])(?:\./|/testbed/)?patch\.txt(?![\w.-])"
@@ -125,11 +126,12 @@ def assistant_reasoning_from_content(message: dict[str, Any]) -> str:
         if value not in (None, "", [], {}):
             return text_from_content(value).strip()
     content = text_from_content(message.get("content"))
-    start = content.find("<think>")
-    end = content.find("</think>", start + len("<think>"))
-    if start == -1 or end == -1:
-        return ""
-    return content[start + len("<think>") : end].strip()
+    for open_tag, close_tag in REASONING_TAGS:
+        start = content.find(open_tag)
+        end = content.find(close_tag, start + len(open_tag))
+        if start != -1 and end != -1:
+            return content[start + len(open_tag) : end].strip()
+    return ""
 
 
 def drop_assistant_content_preserving_reasoning(message: dict[str, Any]) -> None:
