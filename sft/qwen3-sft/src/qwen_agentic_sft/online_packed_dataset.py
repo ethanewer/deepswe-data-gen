@@ -589,8 +589,9 @@ class OnlinePackedChatDataset(IterableDataset):
         tokenizer = self._ensure_tokenizer()
         epoch = 0
         emitted_total = 0
+        empty_epochs = 0
         while True:
-            files, rank, _world_size, worker_id, _num_workers, row_shard_id, row_num_shards = self._sharded_files(epoch)
+            files, rank, world_size, worker_id, num_workers, row_shard_id, row_num_shards = self._sharded_files(epoch)
             packer = StreamingTHDPacker(
                 sequence_length=self.sequence_length,
                 pad_token_id=self.pad_token_id,
@@ -650,10 +651,23 @@ class OnlinePackedChatDataset(IterableDataset):
             if not self.repeat:
                 return
             epoch += 1
-            if emitted_total == 0:
+            if packs_emitted == 0:
+                empty_epochs += 1
+                if emitted_total > 0:
+                    continue
+                max_empty_epochs = max(4, min(32, world_size * num_workers))
+                if empty_epochs < max_empty_epochs:
+                    print(
+                        f"[online-pack rank={rank} worker={worker_id}] "
+                        f"epoch={epoch - 1} emitted no packs; reshuffling shard "
+                        f"({empty_epochs}/{max_empty_epochs})",
+                        flush=True,
+                    )
+                    continue
                 raise RuntimeError(
                     f"no packed samples produced from {self.raw_root}; check normalization and data paths"
                 )
+            empty_epochs = 0
 
 
 def inspect_packer(args: argparse.Namespace) -> int:
