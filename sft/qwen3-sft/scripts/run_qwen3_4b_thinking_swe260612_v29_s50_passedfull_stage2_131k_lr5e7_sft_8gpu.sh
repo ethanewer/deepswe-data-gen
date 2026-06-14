@@ -7,7 +7,7 @@ set -euo pipefail
 # improve patch quality without the failed full-mix regression.
 export CONFIG="${CONFIG:-configs/qwen3_4b_thinking_swe260612_highquality_65k_online_packed_sft_8gpu.yaml}"
 export MODEL="${MODEL:-checkpoints/qwen3_4b_thinking_swe260612_v27_highquality_exact_rowshuffle_contextguard_131k_lr1p5e6_s1200_assistant_h200_8gpu_sft/epoch_0_step_49/model/consolidated}"
-export TRAIN_RAW_ROOT="${TRAIN_RAW_ROOT:-/wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260612/highquality-1x-duplicate-reasoning-90pct-30k-full-miniswe-aligned-passed/data}"
+export TRAIN_RAW_ROOT="${TRAIN_RAW_ROOT:-/wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260612/highquality-1x-duplicate-reasoning-90pct-30k-full-miniswe-aligned-passed-singlejsonl/data}"
 export CHECKPOINT_DIR="${CHECKPOINT_DIR:-checkpoints/qwen3_4b_thinking_swe260612_v29_s50_passedfull_stage2_131k_lr5e7_s100_assistant_h200_8gpu_sft/}"
 export RUN_NAME="${RUN_NAME:-qwen3_4b_thinking_swe260612_v29_s50_passedfull_stage2_131k_lr5e7_s100_assistant_h200_8gpu_sft}"
 
