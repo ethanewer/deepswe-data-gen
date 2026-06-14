@@ -124,6 +124,41 @@ def test_empty_think_block_is_not_reasoning() -> None:
     assert not assistant_has_reasoning({"role": "assistant", "content": "<think>\n\n</think>"})
 
 
+def test_empty_think_remainder_is_tool_call_reasoning() -> None:
+    row = {
+        "messages": [
+            {"role": "user", "content": "Inspect the repo."},
+            {
+                "role": "assistant",
+                "content": "<think>\n\n</think>\nI should inspect the repository first.",
+                "tool_calls": [{"function": {"name": "bash", "arguments": {"command": "ls"}}}],
+            },
+        ]
+    }
+
+    normalized = normalize_row(row)
+    assert normalized is not None
+    assert assistant_has_reasoning(normalized["messages"][1])
+
+    filtered = apply_assistant_loss_policy(
+        normalized,
+        require_assistant_reasoning_for_loss=True,
+        require_assistant_tool_calls_for_loss=True,
+        drop_assistant_content_for_tool_calls=True,
+    )
+
+    assistant = filtered["messages"][1]
+    assert filtered.get("drop") is not True
+    assert assistant["reasoning_content"] == "I should inspect the repository first."
+    assert assistant["content"] == ""
+
+
+def test_empty_think_remainder_without_tool_call_is_not_reasoning() -> None:
+    assert not assistant_has_reasoning(
+        {"role": "assistant", "content": "<think>\n\n</think>\nThe final answer is ready."}
+    )
+
+
 def test_structured_reasoning_and_tool_call_content_is_trainable() -> None:
     row = {
         "messages": [
@@ -329,6 +364,7 @@ def test_loss_policy_taints_absolute_patch_txt_manual_write() -> None:
     assert filtered["messages"][1]["loss"] is False
     assert filtered["messages"][3]["loss"] is False
     assert filtered["messages"][5]["loss"] is False
+    assert filtered.get("drop") is not True
 
 
 def test_loss_policy_recognizes_cmd_tool_arguments() -> None:
@@ -385,6 +421,44 @@ def test_loss_policy_recognizes_cmd_tool_arguments() -> None:
     assert assistant_has_manual_patch_target(filtered["messages"][1])
     assert filtered["messages"][1]["loss"] is False
     assert filtered["messages"][3]["loss"] is False
+    assert filtered.get("drop") is not True
+
+
+def test_unverified_submit_masks_only_submit_turn() -> None:
+    example = {
+        "messages": [
+            {"role": "user", "content": "Fix the bug."},
+            {
+                "role": "assistant",
+                "reasoning": "I should inspect the repository.",
+                "tool_calls": [{"function": {"name": "bash", "arguments": {"command": "ls"}}}],
+            },
+            {"role": "tool", "content": "<returncode>0</returncode><output>foo.py</output>"},
+            {
+                "role": "assistant",
+                "reasoning": "I should submit after inspection.",
+                "tool_calls": [
+                    {
+                        "function": {
+                            "name": "bash",
+                            "arguments": {"command": "echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && cat patch.txt"},
+                        }
+                    }
+                ],
+            },
+        ]
+    }
+
+    filtered = apply_assistant_loss_policy(
+        example,
+        require_assistant_reasoning_for_loss=True,
+        require_assistant_tool_calls_for_loss=True,
+        reject_unverified_submit_targets=True,
+    )
+
+    assert filtered["messages"][1].get("loss") is not False
+    assert filtered["messages"][3]["loss"] is False
+    assert filtered.get("drop") is not True
 
 
 def test_loss_policy_masks_turns_after_submit() -> None:

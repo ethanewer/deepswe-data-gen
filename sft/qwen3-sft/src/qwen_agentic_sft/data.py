@@ -323,7 +323,12 @@ def assistant_has_reasoning(msg: dict[str, Any]) -> bool:
             return True
     content = str(msg.get("content") or "")
     tagged = split_tagged_reasoning(content)
-    return bool(tagged and tagged[0].strip())
+    if not tagged:
+        return False
+    reasoning, remainder = tagged
+    if reasoning.strip():
+        return True
+    return bool(msg.get("tool_calls") and remainder.strip())
 
 
 def assistant_has_valid_tool_calls(msg: dict[str, Any]) -> bool:

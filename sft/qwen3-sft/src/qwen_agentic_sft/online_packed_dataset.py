@@ -130,7 +130,13 @@ def assistant_reasoning_from_content(message: dict[str, Any]) -> str:
         start = content.find(open_tag)
         end = content.find(close_tag, start + len(open_tag))
         if start != -1 and end != -1:
-            return content[start + len(open_tag) : end].strip()
+            reasoning = content[start + len(open_tag) : end].strip()
+            if reasoning:
+                return reasoning
+            remainder = content[end + len(close_tag) :].strip()
+            if message.get("tool_calls") and remainder:
+                return remainder
+            return ""
     return ""
 
 
@@ -271,7 +277,6 @@ def apply_assistant_loss_policy(
             message["loss"] = False
         if reject_manual_patch_targets and has_manual_patch_target:
             message["loss"] = False
-            drop_example = True
         if (
             reject_unverified_submit_targets
             and is_submit
@@ -282,7 +287,6 @@ def apply_assistant_loss_policy(
             )
         ):
             message["loss"] = False
-            drop_example = True
         if require_assistant_reasoning_for_loss and not assistant_has_reasoning(message):
             message["loss"] = False
             drop_example = True
