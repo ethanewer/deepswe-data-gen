@@ -39,6 +39,31 @@ THINK_CLOSE = "\n</think>"
 ASSISTANT_LOSS_TARGETS = ("assistant", "tool_calls")
 MINI_SWE_SUBMIT_COMMAND = "echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && cat patch.txt"
 PATCH_TXT_PATH_PATTERN = r"(?:\./|/testbed/)?patch\.txt"
+PATCH_TXT_WRITE_PATTERN = (
+    rf"(>\s*{PATCH_TXT_PATH_PATTERN}"
+    rf"|\|\s*tee\s+(-a\s+)?{PATCH_TXT_PATH_PATTERN}"
+    rf"|\btee\s+(-a\s+)?{PATCH_TXT_PATH_PATTERN})"
+)
+
+
+def command_references_git_diff(command: str) -> bool:
+    text = command.lower()
+    return bool(
+        re.search(r"\bgit\s+diff\b", text)
+        or re.search(r"['\"]git['\"]\s*,\s*['\"]diff['\"]", text)
+    )
+
+
+def command_has_script_patch_write(command: str) -> bool:
+    text = command.lower()
+    if "patch.txt" not in text:
+        return False
+    return bool(
+        re.search(r"\bopen\s*\([^)\n]*patch\.txt[^)\n]*['\"]w", text)
+        or re.search(r"patch\.txt[^;\n]*\.open\s*\([^)\n]*['\"]w", text)
+        or ("patch.txt" in text and "write_text" in text)
+        or re.search(r"\bwritefilesync\s*\([^)\n]*patch\.txt", text)
+    )
 
 
 def _rank_world() -> tuple[int, int]:
@@ -141,16 +166,22 @@ def assistant_has_manual_patch_target(message: dict[str, Any]) -> bool:
     if "diff -u /dev/null" in text:
         return True
     patch_writer = re.search(r"(^|[;&|\n]\s*)(cat|tee|echo|printf)\b", text, flags=re.DOTALL)
-    patch_redirect = re.search(
-        rf"(>\s*{PATCH_TXT_PATH_PATTERN}|\btee\s+(-a\s+)?{PATCH_TXT_PATH_PATTERN})",
-        text,
-        flags=re.DOTALL,
+    patch_redirect = re.search(PATCH_TXT_WRITE_PATTERN, text, flags=re.DOTALL)
+    writes_patch = bool((patch_writer and patch_redirect) or command_has_script_patch_write(command))
+    manual_diff_markers = (
+        "diff --git",
+        "--- /dev/null",
+        "+++ /dev/null",
+        "--- a/",
+        "+++ b/",
+        "new file mode",
+        "index 0000000",
+        "index 1234567",
+        "index 89abcde",
     )
-    writes_patch = bool(patch_writer and patch_redirect)
-    manual_diff_markers = ("diff --git", "--- /dev/null", "+++ /dev/null", "new file mode", "index 0000000")
     if writes_patch and any(marker in text for marker in manual_diff_markers):
         return True
-    if writes_patch and "git diff" not in text:
+    if writes_patch and not command_references_git_diff(command):
         return True
     return False
 
@@ -163,7 +194,7 @@ def command_prepares_patch_for_submit(command: str) -> bool:
     text = command.lower()
     if "patch.txt" not in text or is_submit_command(text):
         return False
-    if "git diff" in text and re.search(rf"\|\s*tee\s+(-a\s+)?{PATCH_TXT_PATH_PATTERN}", text):
+    if command_references_git_diff(command) and re.search(rf"\|\s*tee\s+(-a\s+)?{PATCH_TXT_PATH_PATTERN}", text):
         return True
     if re.search(
         rf"(^|[;&|\n]\s*)(cat|grep|sed|head|tail)\b[^;&]*{PATCH_TXT_PATH_PATTERN}",
@@ -178,7 +209,7 @@ def command_writes_patch_file(command: str) -> bool:
     text = command.lower()
     if "patch.txt" not in text or is_submit_command(text):
         return False
-    return bool(re.search(rf"(>\s*{PATCH_TXT_PATH_PATTERN}|\|\s*tee\s+(-a\s+)?{PATCH_TXT_PATH_PATTERN})", text))
+    return bool(re.search(PATCH_TXT_WRITE_PATTERN, text) or command_has_script_patch_write(command))
 
 
 def observation_has_visible_patch_output(observation: str) -> bool:
