@@ -39,6 +39,10 @@ DESCRIPTION="${DESCRIPTION:-Qwen3 SWE260612 fixed SFT checkpoint on ${EVAL_GPU_C
 CONSOLIDATED_DIR="${CONSOLIDATED_DIR:-$CHECKPOINT_STEP_DIR/model/consolidated}"
 CONSOLIDATED_READY="$CONSOLIDATED_DIR/.complete"
 CONSOLIDATED_LOCK="$CHECKPOINT_STEP_DIR/model/.consolidate.lock"
+MERGE_QWEN3_VL_TEXT_OVERLAY="${MERGE_QWEN3_VL_TEXT_OVERLAY:-false}"
+QWEN3_VL_BASE_MODEL="${QWEN3_VL_BASE_MODEL:-$MODEL_SOURCE_MODEL_NAME}"
+QWEN3_VL_OVERLAY_DIR="${QWEN3_VL_OVERLAY_DIR:-$CHECKPOINT_STEP_DIR/qwen3_vl_full_overlay}"
+QWEN3_VL_OVERLAY_READY="$QWEN3_VL_OVERLAY_DIR/.complete"
 BENCHMARK="${BENCHMARK:-multilingual}"
 case "$BENCHMARK" in
   multilingual)
@@ -76,12 +80,6 @@ fi
 
 export PYTHONPATH="$REPO_ROOT/sft/qwen3-sft/third_party/Automodel:$REPO_ROOT/sft/qwen3-sft/src${PYTHONPATH:+:$PYTHONPATH}"
 
-if [ "$BASELINE_MODEL" = "true" ]; then
-  MODEL_SOURCE="$MODEL_SOURCE_MODEL_NAME"
-else
-  MODEL_SOURCE="$CONSOLIDATED_DIR"
-fi
-
 if [ "$BASELINE_MODEL" != "true" ] && { ! compgen -G "$CONSOLIDATED_DIR/*.safetensors" >/dev/null || [ ! -f "$CONSOLIDATED_READY" ]; }; then
   echo "Consolidating $CHECKPOINT_STEP_DIR/model -> $CONSOLIDATED_DIR"
   (
@@ -111,6 +109,34 @@ if [ "$BASELINE_MODEL" != "true" ] && { ! compgen -G "$CONSOLIDATED_DIR/*.safete
       touch "$CONSOLIDATED_READY"
     fi
   ) 9>"$CONSOLIDATED_LOCK"
+fi
+
+if [ "$BASELINE_MODEL" != "true" ] && [ "$MERGE_QWEN3_VL_TEXT_OVERLAY" = "true" ] && { [ ! -f "$QWEN3_VL_OVERLAY_DIR/model.safetensors.index.json" ] || [ ! -f "$QWEN3_VL_OVERLAY_READY" ]; }; then
+  echo "Merging Qwen3-VL text checkpoint $CONSOLIDATED_DIR -> $QWEN3_VL_OVERLAY_DIR"
+  (
+    flock -x 9
+    if [ ! -f "$QWEN3_VL_OVERLAY_DIR/model.safetensors.index.json" ] || [ ! -f "$QWEN3_VL_OVERLAY_READY" ]; then
+      TMP_OVERLAY_DIR="${QWEN3_VL_OVERLAY_DIR}.tmp.${SLURM_JOB_ID:-manual}.$$"
+      rm -rf "$TMP_OVERLAY_DIR"
+      "$REPO_ROOT/sft/qwen3-sft/.venv/bin/python" \
+        "$REPO_ROOT/sft/qwen3-sft/scripts/merge_qwen3_vl_text_checkpoint.py" \
+        --base-model "$QWEN3_VL_BASE_MODEL" \
+        --trained-text-checkpoint "$CONSOLIDATED_DIR" \
+        --output-dir "$TMP_OVERLAY_DIR" \
+        --overwrite
+      touch "$TMP_OVERLAY_DIR/.complete"
+      rm -rf "$QWEN3_VL_OVERLAY_DIR"
+      mv "$TMP_OVERLAY_DIR" "$QWEN3_VL_OVERLAY_DIR"
+    fi
+  ) 9>"$CONSOLIDATED_LOCK"
+fi
+
+if [ "$BASELINE_MODEL" = "true" ]; then
+  MODEL_SOURCE="$MODEL_SOURCE_MODEL_NAME"
+elif [ "$MERGE_QWEN3_VL_TEXT_OVERLAY" = "true" ]; then
+  MODEL_SOURCE="$QWEN3_VL_OVERLAY_DIR"
+else
+  MODEL_SOURCE="$CONSOLIDATED_DIR"
 fi
 
 BASE_PORT=$((20000 + (${SLURM_JOB_ID:-0} % 20000)))

@@ -11,6 +11,7 @@ from pathlib import Path
 import torch
 import torch.distributed.checkpoint as dcp
 from torch.distributed.checkpoint import FileSystemReader
+from huggingface_hub.serialization import save_torch_state_dict
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
 
@@ -31,6 +32,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--dtype", choices=sorted(DTYPES), default="bf16")
     parser.add_argument("--max-shard-size", default="5GB")
+    parser.add_argument(
+        "--export-mode",
+        choices=("auto", "model", "state-dict"),
+        default="auto",
+        help=(
+            "model rebuilds an HF causal LM before saving; state-dict writes the "
+            "DCP tensors directly. auto uses state-dict for Qwen3-VL text-only "
+            "checkpoints and model otherwise."
+        ),
+    )
     parser.add_argument("--trust-remote-code", action=argparse.BooleanOptionalAction, default=True)
     return parser.parse_args()
 
@@ -82,6 +93,22 @@ def load_dcp_weights(model: torch.nn.Module, input_dir: Path) -> list[str]:
     return missing
 
 
+def load_dcp_state_dict(input_dir: Path, dtype: torch.dtype) -> dict[str, torch.Tensor]:
+    reader = FileSystemReader(str(input_dir))
+    metadata = reader.read_metadata()
+    state_dict: dict[str, torch.Tensor] = {}
+    for key, tensor_metadata in sorted(metadata.state_dict_metadata.items()):
+        properties = getattr(tensor_metadata, "properties", None)
+        size = getattr(tensor_metadata, "size", None)
+        if properties is None or size is None:
+            raise RuntimeError(f"Unsupported non-tensor DCP entry: {key}")
+        checkpoint_dtype = properties.dtype
+        target_dtype = dtype if torch.empty((), dtype=checkpoint_dtype).is_floating_point() else checkpoint_dtype
+        state_dict[key] = torch.empty(tuple(size), dtype=target_dtype)
+    dcp.load(state_dict, storage_reader=reader, no_dist=True)
+    return state_dict
+
+
 def main() -> None:
     args = parse_args()
     input_dir = args.input_dir.resolve()
@@ -93,12 +120,29 @@ def main() -> None:
     output_dir.mkdir(parents=True)
 
     dtype = DTYPES[args.dtype]
-    model = build_model(args.model_name, dtype, args.trust_remote_code)
-    missing = load_dcp_weights(model, input_dir)
-
+    config = AutoConfig.from_pretrained(args.model_name, trust_remote_code=args.trust_remote_code)
     tokenizer = AutoTokenizer.from_pretrained(args.model_name, trust_remote_code=args.trust_remote_code)
-    model.save_pretrained(output_dir, safe_serialization=True, max_shard_size=args.max_shard_size)
-    tokenizer.save_pretrained(output_dir)
+    export_mode = args.export_mode
+    if export_mode == "auto":
+        export_mode = "state-dict" if getattr(config, "model_type", None) == "qwen3_vl" else "model"
+
+    missing: list[str] = []
+    if export_mode == "model":
+        model = build_model(args.model_name, dtype, args.trust_remote_code)
+        missing = load_dcp_weights(model, input_dir)
+        model.save_pretrained(output_dir, safe_serialization=True, max_shard_size=args.max_shard_size)
+        tokenizer.save_pretrained(output_dir)
+    else:
+        state_dict = load_dcp_state_dict(input_dir, dtype)
+        save_torch_state_dict(
+            state_dict,
+            output_dir,
+            max_shard_size=args.max_shard_size,
+            safe_serialization=True,
+            metadata={"format": "pt"},
+        )
+        config.save_pretrained(output_dir)
+        tokenizer.save_pretrained(output_dir)
 
     (output_dir / "export_metadata.json").write_text(
         json.dumps(
@@ -106,6 +150,7 @@ def main() -> None:
                 "source": str(input_dir),
                 "model_name": args.model_name,
                 "dtype": str(dtype),
+                "export_mode": export_mode,
                 "missing_model_keys": missing,
             },
             indent=2,
