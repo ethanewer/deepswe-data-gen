@@ -2,9 +2,9 @@
 set -euo pipefail
 
 export CONFIG="${CONFIG:-configs/qwen3_8b_thinking_online_packed_sft_8gpu.yaml}"
-export TRAIN_RAW_ROOT="${TRAIN_RAW_ROOT:-/wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260612/qwen3-4b-thinking-v22-highquality-v29-noagenttrove-mix}"
-export CHECKPOINT_DIR="${CHECKPOINT_DIR:-checkpoints/qwen3_8b_thinking_swe260612_v22_highquality_v29_noagenttrove_contextguard_65k_s300_assistant_h200_8gpu_sft/}"
-export RUN_NAME="${RUN_NAME:-qwen3_8b_thinking_swe260612_v22_highquality_v29_noagenttrove_contextguard_65k_s300_assistant_h200_8gpu_sft}"
+export TRAIN_RAW_ROOT="${TRAIN_RAW_ROOT:-/wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260612/highquality-1x-duplicate-reasoning-90pct-30k-full/data}"
+export CHECKPOINT_DIR="${CHECKPOINT_DIR:-checkpoints/qwen3_8b_thinking_swe260612_v23_highquality_exact_contextguard_65k_s300_assistant_h200_8gpu_sft/}"
+export RUN_NAME="${RUN_NAME:-qwen3_8b_thinking_swe260612_v23_highquality_exact_contextguard_65k_s300_assistant_h200_8gpu_sft}"
 
 export PACK_SIZE="${PACK_SIZE:-65536}"
 export LOCAL_BATCH_SIZE="${LOCAL_BATCH_SIZE:-1}"
