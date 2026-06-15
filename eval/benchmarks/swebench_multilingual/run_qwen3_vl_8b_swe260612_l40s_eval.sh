@@ -19,8 +19,12 @@ export LITELLM_MODEL="${LITELLM_MODEL:-openai/$MODEL_NAME}"
 export MERGE_QWEN3_VL_TEXT_OVERLAY="${MERGE_QWEN3_VL_TEXT_OVERLAY:-true}"
 export QWEN3_VL_BASE_MODEL="${QWEN3_VL_BASE_MODEL:-Qwen/Qwen3-VL-8B-Thinking}"
 export VLLM_PREWARM_REGISTRY_MODEL="${VLLM_PREWARM_REGISTRY_MODEL:-Qwen3VLForConditionalGeneration}"
-export REASONING_PARSER="${REASONING_PARSER:-qwen3}"
+# Match the 4B Qwen thinking eval path. The qwen3 parser treats output without a
+# generated </think> as reasoning-only, which can hide otherwise valid
+# <tool_call> XML from the tool parser when a checkpoint is still shaky.
+export REASONING_PARSER="${REASONING_PARSER:-deepseek_r1}"
 export TOOL_CALL_PARSER="${TOOL_CALL_PARSER:-hermes}"
+export MAX_TOKENS="${MAX_TOKENS:-16384}"
 
 export DESCRIPTION="${DESCRIPTION:-Qwen3-VL 8B SWE260612 checkpoint on ${EVAL_GPU_COUNT} ${EVAL_ACCELERATOR_LABEL} GPUs.}"
 
