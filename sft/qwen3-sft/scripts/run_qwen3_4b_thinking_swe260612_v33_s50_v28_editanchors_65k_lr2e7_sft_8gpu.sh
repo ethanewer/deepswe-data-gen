@@ -3,11 +3,13 @@ set -euo pipefail
 
 # Stage-3 fallback from the best 4B checkpoint so far (v28 step199).
 # v31 over-weighted patch.txt verification and increased empty patches. This
-# mix instead emphasizes inspect->tracked-edit->diff/test/submit transitions,
-# while keeping 65k packs for the higher TPS seen in targeted-prefix training.
+# mix instead emphasizes inspect->tracked-edit->diff/test/submit transitions and
+# excludes manual patch.txt anchors so the strict SWE loss policy keeps the
+# selected rows trainable. Keep 65k packs for the higher TPS seen in
+# targeted-prefix training.
 export CONFIG="${CONFIG:-configs/qwen3_4b_thinking_swe260612_highquality_65k_online_packed_sft_8gpu.yaml}"
 export MODEL="${MODEL:-checkpoints/qwen3_4b_thinking_swe260612_v28_s50_prefixweighted_stage2_65k_lr5e7_s200_assistant_h200_8gpu_sft/epoch_0_step_199/model/consolidated}"
-export TRAIN_RAW_ROOT="${TRAIN_RAW_ROOT:-/wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260612/qwen3-4b-thinking-v33-v28-edit-anchor-stage3-mix}"
+export TRAIN_RAW_ROOT="${TRAIN_RAW_ROOT:-/wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260612/qwen3-4b-thinking-v33-v28-edit-anchor-stage3-nomanual-mix}"
 export CHECKPOINT_DIR="${CHECKPOINT_DIR:-checkpoints/qwen3_4b_thinking_swe260612_v33_s50_v28_editanchors_65k_lr2e7_s150_assistant_h200_8gpu_sft/}"
 export RUN_NAME="${RUN_NAME:-qwen3_4b_thinking_swe260612_v33_s50_v28_editanchors_65k_lr2e7_s150_assistant_h200_8gpu_sft}"
 
