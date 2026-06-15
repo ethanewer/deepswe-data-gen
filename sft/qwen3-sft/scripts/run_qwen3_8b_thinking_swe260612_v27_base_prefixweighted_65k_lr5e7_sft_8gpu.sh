@@ -15,8 +15,8 @@ fi
 export CONFIG="${CONFIG:-configs/qwen3_8b_thinking_online_packed_sft_8gpu.yaml}"
 export MODEL="${MODEL:-$BASE_MODEL}"
 export TRAIN_RAW_ROOT="${TRAIN_RAW_ROOT:-/wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260612/highquality-1x-duplicate-reasoning-90pct-30k-full-miniswe-aligned-passed-prefix-weighted-v2/data}"
-export CHECKPOINT_DIR="${CHECKPOINT_DIR:-checkpoints/qwen3_8b_thinking_swe260612_v27_base_prefixweighted_65k_lr5e7_s200_assistant_h200_8gpu_sft/}"
-export RUN_NAME="${RUN_NAME:-qwen3_8b_thinking_swe260612_v27_base_prefixweighted_65k_lr5e7_s200_assistant_h200_8gpu_sft}"
+export CHECKPOINT_DIR="${CHECKPOINT_DIR:-checkpoints/qwen3_8b_thinking_swe260612_v27_base_prefixweighted_65k_lr5e7_s200_assistant_h200_8gpu_nocompile_sft/}"
+export RUN_NAME="${RUN_NAME:-qwen3_8b_thinking_swe260612_v27_base_prefixweighted_65k_lr5e7_s200_assistant_h200_8gpu_nocompile_sft}"
 
 export PACK_SIZE="${PACK_SIZE:-65536}"
 export LOCAL_BATCH_SIZE="${LOCAL_BATCH_SIZE:-1}"
@@ -35,7 +35,7 @@ export CHECKPOINT_MODEL_SAVE_FORMAT="${CHECKPOINT_MODEL_SAVE_FORMAT:-torch_save}
 export CHECKPOINT_SAVE_CONSOLIDATED="${CHECKPOINT_SAVE_CONSOLIDATED:-false}"
 export VALIDATION_ENABLED="${VALIDATION_ENABLED:-false}"
 
-export ENABLE_COMPILE="${ENABLE_COMPILE:-true}"
+export ENABLE_COMPILE="${ENABLE_COMPILE:-false}"
 export ACTIVATION_CHECKPOINTING="${ACTIVATION_CHECKPOINTING:-true}"
 export ENABLE_FSDP2_PREFETCH="${ENABLE_FSDP2_PREFETCH:-true}"
 export FSDP2_BACKWARD_PREFETCH_DEPTH="${FSDP2_BACKWARD_PREFETCH_DEPTH:-2}"
