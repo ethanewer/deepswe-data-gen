@@ -252,6 +252,15 @@ def apply_assistant_loss_policy(
     ):
         return example
 
+    metadata = example.get("metadata") or {}
+    allow_manual_patch_context = (
+        bool(metadata.get("allow_manual_patch_context"))
+        or metadata.get("source") == "current_empty_diff_recovery"
+    )
+    effective_reject_manual_patch_targets = (
+        reject_manual_patch_targets and not allow_manual_patch_context
+    )
+
     previous_assistant_command = ""
     previous_assistant_observations: list[str] = []
     visible_patch_since_write = False
@@ -278,7 +287,7 @@ def apply_assistant_loss_policy(
             message["loss"] = False
         if seen_manual_patch_target:
             message["loss"] = False
-        if reject_manual_patch_targets and has_manual_patch_target:
+        if effective_reject_manual_patch_targets and has_manual_patch_target:
             message["loss"] = False
             drop_example = True
         if (
@@ -299,7 +308,7 @@ def apply_assistant_loss_policy(
             drop_example = True
         if is_submit:
             seen_submit_command = True
-        if reject_manual_patch_targets and has_manual_patch_target:
+        if effective_reject_manual_patch_targets and has_manual_patch_target:
             seen_manual_patch_target = True
         if command:
             if command_writes_patch_file(command):
