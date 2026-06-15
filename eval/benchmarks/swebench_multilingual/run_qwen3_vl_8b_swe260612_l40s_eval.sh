@@ -6,6 +6,7 @@ set -euo pipefail
 # BENCHMARK may be overridden by the caller.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${REPO_ROOT:-$(cd "$SCRIPT_DIR/../../.." && pwd)}"
+EVAL_SCRIPT_DIR="${EVAL_SCRIPT_DIR:-$REPO_ROOT/eval/benchmarks/swebench_multilingual}"
 
 export EVAL_GPU_COUNT="${EVAL_GPU_COUNT:-8}"
 export EVAL_ACCELERATOR_LABEL="${EVAL_ACCELERATOR_LABEL:-l40s}"
@@ -28,4 +29,4 @@ export MAX_TOKENS="${MAX_TOKENS:-16384}"
 
 export DESCRIPTION="${DESCRIPTION:-Qwen3-VL 8B SWE260612 checkpoint on ${EVAL_GPU_COUNT} ${EVAL_ACCELERATOR_LABEL} GPUs.}"
 
-exec "$SCRIPT_DIR/run_qwen3_4b_swe260612_step50_l40s_eval.sh" "$@"
+exec "$EVAL_SCRIPT_DIR/run_qwen3_4b_swe260612_step50_l40s_eval.sh" "$@"
