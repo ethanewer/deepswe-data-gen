@@ -19,7 +19,7 @@ if [ ! -d "$REPO_ROOT/eval/benchmarks/swebench_multilingual" ]; then
 fi
 cd "$REPO_ROOT"
 mkdir -p logs runs/serving_configs runs/serving runs/swebench_ml
-REAL_EVAL_SCRIPT="$REPO_ROOT/eval/benchmarks/swebench_multilingual/run_qwen3_4b_swe260612_step50_l40s_eval.sh"
+REAL_EVAL_SCRIPT="${REAL_EVAL_SCRIPT:-$REPO_ROOT/eval/benchmarks/swebench_multilingual/run_qwen3_4b_swe260612_step50_l40s_eval.sh}"
 EVAL_SCRIPT_COPY="$REPO_ROOT/runs/serving_configs/run_qwen3_4b_swe260612_eval_${SLURM_JOB_ID:-manual}_$$.sh"
 cp "$REAL_EVAL_SCRIPT" "$EVAL_SCRIPT_COPY"
 chmod +x "$EVAL_SCRIPT_COPY"
