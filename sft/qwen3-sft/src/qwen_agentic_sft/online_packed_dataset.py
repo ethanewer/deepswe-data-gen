@@ -227,11 +227,19 @@ def command_writes_patch_file(command: str) -> bool:
     return bool(re.search(PATCH_TXT_WRITE_PATTERN, text) or command_has_script_patch_write(command))
 
 
+def text_has_unified_diff_header(text: str) -> bool:
+    return bool(
+        "diff --git" in text
+        and re.search(r"(?m)^--- (?:a/|/dev/null)", text)
+        and re.search(r"(?m)^\+\+\+ (?:b/|/dev/null)", text)
+    )
+
+
 def observation_has_visible_patch_output(observation: str) -> bool:
     matches = re.findall(r"<output>\n?(.*?)</output>", observation, flags=re.DOTALL)
     if matches:
-        return any(match.strip() for match in matches)
-    return bool(observation.strip())
+        return any(text_has_unified_diff_header(match) for match in matches)
+    return text_has_unified_diff_header(observation)
 
 
 def apply_assistant_loss_policy(

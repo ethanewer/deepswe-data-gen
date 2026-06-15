@@ -516,6 +516,102 @@ def test_unverified_submit_masks_only_submit_turn() -> None:
     assert filtered.get("drop") is not True
 
 
+def test_unverified_submit_requires_visible_unified_diff() -> None:
+    example = {
+        "messages": [
+            {"role": "user", "content": "Fix the bug."},
+            {
+                "role": "assistant",
+                "reasoning": "I should write the current source diff to patch.txt.",
+                "tool_calls": [{"function": {"name": "bash", "arguments": {"command": "git diff -- foo.py > patch.txt"}}}],
+            },
+            {"role": "tool", "content": "<returncode>0</returncode><output></output>"},
+            {
+                "role": "assistant",
+                "reasoning": "I should inspect the patch before submitting.",
+                "tool_calls": [{"function": {"name": "bash", "arguments": {"command": "cat patch.txt"}}}],
+            },
+            {"role": "tool", "content": "<returncode>0</returncode><output>Only in src: stale.py</output>"},
+            {
+                "role": "assistant",
+                "reasoning": "The patch is ready.",
+                "tool_calls": [
+                    {
+                        "function": {
+                            "name": "bash",
+                            "arguments": {"command": "echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && cat patch.txt"},
+                        }
+                    }
+                ],
+            },
+        ]
+    }
+
+    filtered = apply_assistant_loss_policy(
+        example,
+        require_assistant_reasoning_for_loss=True,
+        require_assistant_tool_calls_for_loss=True,
+        reject_unverified_submit_targets=True,
+    )
+
+    assert filtered["messages"][1].get("loss") is not False
+    assert filtered["messages"][3].get("loss") is not False
+    assert filtered["messages"][5]["loss"] is False
+    assert filtered.get("drop") is not True
+
+
+def test_unverified_submit_allows_visible_unified_diff() -> None:
+    patch = (
+        "diff --git a/foo.py b/foo.py\n"
+        "--- a/foo.py\n"
+        "+++ b/foo.py\n"
+        "@@ -1 +1 @@\n"
+        "-bad\n"
+        "+good\n"
+    )
+    example = {
+        "messages": [
+            {"role": "user", "content": "Fix the bug."},
+            {
+                "role": "assistant",
+                "reasoning": "I should write the current source diff to patch.txt.",
+                "tool_calls": [{"function": {"name": "bash", "arguments": {"command": "git diff -- foo.py > patch.txt"}}}],
+            },
+            {"role": "tool", "content": "<returncode>0</returncode><output></output>"},
+            {
+                "role": "assistant",
+                "reasoning": "I should inspect the patch before submitting.",
+                "tool_calls": [{"function": {"name": "bash", "arguments": {"command": "cat patch.txt"}}}],
+            },
+            {"role": "tool", "content": f"<returncode>0</returncode><output>{patch}</output>"},
+            {
+                "role": "assistant",
+                "reasoning": "The patch is ready.",
+                "tool_calls": [
+                    {
+                        "function": {
+                            "name": "bash",
+                            "arguments": {"command": "echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && cat patch.txt"},
+                        }
+                    }
+                ],
+            },
+        ]
+    }
+
+    filtered = apply_assistant_loss_policy(
+        example,
+        require_assistant_reasoning_for_loss=True,
+        require_assistant_tool_calls_for_loss=True,
+        reject_unverified_submit_targets=True,
+    )
+
+    assert filtered["messages"][1].get("loss") is not False
+    assert filtered["messages"][3].get("loss") is not False
+    assert filtered["messages"][5].get("loss") is not False
+    assert filtered.get("drop") is not True
+
+
 def test_loss_policy_masks_turns_after_submit() -> None:
     example = {
         "messages": [
