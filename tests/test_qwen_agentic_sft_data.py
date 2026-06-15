@@ -364,7 +364,7 @@ def test_loss_policy_taints_absolute_patch_txt_manual_write() -> None:
     assert filtered["messages"][1]["loss"] is False
     assert filtered["messages"][3]["loss"] is False
     assert filtered["messages"][5]["loss"] is False
-    assert filtered.get("drop") is not True
+    assert filtered.get("drop") is True
 
 
 def test_loss_policy_recognizes_cmd_tool_arguments() -> None:
@@ -421,7 +421,62 @@ def test_loss_policy_recognizes_cmd_tool_arguments() -> None:
     assert assistant_has_manual_patch_target(filtered["messages"][1])
     assert filtered["messages"][1]["loss"] is False
     assert filtered["messages"][3]["loss"] is False
-    assert filtered.get("drop") is not True
+    assert filtered.get("drop") is True
+
+
+def test_manual_patch_context_drops_later_valid_target_example() -> None:
+    example = {
+        "messages": [
+            {"role": "user", "content": "Fix the bug."},
+            {
+                "role": "assistant",
+                "reasoning": "I should not hand-write the final patch.",
+                "tool_calls": [
+                    {
+                        "function": {
+                            "name": "bash",
+                            "arguments": {
+                                "command": (
+                                    "cat > patch.txt <<'PATCH'\n"
+                                    "diff --git a/foo.py b/foo.py\n"
+                                    "--- a/foo.py\n"
+                                    "+++ b/foo.py\n"
+                                    "@@ -1 +1 @@\n"
+                                    "-bad\n"
+                                    "+good\n"
+                                    "PATCH"
+                                )
+                            },
+                        }
+                    }
+                ],
+            },
+            {"role": "tool", "content": "<returncode>0</returncode><output></output>"},
+            {
+                "role": "assistant",
+                "reasoning": "I should edit the source file instead.",
+                "tool_calls": [{"function": {"name": "bash", "arguments": {"command": "sed -i 's/bad/good/' foo.py"}}}],
+            },
+            {"role": "tool", "content": "<returncode>0</returncode><output></output>"},
+            {
+                "role": "assistant",
+                "reasoning": "Now I can inspect the real source diff.",
+                "tool_calls": [{"function": {"name": "bash", "arguments": {"command": "git diff -- foo.py"}}}],
+            },
+        ]
+    }
+
+    filtered = apply_assistant_loss_policy(
+        example,
+        require_assistant_reasoning_for_loss=True,
+        require_assistant_tool_calls_for_loss=True,
+        reject_manual_patch_targets=True,
+    )
+
+    assert filtered["messages"][1]["loss"] is False
+    assert filtered["messages"][3]["loss"] is False
+    assert filtered["messages"][5]["loss"] is False
+    assert filtered.get("drop") is True
 
 
 def test_unverified_submit_masks_only_submit_turn() -> None:

@@ -280,6 +280,7 @@ def apply_assistant_loss_policy(
             message["loss"] = False
         if reject_manual_patch_targets and has_manual_patch_target:
             message["loss"] = False
+            drop_example = True
         if (
             reject_unverified_submit_targets
             and is_submit
