@@ -424,6 +424,186 @@ def test_loss_policy_recognizes_cmd_tool_arguments() -> None:
     assert filtered.get("drop") is True
 
 
+def test_manual_patch_detector_allows_same_command_git_diff_assembly() -> None:
+    message = {
+        "role": "assistant",
+        "reasoning": "I should assemble the final patch from real source diffs.",
+        "tool_calls": [
+            {
+                "function": {
+                    "name": "bash",
+                    "arguments": {
+                        "command": (
+                            "cd /testbed && "
+                            "git diff -- src/foo.py > /tmp/patch_part1.txt && "
+                            "git diff --no-index /dev/null src/new.py > /tmp/patch_part2.txt 2>/dev/null; "
+                            "cat /tmp/patch_part1.txt /tmp/patch_part2.txt > patch.txt"
+                        )
+                    },
+                }
+            }
+        ],
+    }
+
+    assert not assistant_has_manual_patch_target(message)
+
+
+def test_manual_patch_detector_allows_sed_adjusted_git_diff_fragment() -> None:
+    message = {
+        "role": "assistant",
+        "reasoning": "I should assemble the final patch from adjusted git diff output.",
+        "tool_calls": [
+            {
+                "function": {
+                    "name": "bash",
+                    "arguments": {
+                        "command": (
+                            "cd /testbed && "
+                            "git diff src/foo.py > /tmp/patch1.txt && "
+                            "git diff --no-index /dev/null src/new.py | "
+                            "sed 's|/dev/null|a/src/new.py|' > /tmp/patch2.txt && "
+                            "cat /tmp/patch1.txt /tmp/patch2.txt > patch.txt"
+                        )
+                    },
+                }
+            }
+        ],
+    }
+
+    assert not assistant_has_manual_patch_target(message)
+
+
+def test_manual_patch_detector_allows_git_diff_append_to_patch_txt() -> None:
+    message = {
+        "role": "assistant",
+        "reasoning": "I should include the new file diff in the final patch.",
+        "tool_calls": [
+            {
+                "function": {
+                    "name": "bash",
+                    "arguments": {
+                        "command": (
+                            "cd /testbed && "
+                            "git diff -- src/foo.py > patch.txt && "
+                            "git diff --no-index /dev/null src/new.py >> patch.txt 2>/dev/null || true"
+                        )
+                    },
+                }
+            }
+        ],
+    }
+
+    assert not assistant_has_manual_patch_target(message)
+
+
+def test_manual_patch_detector_allows_git_diff_write_then_inspection() -> None:
+    message = {
+        "role": "assistant",
+        "reasoning": "I should write the patch and verify it contains a diff.",
+        "tool_calls": [
+            {
+                "function": {
+                    "name": "bash",
+                    "arguments": {
+                        "command": (
+                            "cd /testbed && "
+                            "git add src/new.py && "
+                            "git diff --cached > patch.txt && "
+                            "cat patch.txt | grep \"diff --git\""
+                        )
+                    },
+                }
+            }
+        ],
+    }
+
+    assert not assistant_has_manual_patch_target(message)
+
+
+def test_manual_patch_detector_rejects_imported_temp_patch_fragment() -> None:
+    message = {
+        "role": "assistant",
+        "reasoning": "I should assemble the final patch.",
+        "tool_calls": [
+            {
+                "function": {
+                    "name": "bash",
+                    "arguments": {
+                        "command": (
+                            "cd /testbed && "
+                            "git diff -- src/foo.py > /tmp/modified.patch && "
+                            "cat /tmp/accept_new.patch /tmp/modified.patch > patch.txt"
+                        )
+                    },
+                }
+            }
+        ],
+    }
+
+    assert assistant_has_manual_patch_target(message)
+
+
+def test_manual_patch_detector_rejects_manual_redirect_even_with_later_git_diff() -> None:
+    message = {
+        "role": "assistant",
+        "reasoning": "I should create a manual patch then append a source diff.",
+        "tool_calls": [
+            {
+                "function": {
+                    "name": "bash",
+                    "arguments": {
+                        "command": (
+                            "cd /testbed && "
+                            "printf 'diff --git a/new.py b/new.py\\n' > patch.txt && "
+                            "git diff -- src/foo.py >> patch.txt"
+                        )
+                    },
+                }
+            }
+        ],
+    }
+
+    assert assistant_has_manual_patch_target(message)
+
+
+def test_manual_patch_detector_rejects_manual_patch_append() -> None:
+    message = {
+        "role": "assistant",
+        "reasoning": "I should append a handmade diff fragment.",
+        "tool_calls": [
+            {
+                "function": {
+                    "name": "bash",
+                    "arguments": {
+                        "command": (
+                            "cd /testbed && "
+                            "git diff -- src/foo.py > patch.txt && "
+                            "cat /tmp/accept_new.patch >> patch.txt"
+                        )
+                    },
+                }
+            }
+        ],
+    }
+
+    assert assistant_has_manual_patch_target(message)
+
+
+def test_manual_patch_detector_rejects_empty_patch_creation() -> None:
+    for command in (
+        "cd /testbed && touch patch.txt",
+        "cd /testbed && truncate -s 0 patch.txt",
+        "cd /testbed && : > patch.txt",
+        "cd /testbed && cp /dev/null patch.txt",
+    ):
+        message = {
+            "role": "assistant",
+            "reasoning": "I should create an empty patch.",
+            "tool_calls": [{"function": {"name": "bash", "arguments": {"command": command}}}],
+        }
+        assert assistant_has_manual_patch_target(message), command
+
+
 def test_manual_patch_context_drops_later_valid_target_example() -> None:
     example = {
         "messages": [

@@ -43,10 +43,18 @@ REASONING_TAGS = (("<think>", "</think>"), ("<thought>", "</thought>"))
 ASSISTANT_LOSS_TARGETS = ("assistant", "tool_calls")
 MINI_SWE_SUBMIT_COMMAND = "echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && cat patch.txt"
 PATCH_TXT_PATH_PATTERN = r"(?<![\w.-])(?:\./|/testbed/)?patch\.txt(?![\w.-])"
+PATCH_LIKE_PATH_PATTERN = (
+    r"(?<![\w./-])(?:/tmp/|/testbed/|\./)?[\w./-]+\.(?:txt|patch|diff)(?![\w./-])"
+)
 PATCH_TXT_WRITE_PATTERN = (
     rf"(>\s*{PATCH_TXT_PATH_PATTERN}"
     rf"|\|\s*tee\s+(-a\s+)?{PATCH_TXT_PATH_PATTERN}"
     rf"|\btee\s+(-a\s+)?{PATCH_TXT_PATH_PATTERN})"
+)
+PATCH_TXT_SHELL_CREATE_PATTERN = (
+    rf"(^|[;&|\n]\s*)(touch|truncate)\b[^;&|\n]*{PATCH_TXT_PATH_PATTERN}"
+    rf"|(^|[;&|\n]\s*)(:|true)\s*>\s*{PATCH_TXT_PATH_PATTERN}"
+    rf"|(^|[;&|\n]\s*)cp\s+/dev/null\s+{PATCH_TXT_PATH_PATTERN}"
 )
 
 
@@ -72,6 +80,91 @@ def command_has_script_patch_write(command: str) -> bool:
         or ("patch.txt" in text and "write_text" in text)
         or re.search(r"\bwritefilesync\s*\([^)\n]*patch\.txt", text)
     )
+
+
+def _normalized_shell_path(path: str) -> str:
+    path = path.strip().strip("'\"")
+    if path.startswith("./"):
+        path = path[2:]
+    if path.startswith("/testbed/"):
+        path = path[len("/testbed/") :]
+    return path
+
+
+def _same_patch_txt_path(path: str) -> bool:
+    return _normalized_shell_path(path) == "patch.txt"
+
+
+def _path_has_prior_git_diff_write(command: str, path: str, end: int) -> bool:
+    target = re.escape(path)
+    prior = command[:end]
+    for segment in re.split(r"(?:&&|\n)", prior):
+        if not command_references_git_diff(segment):
+            continue
+        if re.search(rf"(?:>\s*|\|\s*tee\s+(-a\s+)?){target}(?:\s|$|[;&|])", segment):
+            return True
+    return False
+
+
+def command_has_untrusted_patch_assembly(command: str) -> bool:
+    """Detect patch.txt assembled from patch fragments not made by git diff."""
+    text = command.lower()
+    copy_like = re.finditer(
+        rf"(^|[;&|\n]\s*)(cat|cp|mv)\b(?P<body>[^;&|\n]*)\s+(?:>\s*)?{PATCH_TXT_PATH_PATTERN}",
+        text,
+    )
+    for match in copy_like:
+        body = match.group("body")
+        source_paths = [
+            path
+            for path in re.findall(PATCH_LIKE_PATH_PATTERN, body)
+            if not _same_patch_txt_path(path)
+        ]
+        if not source_paths and re.search(r"\b/dev/null\b", body):
+            return True
+        if not source_paths:
+            continue
+        for path in source_paths:
+            if not _path_has_prior_git_diff_write(text, path, match.start()):
+                return True
+    return False
+
+
+def command_has_untrusted_patch_append(command: str) -> bool:
+    text = command.lower()
+    append_segments = re.finditer(
+        rf"(^|[;&\n]\s*)(?P<body>[^;&\n]*?)"
+        rf"(?:>>\s*{PATCH_TXT_PATH_PATTERN}|\|\s*tee\s+-a\s+{PATCH_TXT_PATH_PATTERN})",
+        text,
+    )
+    for match in append_segments:
+        if not command_references_git_diff(match.group("body")):
+            return True
+    return False
+
+
+def command_has_untrusted_patch_redirect(command: str) -> bool:
+    text = command.lower()
+    redirect_segments = re.finditer(
+        rf"(^|[;&|\n]\s*)(cat|tee|echo|printf)\b(?P<body>[^;&|\n]*?)"
+        rf"(?:>\s*{PATCH_TXT_PATH_PATTERN}|\|\s*tee\s+(-a\s+)?{PATCH_TXT_PATH_PATTERN}"
+        rf"|\btee\s+(-a\s+)?{PATCH_TXT_PATH_PATTERN})",
+        text,
+    )
+    for match in redirect_segments:
+        source_paths = [
+            path
+            for path in re.findall(PATCH_LIKE_PATH_PATTERN, match.group("body"))
+            if not _same_patch_txt_path(path)
+        ]
+        if source_paths and all(
+            _path_has_prior_git_diff_write(text, path, match.start())
+            for path in source_paths
+        ):
+            continue
+        if not command_references_git_diff(match.group("body")):
+            return True
+    return False
 
 
 def _rank_world() -> tuple[int, int]:
@@ -176,27 +269,17 @@ def assistant_has_manual_patch_target(message: dict[str, Any]) -> bool:
         return False
     if text.strip() == MINI_SWE_SUBMIT_COMMAND.lower():
         return False
-    if re.search(rf">>\s*{PATCH_TXT_PATH_PATTERN}", text):
+    if re.search(PATCH_TXT_SHELL_CREATE_PATTERN, text):
+        return True
+    if command_has_untrusted_patch_append(command):
         return True
     if "diff -u /dev/null" in text:
         return True
-    patch_writer = re.search(r"(^|[;&|\n]\s*)(cat|tee|echo|printf)\b", text, flags=re.DOTALL)
-    patch_redirect = re.search(PATCH_TXT_WRITE_PATTERN, text, flags=re.DOTALL)
-    writes_patch = bool((patch_writer and patch_redirect) or command_has_script_patch_write(command))
-    manual_diff_markers = (
-        "diff --git",
-        "--- /dev/null",
-        "+++ /dev/null",
-        "--- a/",
-        "+++ b/",
-        "new file mode",
-        "index 0000000",
-        "index 1234567",
-        "index 89abcde",
-    )
-    if writes_patch and any(marker in text for marker in manual_diff_markers):
+    if command_has_untrusted_patch_assembly(command):
         return True
-    if writes_patch and not command_references_git_diff(command):
+    if command_has_untrusted_patch_redirect(command):
+        return True
+    if command_has_script_patch_write(command) and not command_references_git_diff(command):
         return True
     return False
 
