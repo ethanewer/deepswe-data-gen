@@ -139,7 +139,15 @@ else
   MODEL_SOURCE="$CONSOLIDATED_DIR"
 fi
 
-BASE_PORT=$((20000 + (${SLURM_JOB_ID:-0} % 20000)))
+if [ -n "${BASE_PORT_OVERRIDE:-}" ]; then
+  BASE_PORT="$BASE_PORT_OVERRIDE"
+else
+  BASE_PORT=$((20000 + (${SLURM_JOB_ID:-0} % 20000)))
+fi
+if ! [[ "$BASE_PORT" =~ ^[1-9][0-9]*$ ]]; then
+  echo "BASE_PORT_OVERRIDE must be a positive integer; got $BASE_PORT" >&2
+  exit 1
+fi
 PROXY_PORT="$BASE_PORT"
 BACKEND_PORT_GAP="${BACKEND_PORT_GAP:-100}"
 BACKEND_PORTS=()
