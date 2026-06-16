@@ -13,6 +13,17 @@ LOG_PATH="${LOG_PATH:-$REPO_ROOT/logs/watch-qwen3-4b-swe260612-step50-eval.log}"
 
 mkdir -p "$(dirname "$LOG_PATH")"
 
+checkpoint_model_ready() {
+  [ -d "$CHECKPOINT_STEP_DIR/model" ] || return 1
+  if [ -f "$CHECKPOINT_STEP_DIR/model/.metadata" ]; then
+    return 0
+  fi
+  if [ -d "$CHECKPOINT_STEP_DIR/model/.hf_metadata" ] && compgen -G "$CHECKPOINT_STEP_DIR/model/*.safetensors" >/dev/null; then
+    return 0
+  fi
+  return 1
+}
+
 choose_eval_sbatch() {
   if [ -n "${EVAL_SBATCH:-}" ]; then
     echo "$EVAL_SBATCH"
@@ -32,8 +43,8 @@ choose_eval_sbatch() {
 }
 
 {
-  echo "[$(date -Is)] Waiting for $CHECKPOINT_STEP_DIR/model/.metadata"
-  while [ ! -f "$CHECKPOINT_STEP_DIR/model/.metadata" ]; do
+  echo "[$(date -Is)] Waiting for checkpoint model shards under $CHECKPOINT_STEP_DIR/model"
+  while ! checkpoint_model_ready; do
     sleep "$POLL_SECONDS"
   done
   echo "[$(date -Is)] Found checkpoint metadata; waiting ${STABILIZE_SECONDS}s for writes to settle"

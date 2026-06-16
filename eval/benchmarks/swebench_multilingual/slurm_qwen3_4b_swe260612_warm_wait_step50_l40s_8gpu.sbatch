@@ -58,6 +58,17 @@ mkdir -p "$VLLM_EVAL_CACHE_ROOT"
 
 export PYTHONPATH="$REPO_ROOT/sft/qwen3-sft/third_party/Automodel:$REPO_ROOT/sft/qwen3-sft/src${PYTHONPATH:+:$PYTHONPATH}"
 
+checkpoint_model_ready() {
+  [ -d "$CHECKPOINT_STEP_DIR/model" ] || return 1
+  if [ -f "$CHECKPOINT_STEP_DIR/model/.metadata" ]; then
+    return 0
+  fi
+  if [ -d "$CHECKPOINT_STEP_DIR/model/.hf_metadata" ] && compgen -G "$CHECKPOINT_STEP_DIR/model/*.safetensors" >/dev/null; then
+    return 0
+  fi
+  return 1
+}
+
 echo "job_id=${SLURM_JOB_ID:-manual}"
 echo "node=${SLURMD_NODENAME:-$(hostname)}"
 echo "cuda_visible_devices=${CUDA_VISIBLE_DEVICES:-unset}"
@@ -242,8 +253,8 @@ else
   echo "Skipping base-model smoke serve because SKIP_SMOKE=true"
 fi
 
-echo "Waiting for checkpoint metadata: $CHECKPOINT_STEP_DIR/model/.metadata"
-while [ ! -f "$CHECKPOINT_STEP_DIR/model/.metadata" ]; do
+echo "Waiting for checkpoint model shards under: $CHECKPOINT_STEP_DIR/model"
+while ! checkpoint_model_ready; do
   train_log_dir="$(dirname "$TRAIN_LOG_GLOB")"
   train_log_name="$(basename "$TRAIN_LOG_GLOB")"
   latest_train_log="$(find "$train_log_dir" -maxdepth 1 -type f -name "$train_log_name" -printf '%T@ %p\n' 2>/dev/null | sort -nr | awk 'NR == 1 {print $2}')"
