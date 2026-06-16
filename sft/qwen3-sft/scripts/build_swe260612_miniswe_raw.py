@@ -99,9 +99,10 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
     if args.input_root is None:
         input_paths = [args.input_jsonl]
     else:
+        search_root = args.input_root / "data" if (args.input_root / "data").is_dir() else args.input_root
         input_paths = [
             path
-            for path in discover_raw_files(args.input_root)
+            for path in discover_raw_files(search_root)
             if path.name.endswith((".jsonl", ".jsonl.zst"))
         ]
         if not input_paths:
