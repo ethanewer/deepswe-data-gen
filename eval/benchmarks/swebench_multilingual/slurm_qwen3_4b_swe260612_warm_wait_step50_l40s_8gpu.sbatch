@@ -257,7 +257,10 @@ echo "Waiting for checkpoint model shards under: $CHECKPOINT_STEP_DIR/model"
 while ! checkpoint_model_ready; do
   train_log_dir="$(dirname "$TRAIN_LOG_GLOB")"
   train_log_name="$(basename "$TRAIN_LOG_GLOB")"
-  latest_train_log="$(find "$train_log_dir" -maxdepth 1 -type f -name "$train_log_name" -printf '%T@ %p\n' 2>/dev/null | sort -nr | awk 'NR == 1 {print $2}')"
+  latest_train_log=""
+  if [ -d "$train_log_dir" ]; then
+    latest_train_log="$(find "$train_log_dir" -maxdepth 1 -type f -name "$train_log_name" -printf '%T@ %p\n' | sort -nr | awk 'NR == 1 {print $2}')"
+  fi
   latest_step=""
   if [ -n "$latest_train_log" ]; then
     latest_step="$(tail -n 120 "$latest_train_log" 2>/dev/null | grep -E 'step [0-9]+ \\|' | tail -n 1 || true)"
