@@ -62,12 +62,34 @@ def is_positive_reward(value: Any) -> bool:
     return False
 
 
+def load_uuid_allowlist(path: Path) -> set[str]:
+    allowed: set[str] = set()
+    with path.open("r", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            text = line.strip()
+            if not text or text.startswith("#"):
+                continue
+            if text.startswith("{"):
+                try:
+                    row = json.loads(text)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(f"invalid JSON in {path}:{line_number}") from exc
+                uuid = row.get("uuid")
+            else:
+                uuid = text.split()[0]
+            if not uuid:
+                raise ValueError(f"missing uuid in {path}:{line_number}")
+            allowed.add(str(uuid))
+    return allowed
+
+
 def build(args: argparse.Namespace) -> dict[str, Any]:
     if args.output_root.exists():
         if not args.overwrite:
             raise FileExistsError(f"{args.output_root} exists; pass --overwrite")
         shutil.rmtree(args.output_root)
 
+    allowed_uuids = load_uuid_allowlist(args.allow_uuid_file) if args.allow_uuid_file else None
     data_dir = args.output_root / "data"
     handles = open_shards(data_dir, args.shards)
     rows_seen = 0
@@ -90,6 +112,12 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
                 if args.max_rows and rows_seen >= args.max_rows:
                     break
                 rows_seen += 1
+                if allowed_uuids is not None and str(row.get("uuid")) not in allowed_uuids:
+                    rows_skipped += 1
+                    transform_stats["rows_filtered_allow_uuid"] = (
+                        transform_stats.get("rows_filtered_allow_uuid", 0) + 1
+                    )
+                    continue
                 if not args.include_failed and not is_trueish(row.get("passed")):
                     rows_skipped += 1
                     transform_stats["rows_filtered_not_passed"] = (
@@ -168,6 +196,8 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
         "input_jsonl": str(args.input_jsonl) if args.input_root is None else None,
         "input_root": str(args.input_root) if args.input_root is not None else None,
         "input_files": [str(path) for path in input_paths],
+        "allow_uuid_file": str(args.allow_uuid_file) if args.allow_uuid_file else None,
+        "allowed_uuid_count": len(allowed_uuids) if allowed_uuids is not None else None,
         "output_root": str(args.output_root),
         "transform": (
             "reasoning_tool_boundary_strict_miniswe_toolobs"
@@ -212,6 +242,15 @@ def parse_args() -> argparse.Namespace:
         help="include rows with reward <= 0; disabled by default",
     )
     parser.add_argument("--single-tool-calls", action="store_true")
+    parser.add_argument(
+        "--allow-uuid-file",
+        type=Path,
+        default=None,
+        help=(
+            "optional newline-delimited UUID allowlist; rows not present in this file "
+            "are skipped before outcome and format filtering"
+        ),
+    )
     parser.add_argument("--log-every", type=int, default=1000)
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
