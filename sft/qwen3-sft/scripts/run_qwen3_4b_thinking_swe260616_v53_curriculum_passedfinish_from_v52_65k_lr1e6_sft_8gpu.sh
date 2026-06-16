@@ -1,19 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Base-start raw0745 full-trajectory recipe.
+# Base-start, no-prefix curriculum phase 2.
 #
-# Future 4B SWE SFT recipes should start from the base Qwen3-4B-Thinking
-# checkpoint, not from an already-SFT checkpoint. This recipe also intentionally
-# avoids prefix-expanded rows: qwen3_thinking_acc.jinja2 keeps reasoning stable
-# in context, and bad targets are handled with per-assistant-turn masking while
-# preserving the complete trajectory as context.
+# Restore from the v52 failed-trace warmup and finish on passed traces only, so
+# the end of training emphasizes verified end-to-end patch finalization.
 
 export CONFIG="${CONFIG:-configs/qwen3_4b_thinking_swe260612_highquality_65k_online_packed_sft_8gpu.yaml}"
 export MODEL="${MODEL:-Qwen/Qwen3-4B-Thinking-2507}"
-export TRAIN_RAW_ROOT="${TRAIN_RAW_ROOT:-/wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260616/swerebench-rawplus-exact-0745-miniswe-aligned-passed-quality/data}"
-export CHECKPOINT_DIR="${CHECKPOINT_DIR:-/scratch/ewer/qwen3-sft-local/outputs/qwen3_4b_thinking_swe260616_v51_raw0745_fulltraj_turnmasked_from_base_65k_lr1e6_s300_assistant_h200_8gpu_sft}"
-export RUN_NAME="${RUN_NAME:-qwen3_4b_thinking_swe260616_v51_raw0745_fulltraj_turnmasked_from_base_65k_lr1e6_s300_assistant_h200_8gpu_sft}"
+export TRAIN_RAW_ROOT="${TRAIN_RAW_ROOT:-/wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260616/swerebench-rawplus-exact-0745-curriculum-failedpass-miniswe-aligned/001_passed/data}"
+export RESTORE_FROM="${RESTORE_FROM:-/scratch/ewer/qwen3-sft-local/outputs/qwen3_4b_thinking_swe260616_v52_curriculum_failedwarmup_from_base_65k_lr1e6_s100_assistant_h200_8gpu_sft/epoch_0_step_99}"
+export CHECKPOINT_DIR="${CHECKPOINT_DIR:-/scratch/ewer/qwen3-sft-local/outputs/qwen3_4b_thinking_swe260616_v53_curriculum_passedfinish_from_v52_65k_lr1e6_s300_assistant_h200_8gpu_sft}"
+export RUN_NAME="${RUN_NAME:-qwen3_4b_thinking_swe260616_v53_curriculum_passedfinish_from_v52_65k_lr1e6_s300_assistant_h200_8gpu_sft}"
 
 export PACK_SIZE="${PACK_SIZE:-65536}"
 export LOCAL_BATCH_SIZE="${LOCAL_BATCH_SIZE:-2}"
@@ -42,13 +40,14 @@ export FSDP2_FORWARD_PREFETCH_DEPTH="${FSDP2_FORWARD_PREFETCH_DEPTH:-1}"
 export OVERLENGTH_STRATEGY="${OVERLENGTH_STRATEGY:-split}"
 export SHUFFLE_FILES="${SHUFFLE_FILES:-false}"
 export SHUFFLE_JSONL_ROWS="${SHUFFLE_JSONL_ROWS:-false}"
-export DATASET_SEED="${DATASET_SEED:-61651}"
+export DATASET_SEED="${DATASET_SEED:-61653}"
 export REQUIRE_ASSISTANT_REASONING_FOR_LOSS="${REQUIRE_ASSISTANT_REASONING_FOR_LOSS:-true}"
 export REQUIRE_ASSISTANT_TOOL_CALLS_FOR_LOSS="${REQUIRE_ASSISTANT_TOOL_CALLS_FOR_LOSS:-true}"
 export DROP_ASSISTANT_CONTENT_FOR_TOOL_CALLS="${DROP_ASSISTANT_CONTENT_FOR_TOOL_CALLS:-true}"
 export ASSISTANT_LOSS_TARGET="${ASSISTANT_LOSS_TARGET:-assistant}"
 export REJECT_MANUAL_PATCH_TARGETS="${REJECT_MANUAL_PATCH_TARGETS:-true}"
 export REJECT_UNVERIFIED_SUBMIT_TARGETS="${REJECT_UNVERIFIED_SUBMIT_TARGETS:-true}"
+export REJECT_NONPASSING_SUBMIT_TARGETS="${REJECT_NONPASSING_SUBMIT_TARGETS:-true}"
 export NUM_WORKERS="${NUM_WORKERS:-2}"
 export PREFETCH_FACTOR="${PREFETCH_FACTOR:-2}"
 
