@@ -399,6 +399,20 @@ def normalize_row(row: Any) -> dict[str, Any] | None:
     tools = normalize_tools(row.get("tools"))
     if tools is not None:
         out["tools"] = tools
+    metadata: dict[str, Any] = {}
+    if isinstance(row.get("metadata"), dict):
+        metadata.update(row["metadata"])
+    source_outcome = row.get("source_outcome")
+    if isinstance(source_outcome, dict):
+        metadata["source_outcome"] = source_outcome
+        for key in ("passed", "reward", "task_id", "uuid"):
+            if key in source_outcome:
+                metadata.setdefault(key, source_outcome[key])
+    for key in ("source", "task_id", "uuid", "passed", "reward", "language", "teacher"):
+        if key in row:
+            metadata.setdefault(key, row[key])
+    if metadata:
+        out["metadata"] = metadata
     return out
 
 

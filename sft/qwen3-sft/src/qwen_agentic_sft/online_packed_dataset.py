@@ -325,6 +325,25 @@ def observation_has_visible_patch_output(observation: str) -> bool:
     return text_has_unified_diff_header(observation)
 
 
+def is_trueish_metadata_value(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "passed", "pass"}
+    return False
+
+
+def metadata_indicates_nonpassing(metadata: dict[str, Any]) -> bool:
+    source_outcome = metadata.get("source_outcome")
+    if isinstance(source_outcome, dict) and "passed" in source_outcome:
+        return not is_trueish_metadata_value(source_outcome.get("passed"))
+    if "passed" in metadata:
+        return not is_trueish_metadata_value(metadata.get("passed"))
+    return False
+
+
 def apply_assistant_loss_policy(
     example: dict[str, Any],
     *,
@@ -333,6 +352,7 @@ def apply_assistant_loss_policy(
     drop_assistant_content_for_tool_calls: bool = False,
     reject_manual_patch_targets: bool = False,
     reject_unverified_submit_targets: bool = False,
+    reject_nonpassing_submit_targets: bool = False,
 ) -> dict[str, Any]:
     if (
         not require_assistant_reasoning_for_loss
@@ -340,10 +360,12 @@ def apply_assistant_loss_policy(
         and not drop_assistant_content_for_tool_calls
         and not reject_manual_patch_targets
         and not reject_unverified_submit_targets
+        and not reject_nonpassing_submit_targets
     ):
         return example
 
     metadata = example.get("metadata") or {}
+    nonpassing_row = metadata_indicates_nonpassing(metadata)
     allow_manual_patch_context = (
         bool(metadata.get("allow_manual_patch_context"))
         or metadata.get("source") == "current_empty_diff_recovery"
@@ -388,6 +410,8 @@ def apply_assistant_loss_policy(
                 or patch_file_tainted
             )
         ):
+            message["loss"] = False
+        if reject_nonpassing_submit_targets and nonpassing_row and is_submit:
             message["loss"] = False
         if require_assistant_reasoning_for_loss and not assistant_has_reasoning(message):
             message["loss"] = False
@@ -604,6 +628,7 @@ class OnlinePackedChatDataset(IterableDataset):
         assistant_loss_target: str = "assistant",
         reject_manual_patch_targets: bool = False,
         reject_unverified_submit_targets: bool = False,
+        reject_nonpassing_submit_targets: bool = False,
     ):
         super().__init__()
         self.tokenizer = tokenizer
@@ -630,6 +655,7 @@ class OnlinePackedChatDataset(IterableDataset):
         self.drop_assistant_content_for_tool_calls = bool(drop_assistant_content_for_tool_calls)
         self.reject_manual_patch_targets = bool(reject_manual_patch_targets)
         self.reject_unverified_submit_targets = bool(reject_unverified_submit_targets)
+        self.reject_nonpassing_submit_targets = bool(reject_nonpassing_submit_targets)
         if assistant_loss_target not in ASSISTANT_LOSS_TARGETS:
             raise ValueError(f"assistant_loss_target must be one of {ASSISTANT_LOSS_TARGETS}; got {assistant_loss_target}")
         self.assistant_loss_target = assistant_loss_target
@@ -765,6 +791,7 @@ class OnlinePackedChatDataset(IterableDataset):
                     drop_assistant_content_for_tool_calls=self.drop_assistant_content_for_tool_calls,
                     reject_manual_patch_targets=self.reject_manual_patch_targets,
                     reject_unverified_submit_targets=self.reject_unverified_submit_targets,
+                    reject_nonpassing_submit_targets=self.reject_nonpassing_submit_targets,
                 )
                 for input_ids, labels in tokenize_chat_example(
                     example,
@@ -839,6 +866,7 @@ def inspect_packer(args: argparse.Namespace) -> int:
         assistant_loss_target=args.assistant_loss_target,
         reject_manual_patch_targets=args.reject_manual_patch_targets,
         reject_unverified_submit_targets=args.reject_unverified_submit_targets,
+        reject_nonpassing_submit_targets=args.reject_nonpassing_submit_targets,
     )
     stats = {
         "packs": 0,
@@ -878,6 +906,7 @@ def parse_args() -> argparse.Namespace:
     inspect.add_argument("--assistant-loss-target", choices=ASSISTANT_LOSS_TARGETS, default="assistant")
     inspect.add_argument("--reject-manual-patch-targets", action="store_true")
     inspect.add_argument("--reject-unverified-submit-targets", action="store_true")
+    inspect.add_argument("--reject-nonpassing-submit-targets", action="store_true")
     inspect.add_argument("--local-files-only", action=argparse.BooleanOptionalAction, default=True)
     return parser.parse_args()
 
