@@ -346,8 +346,22 @@ if [ "$VALIDATION_ENABLED" = "true" ]; then
   fi
 fi
 
-if "$VENV_PYTHON" "$AUTOMODEL_BIN" --help 2>&1 | grep -q -- "--nproc-per-node"; then
-  exec "$VENV_PYTHON" "$AUTOMODEL_BIN" --nproc-per-node "$NPROC_PER_NODE" "${args[@]}"
-fi
-
-exec "$VENV_PYTHON" "$AUTOMODEL_BIN" "${args[@]}"
+AUTOMODEL_NPROC_ARG_SUPPORTED="${AUTOMODEL_NPROC_ARG_SUPPORTED:-true}"
+case "$AUTOMODEL_NPROC_ARG_SUPPORTED" in
+  true|True|TRUE|1|yes|YES)
+    exec "$VENV_PYTHON" "$AUTOMODEL_BIN" --nproc-per-node "$NPROC_PER_NODE" "${args[@]}"
+    ;;
+  false|False|FALSE|0|no|NO)
+    exec "$VENV_PYTHON" "$AUTOMODEL_BIN" "${args[@]}"
+    ;;
+  auto)
+    if "$VENV_PYTHON" "$AUTOMODEL_BIN" --help 2>&1 | grep -q -- "--nproc-per-node"; then
+      exec "$VENV_PYTHON" "$AUTOMODEL_BIN" --nproc-per-node "$NPROC_PER_NODE" "${args[@]}"
+    fi
+    exec "$VENV_PYTHON" "$AUTOMODEL_BIN" "${args[@]}"
+    ;;
+  *)
+    echo "AUTOMODEL_NPROC_ARG_SUPPORTED must be true, false, or auto; got $AUTOMODEL_NPROC_ARG_SUPPORTED" >&2
+    exit 1
+    ;;
+esac
