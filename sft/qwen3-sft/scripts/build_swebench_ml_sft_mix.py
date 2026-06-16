@@ -65,6 +65,7 @@ BASH_TOOL: list[dict[str, Any]] = [
 
 MINI_SWE_SYSTEM = "You are a helpful assistant that can interact with a computer shell to solve programming tasks."
 MINI_SWE_SUBMIT_COMMAND = "echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && cat patch.txt"
+MINI_SWE_SUBMIT_MARKER = "complete_task_and_submit_final_output"
 MINI_SWE_USER_TEMPLATE = """<pr_description>
 {task}
 </pr_description>
@@ -1841,9 +1842,9 @@ def message_has_submit_command(message: dict[str, Any]) -> bool:
                 args = json.loads(args)
             except json.JSONDecodeError:
                 args = {"command": args}
-        if isinstance(args, dict) and MINI_SWE_SUBMIT_COMMAND in str(args.get("command", "")):
+        if isinstance(args, dict) and MINI_SWE_SUBMIT_MARKER in str(args.get("command", "")).lower():
             return True
-    return MINI_SWE_SUBMIT_COMMAND in str(message.get("content", ""))
+    return MINI_SWE_SUBMIT_MARKER in str(message.get("content", "")).lower()
 
 
 def has_submit_command(messages: list[dict[str, Any]]) -> bool:

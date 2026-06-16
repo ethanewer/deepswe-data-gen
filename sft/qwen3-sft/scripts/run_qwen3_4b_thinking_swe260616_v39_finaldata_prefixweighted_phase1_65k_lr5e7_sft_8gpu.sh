@@ -6,7 +6,7 @@ set -euo pipefail
 # mini-swe-aligned prefix-weighted data and stops after 50 steps for eval.
 export CONFIG="${CONFIG:-configs/qwen3_4b_thinking_swe260612_highquality_65k_online_packed_sft_8gpu.yaml}"
 export MODEL="${MODEL:-checkpoints/qwen3_4b_thinking_swe260612_v27_highquality_exact_rowshuffle_contextguard_131k_lr1p5e6_s1200_assistant_h200_8gpu_sft/epoch_0_step_49/model/consolidated}"
-export TRAIN_RAW_ROOT="${TRAIN_RAW_ROOT:-/wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260616/swerebench-final-20260616-0428utc-miniswe-passed-prefix-weighted-v1/data}"
+export TRAIN_RAW_ROOT="${TRAIN_RAW_ROOT:-/wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260616/swerebench-final-20260616-0428utc-miniswe-passed-prefix-weighted-v2/data}"
 export CHECKPOINT_DIR="${CHECKPOINT_DIR:-checkpoints/qwen3_4b_thinking_swe260616_v39_finaldata_prefixweighted_phase1_65k_lr5e7_s50_assistant_h200_8gpu_sft/}"
 export RUN_NAME="${RUN_NAME:-qwen3_4b_thinking_swe260616_v39_finaldata_prefixweighted_phase1_65k_lr5e7_s50_assistant_h200_8gpu_sft}"
 

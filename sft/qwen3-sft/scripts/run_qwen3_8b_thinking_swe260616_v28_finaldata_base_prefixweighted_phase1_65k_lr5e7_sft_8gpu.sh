@@ -14,7 +14,7 @@ fi
 
 export CONFIG="${CONFIG:-configs/qwen3_8b_thinking_online_packed_sft_8gpu.yaml}"
 export MODEL="${MODEL:-$BASE_MODEL}"
-export TRAIN_RAW_ROOT="${TRAIN_RAW_ROOT:-/wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260616/swerebench-final-20260616-0428utc-miniswe-passed-prefix-weighted-v1/data}"
+export TRAIN_RAW_ROOT="${TRAIN_RAW_ROOT:-/wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260616/swerebench-final-20260616-0428utc-miniswe-passed-prefix-weighted-v2/data}"
 export CHECKPOINT_DIR="${CHECKPOINT_DIR:-checkpoints/qwen3_8b_thinking_swe260616_v28_finaldata_base_prefixweighted_phase1_65k_lr5e7_s50_assistant_h200_8gpu_nocompile_sft/}"
 export RUN_NAME="${RUN_NAME:-qwen3_8b_thinking_swe260616_v28_finaldata_base_prefixweighted_phase1_65k_lr5e7_s50_assistant_h200_8gpu_nocompile_sft}"
 
