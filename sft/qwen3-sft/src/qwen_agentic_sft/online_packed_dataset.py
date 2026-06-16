@@ -358,7 +358,6 @@ def apply_assistant_loss_policy(
     patch_file_tainted = False
     seen_submit_command = False
     seen_manual_patch_target = False
-    drop_example = False
     for message in example.get("messages", []):
         if message.get("role") != "assistant":
             if previous_assistant_command:
@@ -380,7 +379,6 @@ def apply_assistant_loss_policy(
             message["loss"] = False
         if effective_reject_manual_patch_targets and has_manual_patch_target:
             message["loss"] = False
-            drop_example = True
         if (
             reject_unverified_submit_targets
             and is_submit
@@ -393,10 +391,8 @@ def apply_assistant_loss_policy(
             message["loss"] = False
         if require_assistant_reasoning_for_loss and not assistant_has_reasoning(message):
             message["loss"] = False
-            drop_example = True
         if require_assistant_tool_calls_for_loss and not has_tool_calls:
             message["loss"] = False
-            drop_example = True
         if is_submit:
             seen_submit_command = True
         if effective_reject_manual_patch_targets and has_manual_patch_target:
@@ -407,8 +403,6 @@ def apply_assistant_loss_policy(
                 patch_file_tainted = bool(has_manual_patch_target)
             previous_assistant_command = command
             previous_assistant_observations = []
-    if drop_example:
-        example["drop"] = True
     return example
 
 

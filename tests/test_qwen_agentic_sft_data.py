@@ -211,7 +211,7 @@ def test_loss_policy_masks_assistant_turn_without_tool_call() -> None:
     assert filtered["messages"][1]["loss"] is False
 
 
-def test_loss_policy_drops_no_reasoning_tool_call_context() -> None:
+def test_loss_policy_masks_no_reasoning_tool_call_turn_only() -> None:
     example = {
         "messages": [
             {"role": "user", "content": "Fix the bug."},
@@ -235,7 +235,8 @@ def test_loss_policy_drops_no_reasoning_tool_call_context() -> None:
     )
 
     assert filtered["messages"][1]["loss"] is False
-    assert filtered.get("drop") is True
+    assert filtered["messages"][3].get("loss") is not False
+    assert filtered.get("drop") is not True
 
 
 def test_loss_policy_can_drop_visible_content_on_tool_call_turn() -> None:
@@ -364,7 +365,7 @@ def test_loss_policy_taints_absolute_patch_txt_manual_write() -> None:
     assert filtered["messages"][1]["loss"] is False
     assert filtered["messages"][3]["loss"] is False
     assert filtered["messages"][5]["loss"] is False
-    assert filtered.get("drop") is True
+    assert filtered.get("drop") is not True
 
 
 def test_loss_policy_recognizes_cmd_tool_arguments() -> None:
@@ -421,7 +422,7 @@ def test_loss_policy_recognizes_cmd_tool_arguments() -> None:
     assert assistant_has_manual_patch_target(filtered["messages"][1])
     assert filtered["messages"][1]["loss"] is False
     assert filtered["messages"][3]["loss"] is False
-    assert filtered.get("drop") is True
+    assert filtered.get("drop") is not True
 
 
 def test_manual_patch_detector_allows_same_command_git_diff_assembly() -> None:
@@ -604,7 +605,7 @@ def test_manual_patch_detector_rejects_empty_patch_creation() -> None:
         assert assistant_has_manual_patch_target(message), command
 
 
-def test_manual_patch_context_drops_later_valid_target_example() -> None:
+def test_manual_patch_context_masks_later_targets_without_dropping_example() -> None:
     example = {
         "messages": [
             {"role": "user", "content": "Fix the bug."},
@@ -656,7 +657,7 @@ def test_manual_patch_context_drops_later_valid_target_example() -> None:
     assert filtered["messages"][1]["loss"] is False
     assert filtered["messages"][3]["loss"] is False
     assert filtered["messages"][5]["loss"] is False
-    assert filtered.get("drop") is True
+    assert filtered.get("drop") is not True
 
 
 def test_unverified_submit_masks_only_submit_turn() -> None:
