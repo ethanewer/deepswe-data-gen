@@ -87,11 +87,16 @@ if [ "$BASELINE_MODEL" != "true" ] && [ ! -d "$CHECKPOINT_STEP_DIR/model" ]; the
   exit 1
 fi
 
-export PYTHONPATH="$REPO_ROOT/sft/qwen3-sft/third_party/Automodel:$REPO_ROOT/sft/qwen3-sft/src${PYTHONPATH:+:$PYTHONPATH}"
-AUTOMODEL_TOOLS_DIR="${AUTOMODEL_TOOLS_DIR:-$REPO_ROOT/sft/qwen3-sft/third_party/Automodel/tools}"
-if [ ! -f "$AUTOMODEL_TOOLS_DIR/offline_hf_consolidation.py" ] && [ -f "$DEFAULT_REPO_ROOT/sft/qwen3-sft/third_party/Automodel/tools/offline_hf_consolidation.py" ]; then
-  AUTOMODEL_TOOLS_DIR="$DEFAULT_REPO_ROOT/sft/qwen3-sft/third_party/Automodel/tools"
+AUTOMODEL_ROOT="${AUTOMODEL_ROOT:-$REPO_ROOT/sft/qwen3-sft/third_party/Automodel}"
+if [ ! -d "$AUTOMODEL_ROOT/nemo_automodel" ] && [ -d "$DEFAULT_REPO_ROOT/sft/qwen3-sft/third_party/Automodel/nemo_automodel" ]; then
+  AUTOMODEL_ROOT="$DEFAULT_REPO_ROOT/sft/qwen3-sft/third_party/Automodel"
 fi
+AUTOMODEL_TOOLS_DIR="${AUTOMODEL_TOOLS_DIR:-$AUTOMODEL_ROOT/tools}"
+if [ ! -f "$AUTOMODEL_TOOLS_DIR/offline_hf_consolidation.py" ]; then
+  echo "Missing Automodel consolidation helper under $AUTOMODEL_TOOLS_DIR" >&2
+  exit 1
+fi
+export PYTHONPATH="$AUTOMODEL_ROOT:$REPO_ROOT/sft/qwen3-sft/src${PYTHONPATH:+:$PYTHONPATH}"
 
 if [ "$BASELINE_MODEL" != "true" ] && { ! compgen -G "$CONSOLIDATED_DIR/*.safetensors" >/dev/null || [ ! -f "$CONSOLIDATED_READY" ]; }; then
   echo "Consolidating $CHECKPOINT_STEP_DIR/model -> $CONSOLIDATED_DIR"
