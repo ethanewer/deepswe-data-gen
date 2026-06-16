@@ -66,6 +66,7 @@ def passes(row: dict[str, Any], args: argparse.Namespace) -> tuple[bool, str]:
 
 def build(args: argparse.Namespace) -> dict[str, Any]:
     uuids: list[str] = []
+    line_numbers: list[int] = []
     seen_uuids: set[str] = set()
     rows_seen = 0
     rows_kept = 0
@@ -89,16 +90,24 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
                     continue
                 seen_uuids.add(uuid)
                 uuids.append(uuid)
+                line_numbers.append(int(row["line_number"]))
                 rows_kept += 1
                 kept_by_language[str(row.get("language") or "unknown")] += 1
                 kept_by_source_index[index_name] += 1
 
     args.output_uuid_file.parent.mkdir(parents=True, exist_ok=True)
     args.output_uuid_file.write_text("\n".join(uuids) + ("\n" if uuids else ""), encoding="utf-8")
+    if args.output_line_number_file:
+        args.output_line_number_file.parent.mkdir(parents=True, exist_ok=True)
+        args.output_line_number_file.write_text(
+            "\n".join(str(line_number) for line_number in line_numbers) + ("\n" if line_numbers else ""),
+            encoding="utf-8",
+        )
 
     manifest = {
         "index_jsonl": [str(path) for path in args.index_jsonl],
         "output_uuid_file": str(args.output_uuid_file),
+        "output_line_number_file": str(args.output_line_number_file) if args.output_line_number_file else None,
         "rows_seen": rows_seen,
         "rows_kept": rows_kept,
         "drop_reasons": dict(sorted(drop_reasons.items())),
@@ -123,6 +132,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--index-jsonl", type=Path, nargs="+", required=True)
     parser.add_argument("--output-uuid-file", type=Path, required=True)
+    parser.add_argument("--output-line-number-file", type=Path, default=None)
     parser.add_argument("--output-manifest", type=Path, default=None)
     parser.add_argument("--min-reasoning-coverage", type=float, default=0.90)
     parser.add_argument("--allow-failed", dest="require_passed", action="store_false")

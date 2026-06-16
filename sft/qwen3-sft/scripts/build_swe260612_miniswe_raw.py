@@ -6,9 +6,10 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
+import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -83,6 +84,65 @@ def load_uuid_allowlist(path: Path) -> set[str]:
     return allowed
 
 
+def load_line_number_allowlist(path: Path) -> set[int]:
+    allowed: set[int] = set()
+    with path.open("r", encoding="utf-8") as handle:
+        for file_line_number, line in enumerate(handle, start=1):
+            text = line.strip()
+            if not text or text.startswith("#"):
+                continue
+            if text.startswith("{"):
+                try:
+                    row = json.loads(text)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(f"invalid JSON in {path}:{file_line_number}") from exc
+                value = row.get("line_number")
+            else:
+                value = text.split()[0]
+            try:
+                line_number = int(value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"invalid line_number in {path}:{file_line_number}") from exc
+            if line_number < 0:
+                raise ValueError(f"negative line_number in {path}:{file_line_number}")
+            allowed.add(line_number)
+    return allowed
+
+
+def iter_jsonl_lines(path: Path) -> Iterator[str]:
+    if path.name.endswith(".jsonl.zst"):
+        process = subprocess.Popen(
+            ["zstd", "-dc", str(path)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+        )
+        assert process.stdout is not None
+        completed_naturally = False
+        try:
+            for line in process.stdout:
+                yield line.rstrip("\n")
+            completed_naturally = True
+        finally:
+            if not completed_naturally and process.poll() is None:
+                process.terminate()
+            process.stdout.close()
+            return_code = process.wait()
+            if return_code not in (0, -15, -13, 141):
+                stderr = ""
+                if process.stderr is not None:
+                    stderr = process.stderr.read().strip()
+                raise RuntimeError(f"zstd failed while reading {path}: {stderr}")
+            if process.stderr is not None:
+                process.stderr.close()
+        return
+
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            yield line.rstrip("\n")
+
+
 def build(args: argparse.Namespace) -> dict[str, Any]:
     if args.output_root.exists():
         if not args.overwrite:
@@ -90,6 +150,9 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
         shutil.rmtree(args.output_root)
 
     allowed_uuids = load_uuid_allowlist(args.allow_uuid_file) if args.allow_uuid_file else None
+    allowed_line_numbers = (
+        load_line_number_allowlist(args.allow_line_number_file) if args.allow_line_number_file else None
+    )
     data_dir = args.output_root / "data"
     handles = open_shards(data_dir, args.shards)
     rows_seen = 0
@@ -108,66 +171,124 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
         if not input_paths:
             raise FileNotFoundError(f"no JSONL shards found under {args.input_root}")
     try:
+        global_line_number = 0
+
+        def process_row(row: dict[str, Any]) -> None:
+            nonlocal rows_skipped, rows_written
+            if allowed_uuids is not None and str(row.get("uuid")) not in allowed_uuids:
+                rows_skipped += 1
+                transform_stats["rows_filtered_allow_uuid"] = (
+                    transform_stats.get("rows_filtered_allow_uuid", 0) + 1
+                )
+                return
+            if not args.include_failed and not is_trueish(row.get("passed")):
+                rows_skipped += 1
+                transform_stats["rows_filtered_not_passed"] = (
+                    transform_stats.get("rows_filtered_not_passed", 0) + 1
+                )
+                return
+            if not args.include_nonpositive_reward and not is_positive_reward(row.get("reward")):
+                rows_skipped += 1
+                transform_stats["rows_filtered_nonpositive_reward"] = (
+                    transform_stats.get("rows_filtered_nonpositive_reward", 0) + 1
+                )
+                return
+            example = normalize_row(row)
+            if example is None:
+                rows_skipped += 1
+                transform_stats["rows_filtered_normalization"] = (
+                    transform_stats.get("rows_filtered_normalization", 0) + 1
+                )
+                return
+            transformed, stats = adapt_to_bash_tool(
+                example,
+                reasoning_tool_boundary=True,
+                strict_prompt=True,
+                require_submit=True,
+                tool_observation_roles=True,
+                single_tool_calls=args.single_tool_calls,
+            )
+            aggregate_stats(transform_stats, stats)
+            if transformed is None:
+                rows_skipped += 1
+                return
+            emitted = {
+                "messages": transformed["messages"],
+                "tools": transformed.get("tools", BASH_TOOL),
+                "source": "swerebench_highquality_miniswe_aligned_passed",
+                "source_note": (
+                    "Passed high-quality synthetic SWE traces normalized to the "
+                    "strict mini-swe-agent prompt, XML tool observations, and "
+                    "reasoning/tool-call assistant format."
+                ),
+                "source_outcome": {
+                    "passed": row.get("passed"),
+                    "reward": row.get("reward"),
+                    "task_id": row.get("task_id"),
+                    "uuid": row.get("uuid"),
+                },
+            }
+            handles[rows_written % args.shards].write(json_dumps(emitted) + "\n")
+            rows_written += 1
+
         for input_path in input_paths:
+            if allowed_line_numbers is not None:
+                row_iter: Iterator[dict[str, Any]] = iter(())
+                for line in iter_jsonl_lines(input_path):
+                    if args.max_rows and rows_seen >= args.max_rows:
+                        break
+                    current_line_number = global_line_number
+                    global_line_number += 1
+                    rows_seen += 1
+                    if current_line_number not in allowed_line_numbers:
+                        rows_skipped += 1
+                        transform_stats["rows_filtered_allow_line_number"] = (
+                            transform_stats.get("rows_filtered_allow_line_number", 0) + 1
+                        )
+                        continue
+                    text = line.strip()
+                    if not text:
+                        rows_skipped += 1
+                        transform_stats["rows_filtered_blank_line"] = (
+                            transform_stats.get("rows_filtered_blank_line", 0) + 1
+                        )
+                        continue
+                    try:
+                        row = json.loads(text)
+                    except json.JSONDecodeError:
+                        rows_skipped += 1
+                        transform_stats["rows_filtered_bad_json"] = (
+                            transform_stats.get("rows_filtered_bad_json", 0) + 1
+                        )
+                        continue
+                    if not isinstance(row, dict):
+                        rows_skipped += 1
+                        transform_stats["rows_filtered_non_object_json"] = (
+                            transform_stats.get("rows_filtered_non_object_json", 0) + 1
+                        )
+                        continue
+                    process_row(row)
+                    if args.log_every and rows_seen % args.log_every == 0:
+                        print(
+                            json.dumps(
+                                {
+                                    "rows_seen": rows_seen,
+                                    "rows_written": rows_written,
+                                    "rows_skipped": rows_skipped,
+                                },
+                                sort_keys=True,
+                            ),
+                            flush=True,
+                        )
+                if args.max_rows and rows_seen >= args.max_rows:
+                    break
+                continue
+
             for row in iter_jsonl_rows(input_path):
                 if args.max_rows and rows_seen >= args.max_rows:
                     break
                 rows_seen += 1
-                if allowed_uuids is not None and str(row.get("uuid")) not in allowed_uuids:
-                    rows_skipped += 1
-                    transform_stats["rows_filtered_allow_uuid"] = (
-                        transform_stats.get("rows_filtered_allow_uuid", 0) + 1
-                    )
-                    continue
-                if not args.include_failed and not is_trueish(row.get("passed")):
-                    rows_skipped += 1
-                    transform_stats["rows_filtered_not_passed"] = (
-                        transform_stats.get("rows_filtered_not_passed", 0) + 1
-                    )
-                    continue
-                if not args.include_nonpositive_reward and not is_positive_reward(row.get("reward")):
-                    rows_skipped += 1
-                    transform_stats["rows_filtered_nonpositive_reward"] = (
-                        transform_stats.get("rows_filtered_nonpositive_reward", 0) + 1
-                    )
-                    continue
-                example = normalize_row(row)
-                if example is None:
-                    rows_skipped += 1
-                    transform_stats["rows_filtered_normalization"] = (
-                        transform_stats.get("rows_filtered_normalization", 0) + 1
-                    )
-                    continue
-                transformed, stats = adapt_to_bash_tool(
-                    example,
-                    reasoning_tool_boundary=True,
-                    strict_prompt=True,
-                    require_submit=True,
-                    tool_observation_roles=True,
-                    single_tool_calls=args.single_tool_calls,
-                )
-                aggregate_stats(transform_stats, stats)
-                if transformed is None:
-                    rows_skipped += 1
-                    continue
-                row = {
-                    "messages": transformed["messages"],
-                    "tools": transformed.get("tools", BASH_TOOL),
-                    "source": "swerebench_highquality_miniswe_aligned_passed",
-                    "source_note": (
-                        "Passed high-quality synthetic SWE traces normalized to the "
-                        "strict mini-swe-agent prompt, XML tool observations, and "
-                        "reasoning/tool-call assistant format."
-                    ),
-                    "source_outcome": {
-                        "passed": row.get("passed"),
-                        "reward": row.get("reward"),
-                        "task_id": row.get("task_id"),
-                        "uuid": row.get("uuid"),
-                    },
-                }
-                handles[rows_written % args.shards].write(json_dumps(row) + "\n")
-                rows_written += 1
+                process_row(row)
                 if args.log_every and rows_seen % args.log_every == 0:
                     print(
                         json.dumps(
@@ -199,6 +320,8 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
         "input_files": [str(path) for path in input_paths],
         "allow_uuid_file": str(args.allow_uuid_file) if args.allow_uuid_file else None,
         "allowed_uuid_count": len(allowed_uuids) if allowed_uuids is not None else None,
+        "allow_line_number_file": str(args.allow_line_number_file) if args.allow_line_number_file else None,
+        "allowed_line_number_count": len(allowed_line_numbers) if allowed_line_numbers is not None else None,
         "output_root": str(args.output_root),
         "transform": (
             "reasoning_tool_boundary_strict_miniswe_toolobs"
@@ -250,6 +373,15 @@ def parse_args() -> argparse.Namespace:
         help=(
             "optional newline-delimited UUID allowlist; rows not present in this file "
             "are skipped before outcome and format filtering"
+        ),
+    )
+    parser.add_argument(
+        "--allow-line-number-file",
+        type=Path,
+        default=None,
+        help=(
+            "optional newline-delimited global 0-based raw row line-number allowlist; "
+            "unlisted rows are not JSON-parsed"
         ),
     )
     parser.add_argument("--log-every", type=int, default=1000)
