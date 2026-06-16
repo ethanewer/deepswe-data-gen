@@ -106,6 +106,7 @@ PERSISTENT_WORKERS="${PERSISTENT_WORKERS:-false}"
 PREFETCH_FACTOR="${PREFETCH_FACTOR:-2}"
 OVERLENGTH_STRATEGY="${OVERLENGTH_STRATEGY:-}"
 SHUFFLE_JSONL_ROWS="${SHUFFLE_JSONL_ROWS:-}"
+SHUFFLE_FILES="${SHUFFLE_FILES:-}"
 JSONL_OFFSETS_PATH="${JSONL_OFFSETS_PATH:-}"
 DATASET_SEED="${DATASET_SEED:-}"
 REQUIRE_ASSISTANT_REASONING_FOR_LOSS="${REQUIRE_ASSISTANT_REASONING_FOR_LOSS:-}"
@@ -181,6 +182,12 @@ if [ -n "$LR_WARMUP_STEPS" ]; then
 fi
 if [ -n "$OVERLENGTH_STRATEGY" ]; then
   echo "Overlength strategy: $OVERLENGTH_STRATEGY"
+fi
+if [ -n "$SHUFFLE_FILES" ]; then
+  echo "Shuffle files: $SHUFFLE_FILES"
+fi
+if [ -n "$SHUFFLE_JSONL_ROWS" ]; then
+  echo "Shuffle JSONL rows: $SHUFFLE_JSONL_ROWS"
 fi
 if [ -n "$DATASET_SEED" ]; then
   echo "Dataset seed: $DATASET_SEED"
@@ -267,6 +274,10 @@ fi
 
 if [ -n "$SHUFFLE_JSONL_ROWS" ]; then
   args+=(--dataset.shuffle_jsonl_rows "$SHUFFLE_JSONL_ROWS")
+fi
+
+if [ -n "$SHUFFLE_FILES" ]; then
+  args+=(--dataset.shuffle_files "$SHUFFLE_FILES")
 fi
 
 if [ -n "$JSONL_OFFSETS_PATH" ]; then
