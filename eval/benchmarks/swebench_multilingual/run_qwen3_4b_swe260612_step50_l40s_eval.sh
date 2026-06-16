@@ -88,6 +88,10 @@ if [ "$BASELINE_MODEL" != "true" ] && [ ! -d "$CHECKPOINT_STEP_DIR/model" ]; the
 fi
 
 export PYTHONPATH="$REPO_ROOT/sft/qwen3-sft/third_party/Automodel:$REPO_ROOT/sft/qwen3-sft/src${PYTHONPATH:+:$PYTHONPATH}"
+AUTOMODEL_TOOLS_DIR="${AUTOMODEL_TOOLS_DIR:-$REPO_ROOT/sft/qwen3-sft/third_party/Automodel/tools}"
+if [ ! -f "$AUTOMODEL_TOOLS_DIR/offline_hf_consolidation.py" ] && [ -f "$DEFAULT_REPO_ROOT/sft/qwen3-sft/third_party/Automodel/tools/offline_hf_consolidation.py" ]; then
+  AUTOMODEL_TOOLS_DIR="$DEFAULT_REPO_ROOT/sft/qwen3-sft/third_party/Automodel/tools"
+fi
 
 if [ "$BASELINE_MODEL" != "true" ] && { ! compgen -G "$CONSOLIDATED_DIR/*.safetensors" >/dev/null || [ ! -f "$CONSOLIDATED_READY" ]; }; then
   echo "Consolidating $CHECKPOINT_STEP_DIR/model -> $CONSOLIDATED_DIR"
@@ -99,7 +103,7 @@ if [ "$BASELINE_MODEL" != "true" ] && { ! compgen -G "$CONSOLIDATED_DIR/*.safete
       mkdir -p "$TMP_CONSOLIDATED_DIR"
       if [ -d "$CHECKPOINT_STEP_DIR/model/.hf_metadata" ]; then
         "$REPO_ROOT/sft/qwen3-sft/.venv/bin/python" \
-          "$REPO_ROOT/sft/qwen3-sft/third_party/Automodel/tools/offline_hf_consolidation.py" \
+          "$AUTOMODEL_TOOLS_DIR/offline_hf_consolidation.py" \
           --backend gloo \
           --model-name "$MODEL_SOURCE_MODEL_NAME" \
           --input-dir "$CHECKPOINT_STEP_DIR/model" \
