@@ -14,6 +14,7 @@ import json
 import os
 import random
 import shutil
+import subprocess
 from pathlib import Path
 from typing import Any, Iterable, Iterator
 
@@ -473,13 +474,56 @@ def discover_raw_files(raw_root: Path, skip_roots: Iterable[Path] = ()) -> list[
         if any(is_under(current, root) for root in skip_resolved):
             continue
         for filename in filenames:
-            if filename.endswith((".jsonl", ".parquet")):
+            if filename.endswith((".jsonl", ".jsonl.zst", ".parquet")):
                 files.append(current / filename)
     files.sort(key=lambda path: str(path.relative_to(raw_root)))
     return files
 
 
 def iter_jsonl_rows(path: Path, max_rows: int = 0) -> Iterator[dict[str, Any]]:
+    if path.name.endswith(".jsonl.zst"):
+        process = subprocess.Popen(
+            ["zstd", "-dc", str(path)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+        )
+        assert process.stdout is not None
+        completed_naturally = False
+        stopped_early = False
+        try:
+            for idx, line in enumerate(process.stdout):
+                if max_rows and idx >= max_rows:
+                    stopped_early = True
+                    process.terminate()
+                    break
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(row, dict):
+                    yield row
+            else:
+                completed_naturally = True
+        finally:
+            if not completed_naturally and process.poll() is None:
+                stopped_early = True
+                process.terminate()
+            process.stdout.close()
+            return_code = process.wait()
+            if return_code not in (0, -15, -13, 141) and not stopped_early:
+                stderr = ""
+                if process.stderr is not None:
+                    stderr = process.stderr.read().strip()
+                raise RuntimeError(f"zstd failed while reading {path}: {stderr}")
+            if process.stderr is not None:
+                process.stderr.close()
+        return
+
     with path.open("r", encoding="utf-8") as handle:
         for idx, line in enumerate(handle):
             if max_rows and idx >= max_rows:
@@ -592,6 +636,8 @@ def iter_normalized_examples_from_files(
                 if max_examples and emitted >= max_examples:
                     return
                 continue
+            rows = iter_jsonl_rows(path, max_rows=max_rows_per_file)
+        elif path.name.endswith(".jsonl.zst"):
             rows = iter_jsonl_rows(path, max_rows=max_rows_per_file)
         elif path.suffix == ".parquet":
             rows = iter_parquet_rows(path, batch_size=parquet_batch_size, max_rows=max_rows_per_file)

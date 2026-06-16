@@ -17,7 +17,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from build_swebench_ml_sft_mix import BASH_TOOL, adapt_to_bash_tool, json_dumps
-from qwen_agentic_sft.data import iter_jsonl_rows, normalize_row
+from qwen_agentic_sft.data import discover_raw_files, iter_jsonl_rows, normalize_row
 
 
 DEFAULT_INPUT_JSONL = Path(
@@ -74,72 +74,85 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
     rows_written = 0
     rows_skipped = 0
     transform_stats: dict[str, int] = {}
+    if args.input_root is None:
+        input_paths = [args.input_jsonl]
+    else:
+        input_paths = [
+            path
+            for path in discover_raw_files(args.input_root)
+            if path.name.endswith((".jsonl", ".jsonl.zst"))
+        ]
+        if not input_paths:
+            raise FileNotFoundError(f"no JSONL shards found under {args.input_root}")
     try:
-        for row in iter_jsonl_rows(args.input_jsonl):
+        for input_path in input_paths:
+            for row in iter_jsonl_rows(input_path):
+                if args.max_rows and rows_seen >= args.max_rows:
+                    break
+                rows_seen += 1
+                if not args.include_failed and not is_trueish(row.get("passed")):
+                    rows_skipped += 1
+                    transform_stats["rows_filtered_not_passed"] = (
+                        transform_stats.get("rows_filtered_not_passed", 0) + 1
+                    )
+                    continue
+                if not args.include_nonpositive_reward and not is_positive_reward(row.get("reward")):
+                    rows_skipped += 1
+                    transform_stats["rows_filtered_nonpositive_reward"] = (
+                        transform_stats.get("rows_filtered_nonpositive_reward", 0) + 1
+                    )
+                    continue
+                example = normalize_row(row)
+                if example is None:
+                    rows_skipped += 1
+                    transform_stats["rows_filtered_normalization"] = (
+                        transform_stats.get("rows_filtered_normalization", 0) + 1
+                    )
+                    continue
+                transformed, stats = adapt_to_bash_tool(
+                    example,
+                    reasoning_tool_boundary=True,
+                    strict_prompt=True,
+                    require_submit=True,
+                    tool_observation_roles=True,
+                    single_tool_calls=args.single_tool_calls,
+                )
+                aggregate_stats(transform_stats, stats)
+                if transformed is None:
+                    rows_skipped += 1
+                    continue
+                row = {
+                    "messages": transformed["messages"],
+                    "tools": transformed.get("tools", BASH_TOOL),
+                    "source": "swerebench_highquality_miniswe_aligned_passed",
+                    "source_note": (
+                        "Passed high-quality synthetic SWE traces normalized to the "
+                        "strict mini-swe-agent prompt, XML tool observations, and "
+                        "reasoning/tool-call assistant format."
+                    ),
+                    "source_outcome": {
+                        "passed": row.get("passed"),
+                        "reward": row.get("reward"),
+                        "task_id": row.get("task_id"),
+                        "uuid": row.get("uuid"),
+                    },
+                }
+                handles[rows_written % args.shards].write(json_dumps(row) + "\n")
+                rows_written += 1
+                if args.log_every and rows_seen % args.log_every == 0:
+                    print(
+                        json.dumps(
+                            {
+                                "rows_seen": rows_seen,
+                                "rows_written": rows_written,
+                                "rows_skipped": rows_skipped,
+                            },
+                            sort_keys=True,
+                        ),
+                        flush=True,
+                    )
             if args.max_rows and rows_seen >= args.max_rows:
                 break
-            rows_seen += 1
-            if not args.include_failed and not is_trueish(row.get("passed")):
-                rows_skipped += 1
-                transform_stats["rows_filtered_not_passed"] = (
-                    transform_stats.get("rows_filtered_not_passed", 0) + 1
-                )
-                continue
-            if not args.include_nonpositive_reward and not is_positive_reward(row.get("reward")):
-                rows_skipped += 1
-                transform_stats["rows_filtered_nonpositive_reward"] = (
-                    transform_stats.get("rows_filtered_nonpositive_reward", 0) + 1
-                )
-                continue
-            example = normalize_row(row)
-            if example is None:
-                rows_skipped += 1
-                transform_stats["rows_filtered_normalization"] = (
-                    transform_stats.get("rows_filtered_normalization", 0) + 1
-                )
-                continue
-            transformed, stats = adapt_to_bash_tool(
-                example,
-                reasoning_tool_boundary=True,
-                strict_prompt=True,
-                require_submit=True,
-                tool_observation_roles=True,
-                single_tool_calls=args.single_tool_calls,
-            )
-            aggregate_stats(transform_stats, stats)
-            if transformed is None:
-                rows_skipped += 1
-                continue
-            row = {
-                "messages": transformed["messages"],
-                "tools": transformed.get("tools", BASH_TOOL),
-                "source": "swe260612_highquality_miniswe_aligned_passed",
-                "source_note": (
-                    "260612 passed high-quality synthetic SWE traces normalized to the "
-                    "strict mini-swe-agent prompt, XML tool observations, and "
-                    "reasoning/tool-call assistant format."
-                ),
-                "source_outcome": {
-                    "passed": row.get("passed"),
-                    "reward": row.get("reward"),
-                    "task_id": row.get("task_id"),
-                    "uuid": row.get("uuid"),
-                },
-            }
-            handles[rows_written % args.shards].write(json_dumps(row) + "\n")
-            rows_written += 1
-            if args.log_every and rows_seen % args.log_every == 0:
-                print(
-                    json.dumps(
-                        {
-                            "rows_seen": rows_seen,
-                            "rows_written": rows_written,
-                            "rows_skipped": rows_skipped,
-                        },
-                        sort_keys=True,
-                    ),
-                    flush=True,
-                )
     finally:
         for handle in handles:
             handle.close()
@@ -152,7 +165,9 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
             path.unlink()
 
     manifest = {
-        "input_jsonl": str(args.input_jsonl),
+        "input_jsonl": str(args.input_jsonl) if args.input_root is None else None,
+        "input_root": str(args.input_root) if args.input_root is not None else None,
+        "input_files": [str(path) for path in input_paths],
         "output_root": str(args.output_root),
         "transform": (
             "reasoning_tool_boundary_strict_miniswe_toolobs"
@@ -181,6 +196,7 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input-jsonl", type=Path, default=DEFAULT_INPUT_JSONL)
+    parser.add_argument("--input-root", type=Path, default=None)
     parser.add_argument("--output-root", type=Path, required=True)
     parser.add_argument("--shards", type=int, default=64)
     parser.add_argument("--max-rows", type=int, default=0)
