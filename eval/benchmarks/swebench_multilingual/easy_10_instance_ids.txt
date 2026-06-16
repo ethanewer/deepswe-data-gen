@@ -1,0 +1,15 @@
+# swebench-multilingual-easy
+# Curated 10-task subset of predictive_30_instance_ids.txt for fast recipe
+# iteration. These tasks have been passed at least once by local Qwen-family
+# base or SFT runs, so use N=3 or N=5 trials here when compute is available
+# instead of one full 30-task trial.
+phpoffice__phpspreadsheet-4186
+nlohmann__json-4237
+tokio-rs__tokio-4898
+apache__lucene-12196
+briannesbitt__carbon-2752
+vuejs__core-11589
+redis__redis-10764
+gin-gonic__gin-3741
+google__gson-2024
+php-cs-fixer__php-cs-fixer-8256

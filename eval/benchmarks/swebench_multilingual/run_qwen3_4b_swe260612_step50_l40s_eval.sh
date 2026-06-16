@@ -51,6 +51,15 @@ case "$BENCHMARK" in
     DEFAULT_BENCHMARK_OUTPUT_ROOT="$REPO_ROOT/runs/swebench_ml"
     DEFAULT_BENCHMARK_LABEL="swebench-ml-p30"
     ;;
+  multilingual_easy|multilingual-easy|swebench-multilingual-easy)
+    # swebench-multilingual-easy is the 10-task subset used for fast SFT
+    # iteration. For stronger comparisons, run N=3 or N=5 trials by varying
+    # RUN_SUFFIX while keeping this same instance-id file and run label.
+    DEFAULT_BENCHMARK_MODULE="eval.benchmarks.swebench_multilingual.run"
+    DEFAULT_INSTANCE_IDS_PATH="$REPO_ROOT/eval/benchmarks/swebench_multilingual/easy_10_instance_ids.txt"
+    DEFAULT_BENCHMARK_OUTPUT_ROOT="$REPO_ROOT/runs/swebench_ml_easy"
+    DEFAULT_BENCHMARK_LABEL="swebench-multilingual-easy"
+    ;;
   verified)
     DEFAULT_BENCHMARK_MODULE="eval.benchmarks.swebench_verified.run"
     DEFAULT_INSTANCE_IDS_PATH="$REPO_ROOT/eval/benchmarks/swebench_verified/predictive_20_instance_ids.txt"
@@ -58,7 +67,7 @@ case "$BENCHMARK" in
     DEFAULT_BENCHMARK_LABEL="swebench-verified-p20"
     ;;
   *)
-    echo "BENCHMARK must be multilingual or verified; got $BENCHMARK" >&2
+    echo "BENCHMARK must be multilingual, multilingual_easy, or verified; got $BENCHMARK" >&2
     exit 1
     ;;
 esac
