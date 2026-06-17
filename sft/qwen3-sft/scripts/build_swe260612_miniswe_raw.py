@@ -26,6 +26,31 @@ DEFAULT_INPUT_JSONL = Path(
     "/wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260612/"
     "highquality-1x-duplicate-reasoning-90pct-30k-full/data/train.jsonl"
 )
+SOURCE_OUTCOME_AUDIT_KEYS = (
+    "language",
+    "teacher",
+    "row_source",
+    "source_group",
+    "agent_exit_status",
+    "model_patch_bytes",
+    "percent_messages_with_reasoning",
+    "api_calls",
+    "assistant_message_count",
+    "trajectory_bytes",
+    "trajectory_chars",
+    "difficulty",
+    "source_shard",
+    "source_row_index",
+    "failure_class",
+    "recommended_for_compaction_training",
+    "quality_rule_version",
+    "quality_flags",
+    "compaction_original_row_id",
+    "compaction_original_row_path",
+    "prompt_repair_source_raw_compacted_uuid",
+    "prompt_repair_source_firstturn_uuid",
+    "prompt_repair_v4_uuid",
+)
 
 
 def open_shards(output_dir: Path, shards: int):
@@ -62,6 +87,31 @@ def is_positive_reward(value: Any) -> bool:
         except ValueError:
             return is_trueish(value)
     return False
+
+
+def row_metadata(row: dict[str, Any]) -> dict[str, Any]:
+    metadata = row.get("metadata")
+    return metadata if isinstance(metadata, dict) else {}
+
+
+def row_or_metadata_value(row: dict[str, Any], key: str) -> Any:
+    if key in row:
+        return row[key]
+    return row_metadata(row).get(key)
+
+
+def build_source_outcome(row: dict[str, Any]) -> dict[str, Any]:
+    outcome: dict[str, Any] = {
+        "passed": row_or_metadata_value(row, "passed"),
+        "reward": row_or_metadata_value(row, "reward"),
+        "task_id": row_or_metadata_value(row, "task_id"),
+        "uuid": row_or_metadata_value(row, "uuid"),
+    }
+    for key in SOURCE_OUTCOME_AUDIT_KEYS:
+        value = row_or_metadata_value(row, key)
+        if value not in (None, "", [], {}):
+            outcome[key] = value
+    return outcome
 
 
 def has_manual_patch_context(example: dict[str, Any]) -> bool:
@@ -230,18 +280,13 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
             emitted = {
                 "messages": transformed["messages"],
                 "tools": transformed.get("tools", BASH_TOOL),
-                "source": "swerebench_highquality_miniswe_aligned_passed",
+                "source": "swerebench_highquality_miniswe_aligned",
                 "source_note": (
-                    "Passed high-quality synthetic SWE traces normalized to the "
+                    "Selected high-quality synthetic SWE traces normalized to the "
                     "strict mini-swe-agent prompt, XML tool observations, and "
                     "reasoning/tool-call assistant format."
                 ),
-                "source_outcome": {
-                    "passed": row.get("passed"),
-                    "reward": row.get("reward"),
-                    "task_id": row.get("task_id"),
-                    "uuid": row.get("uuid"),
-                },
+                "source_outcome": build_source_outcome(row),
             }
             handles[rows_written % args.shards].write(json_dumps(emitted) + "\n")
             rows_written += 1
