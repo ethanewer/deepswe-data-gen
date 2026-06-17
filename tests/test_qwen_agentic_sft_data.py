@@ -322,9 +322,10 @@ def test_verification_turn_gets_verify_weight() -> None:
     assert labelled_weights == {1.5}
 
 
-def test_nonpassing_submit_is_masked_but_nonpassing_verification_is_weighted() -> None:
+def test_nonpassing_nonempty_submit_stays_trainable_but_verification_is_weighted() -> None:
     example = {
         "passed": False,
+        "source_outcome": {"model_patch_bytes": 128},
         "messages": [
             {"role": "user", "content": "Finish the task."},
             {
@@ -350,7 +351,7 @@ def test_nonpassing_submit_is_masked_but_nonpassing_verification_is_weighted() -
         verify_loss_weight=1.5,
         submit_loss_weight=2.0,
         nonpassing_loss_multiplier=0.75,
-        mask_nonpassing_submit_turns=True,
+        mask_empty_patch_submit_turns=True,
     )
 
     verify_turn = filtered["messages"][1]
@@ -358,6 +359,36 @@ def test_nonpassing_submit_is_masked_but_nonpassing_verification_is_weighted() -
     assert assistant_turn_action(verify_turn) == "verify"
     assert verify_turn.get("loss") is not False
     assert verify_turn["loss_weight"] == 1.125
+    assert assistant_turn_action(submit_turn) == "submit"
+    assert submit_turn.get("loss") is not False
+    assert submit_turn["loss_weight"] == 1.5
+
+
+def test_empty_patch_submit_is_masked() -> None:
+    example = {
+        "passed": False,
+        "source_outcome": {"model_patch_bytes": 0},
+        "messages": [
+            {"role": "user", "content": "Finish the task."},
+            {
+                "role": "assistant",
+                "reasoning": "The patch is ready to submit.",
+                "content": "",
+                "tool_calls": [{"function": {"name": "bash", "arguments": {"command": "submit"}}}],
+            },
+        ],
+    }
+    filtered = apply_assistant_loss_policy(
+        example,
+        require_assistant_reasoning_for_loss=True,
+        require_assistant_tool_calls_for_loss=True,
+        enable_turn_loss_weights=True,
+        submit_loss_weight=2.0,
+        nonpassing_loss_multiplier=0.75,
+        mask_empty_patch_submit_turns=True,
+    )
+
+    submit_turn = filtered["messages"][1]
     assert assistant_turn_action(submit_turn) == "submit"
     assert submit_turn["loss"] is False
 

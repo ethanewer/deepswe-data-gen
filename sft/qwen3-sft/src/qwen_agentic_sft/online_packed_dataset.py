@@ -151,6 +151,7 @@ def apply_assistant_loss_policy(
     default_loss_weight: float = 1.0,
     nonpassing_loss_multiplier: float = 1.0,
     mask_nonpassing_submit_turns: bool = False,
+    mask_empty_patch_submit_turns: bool = False,
 ) -> dict[str, Any]:
     if (
         not require_assistant_reasoning_for_loss
@@ -160,11 +161,13 @@ def apply_assistant_loss_policy(
         and not mask_manual_patch_artifact_turns
         and not enable_turn_loss_weights
         and not mask_nonpassing_submit_turns
+        and not mask_empty_patch_submit_turns
     ):
         return example
 
     messages = example.get("messages", [])
     passed = example_passed(example)
+    empty_patch = example_has_empty_patch(example)
     mask_next_assistant = False
     for message in messages:
         if message.get("role") == "tool":
@@ -187,6 +190,8 @@ def apply_assistant_loss_policy(
         if mask_manual_patch_artifact_turns and action == "manual_patch_artifact":
             message["loss"] = False
         if mask_nonpassing_submit_turns and not passed and action == "submit":
+            message["loss"] = False
+        if mask_empty_patch_submit_turns and empty_patch and action == "submit":
             message["loss"] = False
         if enable_turn_loss_weights:
             if action == "submit":
@@ -222,6 +227,47 @@ def example_passed(example: dict[str, Any]) -> bool:
             if key in metadata:
                 return bool(metadata[key])
     return False
+
+
+def _int_or_none(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, str):
+        value = value.strip()
+        if value.isdigit():
+            return int(value)
+    return None
+
+
+def example_patch_bytes(example: dict[str, Any]) -> int | None:
+    containers: list[dict[str, Any]] = [example]
+    for key in ("source_outcome", "metadata"):
+        value = example.get(key)
+        if isinstance(value, dict):
+            containers.append(value)
+    for container in containers:
+        for key in ("model_patch_bytes", "patch_bytes", "original_model_patch_bytes"):
+            value = _int_or_none(container.get(key))
+            if value is not None:
+                return value
+    patch = example.get("model_patch")
+    if isinstance(patch, str):
+        return len(patch.encode("utf-8"))
+    return None
+
+
+def example_has_empty_patch(example: dict[str, Any]) -> bool:
+    metadata = example.get("metadata")
+    if isinstance(metadata, dict):
+        for key in ("empty_patch", "missing_empty_patch_verification"):
+            if metadata.get(key) is True:
+                return True
+    patch_bytes = example_patch_bytes(example)
+    return patch_bytes == 0 if patch_bytes is not None else False
 
 
 def assistant_tool_commands(message: dict[str, Any]) -> list[str]:
@@ -617,6 +663,7 @@ class OnlinePackedChatDataset(IterableDataset):
         default_loss_weight: float = 1.0,
         nonpassing_loss_multiplier: float = 1.0,
         mask_nonpassing_submit_turns: bool = False,
+        mask_empty_patch_submit_turns: bool = False,
     ):
         super().__init__()
         self.tokenizer = tokenizer
@@ -651,6 +698,7 @@ class OnlinePackedChatDataset(IterableDataset):
         self.default_loss_weight = float(default_loss_weight)
         self.nonpassing_loss_multiplier = float(nonpassing_loss_multiplier)
         self.mask_nonpassing_submit_turns = bool(mask_nonpassing_submit_turns)
+        self.mask_empty_patch_submit_turns = bool(mask_empty_patch_submit_turns)
         if assistant_loss_target not in ASSISTANT_LOSS_TARGETS:
             raise ValueError(f"assistant_loss_target must be one of {ASSISTANT_LOSS_TARGETS}; got {assistant_loss_target}")
         self.assistant_loss_target = assistant_loss_target
@@ -757,6 +805,7 @@ class OnlinePackedChatDataset(IterableDataset):
                     default_loss_weight=self.default_loss_weight,
                     nonpassing_loss_multiplier=self.nonpassing_loss_multiplier,
                     mask_nonpassing_submit_turns=self.mask_nonpassing_submit_turns,
+                    mask_empty_patch_submit_turns=self.mask_empty_patch_submit_turns,
                 )
                 for input_ids, labels, loss_weights in tokenize_chat_example(
                     example,
@@ -835,6 +884,7 @@ def inspect_packer(args: argparse.Namespace) -> int:
         default_loss_weight=args.default_loss_weight,
         nonpassing_loss_multiplier=args.nonpassing_loss_multiplier,
         mask_nonpassing_submit_turns=args.mask_nonpassing_submit_turns,
+        mask_empty_patch_submit_turns=args.mask_empty_patch_submit_turns,
     )
     stats = {
         "packs": 0,
@@ -886,6 +936,7 @@ def _dataset_for_count(args: argparse.Namespace, tokenizer: Any, *, shard_rank: 
         default_loss_weight=args.default_loss_weight,
         nonpassing_loss_multiplier=args.nonpassing_loss_multiplier,
         mask_nonpassing_submit_turns=args.mask_nonpassing_submit_turns,
+        mask_empty_patch_submit_turns=args.mask_empty_patch_submit_turns,
     )
 
 
@@ -1000,6 +1051,7 @@ def add_common_dataset_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--default-loss-weight", type=float, default=1.0)
     parser.add_argument("--nonpassing-loss-multiplier", type=float, default=1.0)
     parser.add_argument("--mask-nonpassing-submit-turns", action="store_true")
+    parser.add_argument("--mask-empty-patch-submit-turns", action="store_true")
     parser.add_argument("--local-files-only", action=argparse.BooleanOptionalAction, default=True)
 
 

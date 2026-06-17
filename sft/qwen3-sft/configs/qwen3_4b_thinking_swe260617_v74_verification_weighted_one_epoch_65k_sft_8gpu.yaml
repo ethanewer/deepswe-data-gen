@@ -45,7 +45,7 @@ fp8:
 
 checkpoint:
   enabled: true
-  checkpoint_dir: checkpoints/qwen3_4b_thinking_swe260617_v74_verification_weighted_one_epoch_65k_sft/
+  checkpoint_dir: checkpoints/qwen3_4b_thinking_swe260617_v74_verification_weighted_submitmaskfix_one_epoch_65k_sft/
   model_save_format: torch_save
   save_consolidated: false
 
@@ -99,7 +99,8 @@ dataset:
   submit_loss_weight: 2.0
   default_loss_weight: 1.0
   nonpassing_loss_multiplier: 0.75
-  mask_nonpassing_submit_turns: true
+  mask_nonpassing_submit_turns: false
+  mask_empty_patch_submit_turns: true
 
 dataloader:
   _target_: torchdata.stateful_dataloader.StatefulDataLoader

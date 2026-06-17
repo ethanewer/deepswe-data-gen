@@ -9,8 +9,8 @@ export MODEL_SIZE=4b
 export CONFIG="${CONFIG:-configs/qwen3_4b_thinking_swe260617_v74_verification_weighted_one_epoch_65k_sft_8gpu.yaml}"
 export MODEL="${MODEL:-Qwen/Qwen3-4B-Thinking-2507}"
 export TRAIN_RAW_ROOT="${TRAIN_RAW_ROOT:-/wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260617/swerebench-verification-enhanced-v74-mixed50-cleanpatch-provenance-miniswe-aligned/data}"
-export CHECKPOINT_DIR="${CHECKPOINT_DIR:-checkpoints/qwen3_4b_thinking_swe260617_v74_verification_weighted_one_epoch_65k_sft/}"
-export RUN_NAME="${RUN_NAME:-qwen3_4b_thinking_swe260617_v74_verification_weighted_one_epoch_65k_sft}"
+export CHECKPOINT_DIR="${CHECKPOINT_DIR:-checkpoints/qwen3_4b_thinking_swe260617_v74_verification_weighted_submitmaskfix_one_epoch_65k_sft/}"
+export RUN_NAME="${RUN_NAME:-qwen3_4b_thinking_swe260617_v74_verification_weighted_submitmaskfix_one_epoch_65k_sft}"
 
 export PACK_SIZE="${PACK_SIZE:-65536}"
 export LOCAL_BATCH_SIZE="${LOCAL_BATCH_SIZE:-2}"
@@ -51,7 +51,8 @@ export VERIFY_LOSS_WEIGHT="${VERIFY_LOSS_WEIGHT:-1.5}"
 export SUBMIT_LOSS_WEIGHT="${SUBMIT_LOSS_WEIGHT:-2.0}"
 export DEFAULT_LOSS_WEIGHT="${DEFAULT_LOSS_WEIGHT:-1.0}"
 export NONPASSING_LOSS_MULTIPLIER="${NONPASSING_LOSS_MULTIPLIER:-0.75}"
-export MASK_NONPASSING_SUBMIT_TURNS="${MASK_NONPASSING_SUBMIT_TURNS:-true}"
+export MASK_NONPASSING_SUBMIT_TURNS="${MASK_NONPASSING_SUBMIT_TURNS:-false}"
+export MASK_EMPTY_PATCH_SUBMIT_TURNS="${MASK_EMPTY_PATCH_SUBMIT_TURNS:-true}"
 
 export NUM_WORKERS="${NUM_WORKERS:-2}"
 export COUNT_PROCESSES="${COUNT_PROCESSES:-16}"
@@ -77,7 +78,8 @@ if [ -z "${MAX_STEPS:-}" ] || [ -z "${PAD_TO_PACK_COUNT:-}" ]; then
   mkdir -p "$CHECKPOINT_DIR"
   EPOCH_MANIFEST="${EPOCH_MANIFEST:-$CHECKPOINT_DIR/one_epoch_pack_count.json}"
   export PYTHONPATH="$ROOT_DIR/third_party/Automodel:$ROOT_DIR/src${PYTHONPATH:+:$PYTHONPATH}"
-  "$ROOT_DIR/.venv/bin/python" -m qwen_agentic_sft.online_packed_dataset count-shards \
+  count_args=(
+    -m qwen_agentic_sft.online_packed_dataset count-shards
     --model "$MODEL" \
     --raw-root "$TRAIN_RAW_ROOT" \
     --chat-template "$CHAT_TEMPLATE" \
@@ -97,7 +99,6 @@ if [ -z "${MAX_STEPS:-}" ] || [ -z "${PAD_TO_PACK_COUNT:-}" ]; then
     --submit-loss-weight "$SUBMIT_LOSS_WEIGHT" \
     --default-loss-weight "$DEFAULT_LOSS_WEIGHT" \
     --nonpassing-loss-multiplier "$NONPASSING_LOSS_MULTIPLIER" \
-    --mask-nonpassing-submit-turns \
     --world-size 8 \
     --num-workers "$NUM_WORKERS" \
     --local-batch-size "$LOCAL_BATCH_SIZE" \
@@ -105,6 +106,14 @@ if [ -z "${MAX_STEPS:-}" ] || [ -z "${PAD_TO_PACK_COUNT:-}" ]; then
     --packs-per-worker-multiple 4 \
     --count-processes "$COUNT_PROCESSES" \
     --output-json "$EPOCH_MANIFEST"
+  )
+  if [ "$MASK_NONPASSING_SUBMIT_TURNS" = "true" ]; then
+    count_args+=(--mask-nonpassing-submit-turns)
+  fi
+  if [ "$MASK_EMPTY_PATCH_SUBMIT_TURNS" = "true" ]; then
+    count_args+=(--mask-empty-patch-submit-turns)
+  fi
+  "$ROOT_DIR/.venv/bin/python" "${count_args[@]}"
 
   eval "$("$ROOT_DIR/.venv/bin/python" - "$EPOCH_MANIFEST" <<'PY'
 import json
