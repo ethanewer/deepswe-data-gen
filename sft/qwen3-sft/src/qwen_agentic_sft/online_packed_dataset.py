@@ -10,6 +10,7 @@ import os
 import random
 import re
 import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from math import ceil
 from pathlib import Path
@@ -755,37 +756,53 @@ def _dataset_for_count(args: argparse.Namespace, tokenizer: Any, *, shard_rank: 
     )
 
 
-def count_shards(args: argparse.Namespace) -> int:
+def _count_one_shard(args_dict: dict[str, Any], shard_id: int, total_workers: int) -> dict[str, Any]:
     from transformers import AutoTokenizer
 
+    args = argparse.Namespace(**args_dict)
     tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True, local_files_only=args.local_files_only)
     if getattr(tokenizer, "pad_token_id", None) is None:
         tokenizer.pad_token = tokenizer.eos_token
 
+    rank = shard_id // args.num_workers
+    worker = shard_id % args.num_workers
+    dataset = _dataset_for_count(args, tokenizer, shard_rank=shard_id, shard_world_size=total_workers)
+    packs = 0
+    label_tokens = 0
+    effective_label_weight = 0.0
+    for sample in dataset:
+        packs += 1
+        label_tokens += int(np.count_nonzero(np.asarray(sample["labels"]) != IGNORE_INDEX))
+        if "loss_weights" in sample:
+            effective_label_weight += float(np.asarray(sample["loss_weights"], dtype=np.float32).sum())
+    return {
+        "rank": rank,
+        "worker": worker,
+        "shard_id": shard_id,
+        "packs": packs,
+        "label_tokens": label_tokens,
+        "effective_label_weight": effective_label_weight,
+    }
+
+
+def count_shards(args: argparse.Namespace) -> int:
     total_workers = args.world_size * args.num_workers
-    worker_stats: list[dict[str, Any]] = []
-    for shard_id in range(total_workers):
-        rank = shard_id // args.num_workers
-        worker = shard_id % args.num_workers
-        dataset = _dataset_for_count(args, tokenizer, shard_rank=shard_id, shard_world_size=total_workers)
-        packs = 0
-        label_tokens = 0
-        effective_label_weight = 0.0
-        for sample in dataset:
-            packs += 1
-            label_tokens += int(np.count_nonzero(np.asarray(sample["labels"]) != IGNORE_INDEX))
-            if "loss_weights" in sample:
-                effective_label_weight += float(np.asarray(sample["loss_weights"], dtype=np.float32).sum())
-        worker_stats.append(
-            {
-                "rank": rank,
-                "worker": worker,
-                "shard_id": shard_id,
-                "packs": packs,
-                "label_tokens": label_tokens,
-                "effective_label_weight": effective_label_weight,
-            }
-        )
+    worker_stats: list[dict[str, Any]]
+    if args.count_processes <= 1:
+        worker_stats = []
+        for shard_id in range(total_workers):
+            worker_stats.append(_count_one_shard(vars(args), shard_id, total_workers))
+    else:
+        count_processes = min(int(args.count_processes), total_workers)
+        worker_stats = []
+        with ProcessPoolExecutor(max_workers=count_processes) as executor:
+            futures = [
+                executor.submit(_count_one_shard, vars(args), shard_id, total_workers)
+                for shard_id in range(total_workers)
+            ]
+            for future in as_completed(futures):
+                worker_stats.append(future.result())
+        worker_stats.sort(key=lambda item: item["shard_id"])
 
     max_worker_packs = max((item["packs"] for item in worker_stats), default=0)
     packs_per_worker_multiple = max(1, args.packs_per_worker_multiple)
@@ -866,6 +883,7 @@ def parse_args() -> argparse.Namespace:
     count.add_argument("--local-batch-size", type=int, default=2)
     count.add_argument("--grad-accum-steps", type=int, default=4)
     count.add_argument("--packs-per-worker-multiple", type=int, default=4)
+    count.add_argument("--count-processes", type=int, default=1)
     count.add_argument("--output-json", type=Path)
     return parser.parse_args()
 

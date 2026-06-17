@@ -53,6 +53,7 @@ export NONPASSING_LOSS_MULTIPLIER="${NONPASSING_LOSS_MULTIPLIER:-0.75}"
 export MASK_NONPASSING_SUBMIT_TURNS="${MASK_NONPASSING_SUBMIT_TURNS:-true}"
 
 export NUM_WORKERS="${NUM_WORKERS:-2}"
+export COUNT_PROCESSES="${COUNT_PROCESSES:-16}"
 export PREFETCH_FACTOR="${PREFETCH_FACTOR:-2}"
 export CHAT_TEMPLATE="${CHAT_TEMPLATE:-/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/eval/chat_templates/qwen3_thinking_acc.jinja2}"
 
@@ -90,6 +91,7 @@ if [ -z "${MAX_STEPS:-}" ] || [ -z "${PAD_TO_PACK_COUNT:-}" ]; then
     --local-batch-size "$LOCAL_BATCH_SIZE" \
     --grad-accum-steps "$GRAD_ACCUM_STEPS" \
     --packs-per-worker-multiple 4 \
+    --count-processes "$COUNT_PROCESSES" \
     --output-json "$EPOCH_MANIFEST"
 
   eval "$("$ROOT_DIR/.venv/bin/python" - "$EPOCH_MANIFEST" <<'PY'
