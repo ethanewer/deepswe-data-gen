@@ -173,13 +173,20 @@ def command_has_untrusted_patch_redirect(command: str) -> bool:
     return False
 
 
+def _is_risky_source_edit_path(path: str) -> bool:
+    normalized = path.strip().strip("'\"").lower()
+    if normalized.startswith(("/tmp/", "/var/", "/usr/", "/home/", "/root/", "/dev/", "/proc/")):
+        return False
+    return True
+
+
 def command_has_risky_source_edit(command: str) -> bool:
     """Detect brittle direct source construction via shell text redirection."""
     text = command.lower()
     if is_submit_command(text) or command_mentions_patch_file(command):
         return False
     text_redirect = (
-        rf"(?:>\s*(?P<overwrite>{SOURCE_EDIT_PATH_PATTERN})"
+        rf"(?:(?<!-)>\s*(?P<overwrite>{SOURCE_EDIT_PATH_PATTERN})"
         rf"|>>\s*(?P<append>{SOURCE_EDIT_PATH_PATTERN})"
         rf"|\|\s*tee\s+(?:-a\s+)?(?P<tee>{SOURCE_EDIT_PATH_PATTERN}))"
     )
@@ -189,13 +196,17 @@ def command_has_risky_source_edit(command: str) -> bool:
         flags=re.DOTALL,
     )
     for match in line_writer:
-        if not command_references_git_diff(match.group("body")):
+        target = match.group("overwrite") or match.group("append") or match.group("tee") or ""
+        if _is_risky_source_edit_path(target) and not command_references_git_diff(match.group("body")):
             return True
     heredoc_writer = re.finditer(
         rf"(^|[;&|\n]\s*)cat\s+<<['\"]?[\w-]+['\"]?\s*{text_redirect}",
         text,
     )
-    return any(True for _ in heredoc_writer)
+    return any(
+        _is_risky_source_edit_path(match.group("overwrite") or match.group("append") or match.group("tee") or "")
+        for match in heredoc_writer
+    )
 
 
 def _rank_world() -> tuple[int, int]:

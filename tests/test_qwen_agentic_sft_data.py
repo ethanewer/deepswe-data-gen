@@ -882,11 +882,35 @@ def test_risky_source_edit_detector_flags_linewise_source_construction() -> None
             }
         ],
     }
+    safe_tmp_repro = {
+        "role": "assistant",
+        "tool_calls": [
+            {
+                "function": {
+                    "name": "bash",
+                    "arguments": {"command": "cat <<'EOF' > /tmp/repro.go\npackage main\nEOF"},
+                }
+            }
+        ],
+    }
+    safe_arrow_prose = {
+        "role": "assistant",
+        "tool_calls": [
+            {
+                "function": {
+                    "name": "bash",
+                    "arguments": {"command": "echo 'main: dist/index.js -> dist/node/index.js'"},
+                }
+            }
+        ],
+    }
 
     assert assistant_has_risky_source_edit_target(risky_append)
     assert assistant_has_risky_source_edit_target(risky_overwrite)
     assert not assistant_has_risky_source_edit_target(safe_sed)
     assert not assistant_has_risky_source_edit_target(safe_patch)
+    assert not assistant_has_risky_source_edit_target(safe_tmp_repro)
+    assert not assistant_has_risky_source_edit_target(safe_arrow_prose)
 
 
 def test_loss_policy_masks_risky_source_edit_target_only() -> None:
