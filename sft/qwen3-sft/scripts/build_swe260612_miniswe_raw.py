@@ -19,7 +19,7 @@ if str(SRC_DIR) not in sys.path:
 
 from build_swebench_ml_sft_mix import BASH_TOOL, adapt_to_bash_tool, json_dumps
 from qwen_agentic_sft.data import discover_raw_files, iter_jsonl_rows, normalize_row
-from qwen_agentic_sft.online_packed_dataset import assistant_has_manual_patch_target
+from qwen_agentic_sft.online_packed_dataset import assistant_turn_action
 
 
 DEFAULT_INPUT_JSONL = Path(
@@ -117,7 +117,7 @@ def build_source_outcome(row: dict[str, Any]) -> dict[str, Any]:
 def has_manual_patch_context(example: dict[str, Any]) -> bool:
     """Return true when a normalized trajectory hand-assembles patch.txt."""
     for message in example.get("messages") or []:
-        if isinstance(message, dict) and assistant_has_manual_patch_target(message):
+        if isinstance(message, dict) and assistant_turn_action(message) == "manual_patch_artifact":
             return True
     return False
 
@@ -227,6 +227,7 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
             for path in discover_raw_files(search_root)
             if path.name.endswith((".jsonl", ".jsonl.zst"))
         ]
+        input_paths.extend(path for path in sorted(search_root.glob("*.jsonl.zst")) if path not in input_paths)
         if not input_paths:
             raise FileNotFoundError(f"no JSONL shards found under {args.input_root}")
     try:

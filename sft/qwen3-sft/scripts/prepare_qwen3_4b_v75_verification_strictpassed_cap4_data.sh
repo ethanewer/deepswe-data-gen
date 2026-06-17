@@ -44,7 +44,7 @@ echo "Target passing traces: $TARGET_PASS_TRACES"
 .venv/bin/python scripts/build_swe260612_miniswe_raw.py \
   --input-root "$SOURCE_LOCAL_ROOT" \
   --output-root "$RAW_VIEW_ROOT" \
-  --allow-uuid-file "$ALLOWLIST_ROOT/selected_pass_uuids.txt" \
+  --allow-line-number-file "$ALLOWLIST_ROOT/selected_pass_line_numbers.txt" \
   --drop-manual-patch-context-rows \
   --shards "$SHARDS" \
   "${overwrite_args[@]}"

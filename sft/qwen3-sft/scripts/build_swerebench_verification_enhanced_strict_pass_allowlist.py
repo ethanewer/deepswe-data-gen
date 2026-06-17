@@ -17,11 +17,10 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
-import subprocess
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 
 DATASET_ID = "eewer/swerebench-traces-raw-source-verification-enhanced-20260617"
@@ -34,6 +33,30 @@ DEFAULT_OUTPUT_ROOT = Path(
     "swerebench-verification-enhanced-v75-strictpassed-cap4-allowlist"
 )
 V5_SIDECAR_REL = Path("metadata/compaction_prompt_firstturn_repaired_v5_1000plus_20260617")
+INDEX_FILENAMES = (
+    "parent_full_index.jsonl",
+    "appended_full_index.jsonl",
+    "new_raw_index.jsonl",
+    "prompt_firstturn_v5_new_raw_index.jsonl",
+)
+LINEAGE_ID_KEYS = (
+    "uuid",
+    "compaction_original_row_id",
+    "source_raw_compacted_uuid",
+    "source_firstturn_repaired_uuid",
+    "prompt_firstturn_repaired_v4_uuid",
+    "prompt_firstturn_repaired_v5_uuid",
+    "prompt_repair_source_raw_compacted_uuid",
+    "prompt_repair_source_firstturn_uuid",
+    "prompt_repair_v4_uuid",
+    "source_v2_uuid",
+    "source_v4_uuid",
+    "verification_source_uuid",
+    "verification_original_row_uuid",
+    "synthetic_patchtxt_verification_source_uuid",
+    "synthetic_empty_submit_verification_stop_source_uuid",
+    "original_uuid",
+)
 
 LANG_ALIASES = {
     "c": "c",
@@ -56,6 +79,8 @@ class Candidate:
     uuid: str
     task_id: str
     language: str
+    line_number: int
+    lineage_ids: tuple[str, ...]
     source_group: str
     score: float
     notes: tuple[str, ...] = field(default_factory=tuple)
@@ -149,17 +174,12 @@ def discover_shards(source_root: Path) -> list[Path]:
     return shards
 
 
-def iter_jsonl_zst(path: Path) -> Iterator[dict[str, Any]]:
-    process = subprocess.Popen(
-        ["zstd", "-dc", str(path)],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        encoding="utf-8",
-    )
-    assert process.stdout is not None
-    try:
-        for line_number, line in enumerate(process.stdout, start=1):
+def iter_jsonl(path: Path) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    if not path.exists():
+        return rows
+    with path.open("r", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
             text = line.strip()
             if not text:
                 continue
@@ -168,15 +188,8 @@ def iter_jsonl_zst(path: Path) -> Iterator[dict[str, Any]]:
             except json.JSONDecodeError as exc:
                 raise ValueError(f"invalid JSON in {path}:{line_number}") from exc
             if isinstance(row, dict):
-                yield row
-    finally:
-        process.stdout.close()
-        stderr = process.stderr.read().strip() if process.stderr is not None else ""
-        return_code = process.wait()
-        if process.stderr is not None:
-            process.stderr.close()
-        if return_code != 0:
-            raise RuntimeError(f"zstd failed while reading {path}: {stderr}")
+                rows.append(row)
+    return rows
 
 
 def hard_pass_quality_ok(row: dict[str, Any]) -> bool:
@@ -195,6 +208,17 @@ def hard_pass_quality_ok(row: dict[str, Any]) -> bool:
         return False
     trajectory_bytes = to_int(metadata_value(row, "trajectory_bytes", metadata_value(row, "trajectory_chars")))
     return trajectory_bytes <= 5_000_000
+
+
+def compact_pass_quality_ok(row: dict[str, Any], signals: dict[str, Any]) -> bool:
+    if not (is_trueish(metadata_value(row, "passed", signals.get("passed"))) and is_positive(metadata_value(row, "reward", 1))):
+        return False
+    patch_bytes = to_int(metadata_value(row, "model_patch_bytes", signals.get("patch_bytes")))
+    if patch_bytes <= 0 or patch_bytes > 100_000:
+        return False
+    if signals.get("empty_patch"):
+        return False
+    return bool(signals.get("has_submit_command", True))
 
 
 def source_uuid_for_verification_row(row: dict[str, Any]) -> str | None:
@@ -226,35 +250,73 @@ def load_verification_signals(source_root: Path) -> dict[str, dict[str, Any]]:
             uuid = str(row.get("uuid") or "")
             if not uuid:
                 raise ValueError(f"missing uuid in {path}:{line_number}")
+            row["_global_line_number"] = line_number - 1
+            source_row_global_index = row.get("source_row_global_index")
+            if source_row_global_index is not None and int(source_row_global_index) != line_number:
+                raise ValueError(
+                    f"{path}:{line_number} has source_row_global_index={source_row_global_index}; "
+                    f"expected {line_number}"
+                )
             signals[uuid] = row
     return signals
 
 
-def find_verification_replacements(shards: list[Path]) -> tuple[set[str], set[str], Counter[str]]:
+def load_metadata_rows(source_root: Path) -> tuple[dict[str, dict[str, Any]], Counter[str]]:
+    rows: dict[str, dict[str, Any]] = {}
+    stats: Counter[str] = Counter()
+    metadata_root = source_root / "metadata"
+    for filename in INDEX_FILENAMES:
+        path = metadata_root / filename
+        for row in iter_jsonl(path):
+            stats[f"metadata_rows:{filename}"] += 1
+            uuid = str(row.get("uuid") or "")
+            if not uuid:
+                stats[f"metadata_missing_uuid:{filename}"] += 1
+                continue
+            existing = rows.get(uuid, {})
+            merged = {**existing, **row}
+            rows[uuid] = merged
+    return rows, stats
+
+
+def merged_row_for_uuid(
+    uuid: str,
+    *,
+    metadata_rows: dict[str, dict[str, Any]],
+    verification_signals: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    signals = verification_signals.get(uuid, {})
+    row = {**signals, **metadata_rows.get(uuid, {})}
+    row["_global_line_number"] = signals.get("_global_line_number", row.get("line_number"))
+    if "model_patch_bytes" not in row and "patch_bytes" in signals:
+        row["model_patch_bytes"] = signals["patch_bytes"]
+    if "passed" not in row and "passed" in signals:
+        row["passed"] = signals["passed"]
+    return row
+
+
+def find_verification_replacements(
+    verification_signals: dict[str, dict[str, Any]],
+) -> tuple[set[str], set[str], Counter[str]]:
     selected: set[str] = set()
     replaced_sources: set[str] = set()
     stats: Counter[str] = Counter()
-    for shard in shards:
-        for row in iter_jsonl_zst(shard):
-            metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
-            family = str(metadata.get("verification_modification_family") or "")
-            if not family:
-                continue
-            stats[f"verification_rows_seen:{family}"] += 1
-            uuid = str(row.get("uuid") or metadata.get("uuid") or "")
-            if (
-                uuid
-                and metadata.get("verification_recommended_for_standard_sft")
-                and not metadata.get("verification_should_not_be_counted_as_passed")
-                and hard_pass_quality_ok(row)
-            ):
-                selected.add(uuid)
-                source_uuid = source_uuid_for_verification_row(row)
-                if source_uuid:
-                    replaced_sources.add(source_uuid)
-                stats[f"verification_rows_selected:{family}"] += 1
-            else:
-                stats[f"verification_rows_skipped:{family}"] += 1
+    for uuid, signals in verification_signals.items():
+        family = str(signals.get("verification_modification_family") or "")
+        if not family:
+            continue
+        stats[f"verification_rows_seen:{family}"] += 1
+        if (
+            signals.get("verification_recommended_for_standard_sft")
+            and not signals.get("verification_should_not_be_counted_as_passed")
+        ):
+            selected.add(uuid)
+            source_uuid = source_uuid_for_verification_row(signals)
+            if source_uuid:
+                replaced_sources.add(source_uuid)
+            stats[f"verification_rows_selected:{family}"] += 1
+        else:
+            stats[f"verification_rows_skipped:{family}"] += 1
     return selected, replaced_sources, stats
 
 
@@ -285,6 +347,8 @@ def score_candidate(row: dict[str, Any], source_group: str, signals: dict[str, A
         "recommended_v5_compaction": 60.0,
         "verification_standard_replacement": 55.0,
         "strict_passed_remaining": 35.0,
+        "soft_passed_remaining": 32.0,
+        "passed_compaction_remaining": 30.0,
     }[source_group]
 
     reasoning = to_float(metadata_value(row, "percent_messages_with_reasoning"))
@@ -321,7 +385,7 @@ def score_candidate(row: dict[str, Any], source_group: str, signals: dict[str, A
         notes.append("missing_nonempty_patch_verification")
 
     metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
-    family = str(metadata.get("verification_modification_family") or "")
+    family = str(metadata.get("verification_modification_family") or row.get("verification_modification_family") or "")
     if family == "synthetic_patchtxt_verification_prototype":
         score += 8.0
         notes.append("synthetic_patchtxt_verification")
@@ -343,12 +407,18 @@ def record_from_row(row: dict[str, Any], source_group: str, signals: dict[str, A
     task_id = str(metadata_value(row, "task_id") or "")
     if not uuid or not task_id:
         raise ValueError("candidate row missing uuid or task_id")
+    line_number = row.get("_global_line_number")
+    if line_number is None:
+        raise ValueError("candidate row missing global line number")
     score, notes = score_candidate(row, source_group, signals)
     language = normalize_language(metadata_value(row, "language", signals.get("language")))
+    lineage = lineage_ids_for_row(row, signals)
     return Candidate(
         uuid=uuid,
         task_id=task_id,
         language=language,
+        line_number=int(line_number),
+        lineage_ids=lineage,
         source_group=source_group,
         score=score,
         notes=notes,
@@ -356,9 +426,21 @@ def record_from_row(row: dict[str, Any], source_group: str, signals: dict[str, A
     )
 
 
+def lineage_ids_for_row(row: dict[str, Any], signals: dict[str, Any]) -> tuple[str, ...]:
+    ids: set[str] = set()
+    for source in (signals, row):
+        metadata = source.get("metadata") if isinstance(source.get("metadata"), dict) else {}
+        for key in LINEAGE_ID_KEYS:
+            for value in (source.get(key), metadata.get(key)):
+                if value in (None, "", [], {}):
+                    continue
+                ids.add(str(value))
+    return tuple(sorted(ids))
+
+
 def scan_candidates(
-    shards: list[Path],
     *,
+    metadata_rows: dict[str, dict[str, Any]],
     verification_selected: set[str],
     verification_replaced_sources: set[str],
     v5_recommended: set[str],
@@ -368,49 +450,52 @@ def scan_candidates(
 ) -> tuple[list[Candidate], Counter[str]]:
     candidates: list[Candidate] = []
     stats: Counter[str] = Counter()
-    for shard in shards:
-        for row in iter_jsonl_zst(shard):
-            stats["rows_seen"] += 1
-            metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
-            uuid = str(row.get("uuid") or metadata.get("uuid") or "")
-            if not uuid:
-                stats["skip_missing_uuid"] += 1
-                continue
+    for uuid, signals in verification_signals.items():
+        stats["rows_seen"] += 1
+        row = merged_row_for_uuid(
+            uuid,
+            metadata_rows=metadata_rows,
+            verification_signals=verification_signals,
+        )
 
-            source_group = ""
-            if uuid in verification_selected:
-                source_group = "verification_standard_replacement"
-            elif uuid in verification_replaced_sources:
-                stats["skip_verification_replaced_source"] += 1
-                continue
-            elif uuid in v5_recommended:
-                if hard_pass_quality_ok(row):
-                    source_group = "recommended_v5_compaction"
-                else:
-                    stats["skip_v5_recommended_hard_quality"] += 1
-                    continue
-            elif (
-                uuid in v5_not_recommended
-                or uuid in v5_superseded
-                or str(metadata.get("compaction_original_row_id") or "") in v5_superseded
-            ):
-                stats["skip_v5_superseded_or_not_recommended"] += 1
-                continue
-            elif is_compaction_source(row):
-                stats["skip_non_recommended_compaction"] += 1
-                continue
-            elif hard_pass_quality_ok(row):
-                source_group = "strict_passed_remaining"
+        source_group = ""
+        if uuid in verification_selected:
+            source_group = "verification_standard_replacement"
+        elif uuid in verification_replaced_sources:
+            stats["skip_verification_replaced_source"] += 1
+            continue
+        elif uuid in v5_recommended:
+            if compact_pass_quality_ok(row, signals):
+                source_group = "recommended_v5_compaction"
             else:
+                stats["skip_v5_recommended_quality"] += 1
                 continue
+        elif uuid in v5_not_recommended:
+            stats["skip_v5_not_recommended"] += 1
+            continue
+        elif hard_pass_quality_ok(row):
+            source_group = "strict_passed_remaining"
+        elif (
+            uuid in v5_superseded
+            or str(row.get("compaction_original_row_id") or "") in v5_superseded
+        ):
+            stats["skip_v5_superseded"] += 1
+            continue
+        elif not compact_pass_quality_ok(row, signals):
+            stats["skip_basic_pass_quality"] += 1
+            continue
+        elif is_compaction_source(row):
+            source_group = "passed_compaction_remaining"
+        else:
+            source_group = "soft_passed_remaining"
 
-            try:
-                candidate = record_from_row(row, source_group, verification_signals.get(uuid, {}))
-            except ValueError:
-                stats["skip_candidate_missing_required_fields"] += 1
-                continue
-            candidates.append(candidate)
-            stats[f"candidate:{source_group}"] += 1
+        try:
+            candidate = record_from_row(row, source_group, signals)
+        except ValueError:
+            stats["skip_candidate_missing_required_fields"] += 1
+            continue
+        candidates.append(candidate)
+        stats[f"candidate:{source_group}"] += 1
     return candidates, stats
 
 
@@ -418,7 +503,11 @@ def candidate_sort_key(candidate: Candidate) -> tuple[float, str, str]:
     return (-candidate.score, candidate.task_id, candidate.uuid)
 
 
-def select_with_task_cap(candidates: list[Candidate], max_per_task: int, target_count: int) -> list[Candidate]:
+def select_with_task_cap(
+    candidates: list[Candidate],
+    max_per_task: int,
+    target_count: int,
+) -> tuple[list[Candidate], Counter[str]]:
     by_task: dict[str, list[Candidate]] = defaultdict(list)
     for candidate in candidates:
         by_task[candidate.task_id].append(candidate)
@@ -427,15 +516,24 @@ def select_with_task_cap(candidates: list[Candidate], max_per_task: int, target_
 
     task_order = sorted(by_task, key=lambda task: candidate_sort_key(by_task[task][0]))
     selected: list[Candidate] = []
+    used_lineage_ids: set[str] = set()
+    stats: Counter[str] = Counter()
     for rollout_index in range(max_per_task):
         for task_id in task_order:
             rows = by_task[task_id]
             if rollout_index >= len(rows):
                 continue
-            selected.append(rows[rollout_index])
+            candidate = rows[rollout_index]
+            lineage_ids = set(candidate.lineage_ids)
+            if lineage_ids & used_lineage_ids:
+                stats["skipped_lineage_duplicate"] += 1
+                stats[f"skipped_lineage_duplicate:{candidate.source_group}"] += 1
+                continue
+            selected.append(candidate)
+            used_lineage_ids.update(lineage_ids)
             if target_count > 0 and len(selected) >= target_count:
-                return selected
-    return selected
+                return selected, stats
+    return selected, stats
 
 
 def candidate_report(candidate: Candidate, order_index: int) -> dict[str, Any]:
@@ -444,6 +542,10 @@ def candidate_report(candidate: Candidate, order_index: int) -> dict[str, Any]:
     return {
         "order_index": order_index,
         "uuid": candidate.uuid,
+        "line_number": candidate.line_number,
+        "lineage_ids": list(candidate.lineage_ids),
+        "dataset_shard": row.get("dataset_shard"),
+        "dataset_line_number": row.get("dataset_line_number"),
         "task_id": candidate.task_id,
         "language": candidate.language,
         "source_group": candidate.source_group,
@@ -488,12 +590,14 @@ def main() -> int:
     args.output_root.mkdir(parents=True, exist_ok=True)
 
     source_root = discover_source_root(args.local_root, args.dataset_id)
-    shards = discover_shards(source_root)
     verification_signals = load_verification_signals(source_root)
-    verification_selected, verification_replaced_sources, verification_stats = find_verification_replacements(shards)
+    metadata_rows, metadata_stats = load_metadata_rows(source_root)
+    verification_selected, verification_replaced_sources, verification_stats = find_verification_replacements(
+        verification_signals
+    )
     v5_recommended, v5_not_recommended, v5_superseded = load_v5_sidecars(source_root)
     candidates, scan_stats = scan_candidates(
-        shards,
+        metadata_rows=metadata_rows,
         verification_selected=verification_selected,
         verification_replaced_sources=verification_replaced_sources,
         v5_recommended=v5_recommended,
@@ -501,10 +605,19 @@ def main() -> int:
         v5_superseded=v5_superseded,
         verification_signals=verification_signals,
     )
-    selected = select_with_task_cap(candidates, args.max_pass_per_task, args.target_pass_traces)
+    selected, selection_stats = select_with_task_cap(
+        candidates,
+        args.max_pass_per_task,
+        args.target_pass_traces,
+    )
 
     uuid_path = args.output_root / "selected_pass_uuids.txt"
+    line_number_path = args.output_root / "selected_pass_line_numbers.txt"
     uuid_path.write_text("\n".join(candidate.uuid for candidate in selected) + "\n", encoding="utf-8")
+    line_number_path.write_text(
+        "\n".join(str(candidate.line_number) for candidate in selected) + "\n",
+        encoding="utf-8",
+    )
     write_jsonl(
         args.output_root / "selected_pass_records_training_order.jsonl",
         [candidate_report(candidate, idx) for idx, candidate in enumerate(selected)],
@@ -520,20 +633,30 @@ def main() -> int:
         "source_root": str(source_root),
         "output_root": str(args.output_root),
         "selected_uuid_file": str(uuid_path),
+        "selected_line_number_file": str(line_number_path),
         "selected_records_training_order": str(args.output_root / "selected_pass_records_training_order.jsonl"),
         "selection_policy": {
             "pass_only": True,
             "max_pass_per_task": args.max_pass_per_task,
             "target_pass_traces": args.target_pass_traces,
             "duplicate_order": "round_robin_by_task_quality_rank",
+            "lineage_deduplication": (
+                "selected rows may not share any known full/compacted/repaired/source UUID lineage IDs"
+            ),
             "verification_replacements": (
                 "metadata.verification_recommended_for_standard_sft rows replace their source UUIDs"
             ),
             "v5_compactions": "recommended v5 repaired compactions replace superseded originals",
             "quality_preference": "passing traces with patch verification before submit are scored higher",
+            "selection_source": (
+                "metadata/verification_enhanced_row_signals.jsonl plus compact index sidecars; "
+                "raw JSON rows are parsed only later for selected global line numbers"
+            ),
         },
         "counts": {
-            "raw_shards": len(shards),
+            "raw_shards": len(discover_shards(source_root)),
+            "metadata_signal_rows": len(verification_signals),
+            "metadata_index_rows": len(metadata_rows),
             "candidates_before_cap": len(candidates),
             "selected_pass_traces": len(selected),
             "selected_unique_tasks": len(selected_task_counts),
@@ -542,7 +665,7 @@ def main() -> int:
         },
         "selected_by_source_group": dict(sorted(Counter(candidate.source_group for candidate in selected).items())),
         "selected_by_language": dict(sorted(Counter(candidate.language for candidate in selected).items())),
-        "scan_stats": dict(sorted((scan_stats + verification_stats).items())),
+        "scan_stats": dict(sorted((scan_stats + verification_stats + metadata_stats + selection_stats).items())),
     }
     (args.output_root / "manifest.json").write_text(
         json.dumps(manifest, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
