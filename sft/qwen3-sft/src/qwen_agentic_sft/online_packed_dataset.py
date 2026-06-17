@@ -53,9 +53,15 @@ WRITE_COMMAND_RE = re.compile(
     r"\btee\b|>\s*/|>>\s*/|\bmv\b|\bcp\b|\brm\b|\btouch\b|\bchmod\b|\bgit\s+apply\b)"
 )
 SUBMIT_COMMAND_RE = re.compile(r"\bsubmit\b|/submit|submit\.py")
-PATCH_TXT_WRITE_RE = re.compile(r"\bgit\s+diff\b.*(>\s*patch\.txt|\|\s*tee\s+patch\.txt)")
+PATCH_TXT_WRITE_RE = re.compile(r"\bgit\s+diff\b.*(>\s*\S*patch\.txt|\|\s*tee\s+\S*patch\.txt)")
 PATCH_TXT_READ_RE = re.compile(r"\b(cat|sed|head|tail|wc|grep|stat|ls|test)\b.*\bpatch\.txt\b")
-MANUAL_PATCH_TXT_RE = re.compile(r"(cat|tee|printf|echo).*(>\s*patch\.txt|>>\s*patch\.txt)")
+MANUAL_PATCH_TXT_RE = re.compile(
+    r"(cat|tee|printf|echo).*(>\s*\S*patch\.txt|>>\s*\S*patch\.txt|\btee\s+\S*patch\.txt)"
+)
+VERIFY_COMMAND_RE = re.compile(
+    r"(\b(cat|sed|head|tail|wc|grep|stat|ls|test)\b.*\bpatch\.txt\b|"
+    r"\bgit\s+(diff|status)\b)"
+)
 
 
 def _rank_world() -> tuple[int, int]:
@@ -140,6 +146,7 @@ def apply_assistant_loss_policy(
     read_loss_weight: float = 0.5,
     write_loss_weight: float = 1.0,
     test_loss_weight: float = 1.0,
+    verify_loss_weight: float = 1.5,
     submit_loss_weight: float = 2.0,
     default_loss_weight: float = 1.0,
     nonpassing_loss_multiplier: float = 1.0,
@@ -184,6 +191,8 @@ def apply_assistant_loss_policy(
         if enable_turn_loss_weights:
             if action == "submit":
                 weight = submit_loss_weight
+            elif action == "verify":
+                weight = verify_loss_weight
             elif action == "write":
                 weight = write_loss_weight
             elif action == "test":
@@ -242,10 +251,12 @@ def assistant_turn_action(message: dict[str, Any]) -> str:
         return "other"
     joined = "\n".join(commands)
     lowered = joined.lower()
-    if PATCH_TXT_WRITE_RE.search(lowered) or PATCH_TXT_READ_RE.search(lowered) or SUBMIT_COMMAND_RE.search(lowered):
-        return "submit"
     if "patch.txt" in lowered and MANUAL_PATCH_TXT_RE.search(lowered):
         return "manual_patch_artifact"
+    if PATCH_TXT_WRITE_RE.search(lowered) or SUBMIT_COMMAND_RE.search(lowered):
+        return "submit"
+    if VERIFY_COMMAND_RE.search(lowered):
+        return "verify"
     if TEST_COMMAND_RE.search(lowered):
         return "test"
     if WRITE_COMMAND_RE.search(lowered):
@@ -601,6 +612,7 @@ class OnlinePackedChatDataset(IterableDataset):
         read_loss_weight: float = 0.5,
         write_loss_weight: float = 1.0,
         test_loss_weight: float = 1.0,
+        verify_loss_weight: float = 1.5,
         submit_loss_weight: float = 2.0,
         default_loss_weight: float = 1.0,
         nonpassing_loss_multiplier: float = 1.0,
@@ -634,6 +646,7 @@ class OnlinePackedChatDataset(IterableDataset):
         self.read_loss_weight = float(read_loss_weight)
         self.write_loss_weight = float(write_loss_weight)
         self.test_loss_weight = float(test_loss_weight)
+        self.verify_loss_weight = float(verify_loss_weight)
         self.submit_loss_weight = float(submit_loss_weight)
         self.default_loss_weight = float(default_loss_weight)
         self.nonpassing_loss_multiplier = float(nonpassing_loss_multiplier)
@@ -739,6 +752,7 @@ class OnlinePackedChatDataset(IterableDataset):
                     read_loss_weight=self.read_loss_weight,
                     write_loss_weight=self.write_loss_weight,
                     test_loss_weight=self.test_loss_weight,
+                    verify_loss_weight=self.verify_loss_weight,
                     submit_loss_weight=self.submit_loss_weight,
                     default_loss_weight=self.default_loss_weight,
                     nonpassing_loss_multiplier=self.nonpassing_loss_multiplier,
@@ -816,6 +830,7 @@ def inspect_packer(args: argparse.Namespace) -> int:
         read_loss_weight=args.read_loss_weight,
         write_loss_weight=args.write_loss_weight,
         test_loss_weight=args.test_loss_weight,
+        verify_loss_weight=args.verify_loss_weight,
         submit_loss_weight=args.submit_loss_weight,
         default_loss_weight=args.default_loss_weight,
         nonpassing_loss_multiplier=args.nonpassing_loss_multiplier,
@@ -866,6 +881,7 @@ def _dataset_for_count(args: argparse.Namespace, tokenizer: Any, *, shard_rank: 
         read_loss_weight=args.read_loss_weight,
         write_loss_weight=args.write_loss_weight,
         test_loss_weight=args.test_loss_weight,
+        verify_loss_weight=args.verify_loss_weight,
         submit_loss_weight=args.submit_loss_weight,
         default_loss_weight=args.default_loss_weight,
         nonpassing_loss_multiplier=args.nonpassing_loss_multiplier,
@@ -979,6 +995,7 @@ def add_common_dataset_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--read-loss-weight", type=float, default=0.5)
     parser.add_argument("--write-loss-weight", type=float, default=1.0)
     parser.add_argument("--test-loss-weight", type=float, default=1.0)
+    parser.add_argument("--verify-loss-weight", type=float, default=1.5)
     parser.add_argument("--submit-loss-weight", type=float, default=2.0)
     parser.add_argument("--default-loss-weight", type=float, default=1.0)
     parser.add_argument("--nonpassing-loss-multiplier", type=float, default=1.0)

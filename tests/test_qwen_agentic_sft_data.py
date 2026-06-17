@@ -16,6 +16,7 @@ from qwen_agentic_sft.data import (  # noqa: E402
 from qwen_agentic_sft.online_packed_dataset import (  # noqa: E402
     IGNORE_INDEX,
     apply_assistant_loss_policy,
+    assistant_turn_action,
     tokenize_chat_example,
 )
 
@@ -222,7 +223,7 @@ def test_tool_call_loss_target_masks_reasoning_and_visible_content() -> None:
         drop_assistant_content_for_tool_calls=True,
     )
 
-    input_ids, labels = next(
+    input_ids, labels, _loss_weights = next(
         tokenize_chat_example(
             filtered,
             CharTokenizer(),
@@ -238,3 +239,196 @@ def test_tool_call_loss_target_masks_reasoning_and_visible_content() -> None:
     assert "Let me inspect" not in labelled
     assert '"command": "ls"' in labelled
     assert labelled.endswith("<|im_end|>\n")
+
+
+def test_full_assistant_loss_target_keeps_reasoning_and_tool_call() -> None:
+    example = {
+        "messages": [
+            {"role": "user", "content": "Inspect the repo."},
+            {
+                "role": "assistant",
+                "content": "<think>\nI should list files.\n</think>\nLet me inspect first.",
+                "tool_calls": [{"function": {"name": "bash", "arguments": {"command": "ls"}}}],
+            },
+        ]
+    }
+    filtered = apply_assistant_loss_policy(
+        example,
+        require_assistant_reasoning_for_loss=True,
+        require_assistant_tool_calls_for_loss=True,
+        drop_assistant_content_for_tool_calls=True,
+        enable_turn_loss_weights=True,
+        read_loss_weight=0.5,
+    )
+
+    input_ids, labels, loss_weights = next(
+        tokenize_chat_example(
+            filtered,
+            CharTokenizer(),
+            chat_template="unused",
+            sequence_length=4096,
+            assistant_loss_target="assistant",
+        )
+    )
+    labelled = "".join(chr(token) for token, label in zip(input_ids, labels) if label != IGNORE_INDEX)
+    labelled_weights = {float(weight) for weight, label in zip(loss_weights, labels) if label != IGNORE_INDEX}
+
+    assert labelled.startswith("<|im_start|>assistant")
+    assert "I should list files" in labelled
+    assert "Let me inspect" not in labelled
+    assert "<tool_call>" in labelled
+    assert '"command": "ls"' in labelled
+    assert labelled.endswith("<|im_end|>\n")
+    assert labelled_weights == {0.5}
+
+
+def test_verification_turn_gets_verify_weight() -> None:
+    example = {
+        "passed": True,
+        "messages": [
+            {"role": "user", "content": "Verify the patch."},
+            {
+                "role": "assistant",
+                "reasoning": "I should inspect the generated patch before submitting.",
+                "content": "",
+                "tool_calls": [{"function": {"name": "bash", "arguments": {"command": "cat patch.txt"}}}],
+            },
+        ],
+    }
+    filtered = apply_assistant_loss_policy(
+        example,
+        require_assistant_reasoning_for_loss=True,
+        require_assistant_tool_calls_for_loss=True,
+        enable_turn_loss_weights=True,
+        verify_loss_weight=1.5,
+        read_loss_weight=0.5,
+        submit_loss_weight=2.0,
+    )
+
+    assistant = filtered["messages"][1]
+    assert assistant_turn_action(assistant) == "verify"
+    assert assistant["loss_weight"] == 1.5
+
+    _input_ids, labels, loss_weights = next(
+        tokenize_chat_example(
+            filtered,
+            CharTokenizer(),
+            chat_template="unused",
+            sequence_length=4096,
+            assistant_loss_target="assistant",
+        )
+    )
+    labelled_weights = {float(weight) for weight, label in zip(loss_weights, labels) if label != IGNORE_INDEX}
+    assert labelled_weights == {1.5}
+
+
+def test_nonpassing_submit_is_masked_but_nonpassing_verification_is_weighted() -> None:
+    example = {
+        "passed": False,
+        "messages": [
+            {"role": "user", "content": "Finish the task."},
+            {
+                "role": "assistant",
+                "reasoning": "I should inspect patch.txt first.",
+                "content": "",
+                "tool_calls": [{"function": {"name": "bash", "arguments": {"command": "cat patch.txt"}}}],
+            },
+            {"role": "tool", "content": "diff --git a/x b/x"},
+            {
+                "role": "assistant",
+                "reasoning": "The patch is ready to submit.",
+                "content": "",
+                "tool_calls": [{"function": {"name": "bash", "arguments": {"command": "submit"}}}],
+            },
+        ],
+    }
+    filtered = apply_assistant_loss_policy(
+        example,
+        require_assistant_reasoning_for_loss=True,
+        require_assistant_tool_calls_for_loss=True,
+        enable_turn_loss_weights=True,
+        verify_loss_weight=1.5,
+        submit_loss_weight=2.0,
+        nonpassing_loss_multiplier=0.75,
+        mask_nonpassing_submit_turns=True,
+    )
+
+    verify_turn = filtered["messages"][1]
+    submit_turn = filtered["messages"][3]
+    assert assistant_turn_action(verify_turn) == "verify"
+    assert verify_turn.get("loss") is not False
+    assert verify_turn["loss_weight"] == 1.125
+    assert assistant_turn_action(submit_turn) == "submit"
+    assert submit_turn["loss"] is False
+
+
+def test_manual_patch_artifact_is_masked_before_patch_read_or_submit_weighting() -> None:
+    example = {
+        "passed": True,
+        "messages": [
+            {"role": "user", "content": "Create a patch."},
+            {
+                "role": "assistant",
+                "reasoning": "I will write the patch artifact directly.",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "function": {
+                            "name": "bash",
+                            "arguments": {"command": "cat > patch.txt <<'PATCH'\ndiff --git a/x b/x\nPATCH"},
+                        }
+                    }
+                ],
+            },
+        ],
+    }
+    filtered = apply_assistant_loss_policy(
+        example,
+        require_assistant_reasoning_for_loss=True,
+        require_assistant_tool_calls_for_loss=True,
+        mask_manual_patch_artifact_turns=True,
+        enable_turn_loss_weights=True,
+        verify_loss_weight=1.5,
+        submit_loss_weight=2.0,
+    )
+
+    assistant = filtered["messages"][1]
+    assert assistant_turn_action(assistant) == "manual_patch_artifact"
+    assert assistant["loss"] is False
+
+
+def test_manual_patch_artifact_to_absolute_patch_path_is_masked() -> None:
+    example = {
+        "passed": True,
+        "messages": [
+            {"role": "user", "content": "Create a patch."},
+            {
+                "role": "assistant",
+                "reasoning": "I will write the patch artifact directly.",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "function": {
+                            "name": "bash",
+                            "arguments": {
+                                "command": "cat > /tmp/patch.txt <<'EOF'\ndiff --git a/x b/x\nEOF"
+                            },
+                        }
+                    }
+                ],
+            },
+        ],
+    }
+    filtered = apply_assistant_loss_policy(
+        example,
+        require_assistant_reasoning_for_loss=True,
+        require_assistant_tool_calls_for_loss=True,
+        mask_manual_patch_artifact_turns=True,
+        enable_turn_loss_weights=True,
+        verify_loss_weight=1.5,
+        submit_loss_weight=2.0,
+    )
+
+    assistant = filtered["messages"][1]
+    assert assistant_turn_action(assistant) == "manual_patch_artifact"
+    assert assistant["loss"] is False

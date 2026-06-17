@@ -106,6 +106,7 @@ ENABLE_TURN_LOSS_WEIGHTS="${ENABLE_TURN_LOSS_WEIGHTS:-}"
 READ_LOSS_WEIGHT="${READ_LOSS_WEIGHT:-}"
 WRITE_LOSS_WEIGHT="${WRITE_LOSS_WEIGHT:-}"
 TEST_LOSS_WEIGHT="${TEST_LOSS_WEIGHT:-}"
+VERIFY_LOSS_WEIGHT="${VERIFY_LOSS_WEIGHT:-}"
 SUBMIT_LOSS_WEIGHT="${SUBMIT_LOSS_WEIGHT:-}"
 DEFAULT_LOSS_WEIGHT="${DEFAULT_LOSS_WEIGHT:-}"
 NONPASSING_LOSS_MULTIPLIER="${NONPASSING_LOSS_MULTIPLIER:-}"
@@ -162,7 +163,7 @@ if [ -n "$DROP_ASSISTANT_CONTENT_FOR_TOOL_CALLS" ] || [ -n "$ASSISTANT_LOSS_TARG
   echo "Assistant tool-call loss shaping: drop_content=${DROP_ASSISTANT_CONTENT_FOR_TOOL_CALLS:-config} target=${ASSISTANT_LOSS_TARGET:-config}"
 fi
 if [ -n "$ENABLE_TURN_LOSS_WEIGHTS" ]; then
-  echo "Assistant turn loss weights: enabled=${ENABLE_TURN_LOSS_WEIGHTS} read=${READ_LOSS_WEIGHT:-config} write=${WRITE_LOSS_WEIGHT:-config} test=${TEST_LOSS_WEIGHT:-config} submit=${SUBMIT_LOSS_WEIGHT:-config} nonpassing_multiplier=${NONPASSING_LOSS_MULTIPLIER:-config}"
+  echo "Assistant turn loss weights: enabled=${ENABLE_TURN_LOSS_WEIGHTS} read=${READ_LOSS_WEIGHT:-config} write=${WRITE_LOSS_WEIGHT:-config} test=${TEST_LOSS_WEIGHT:-config} verify=${VERIFY_LOSS_WEIGHT:-config} submit=${SUBMIT_LOSS_WEIGHT:-config} nonpassing_multiplier=${NONPASSING_LOSS_MULTIPLIER:-config}"
 fi
 if [ -n "$DATASET_REPEAT" ] || [ -n "$PAD_TO_PACK_COUNT" ]; then
   echo "Dataset finite pass: repeat=${DATASET_REPEAT:-config} pad_to_pack_count=${PAD_TO_PACK_COUNT:-config}"
@@ -285,6 +286,10 @@ fi
 
 if [ -n "$TEST_LOSS_WEIGHT" ]; then
   args+=(--dataset.test_loss_weight "$TEST_LOSS_WEIGHT")
+fi
+
+if [ -n "$VERIFY_LOSS_WEIGHT" ]; then
+  args+=(--dataset.verify_loss_weight "$VERIFY_LOSS_WEIGHT")
 fi
 
 if [ -n "$SUBMIT_LOSS_WEIGHT" ]; then
