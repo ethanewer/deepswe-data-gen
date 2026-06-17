@@ -8,6 +8,7 @@ builder uses those sidecars directly:
 - include recommended v5 repaired compactions as passed rows;
 - skip superseded originals and earlier compacted variants;
 - exclude retained-but-not-recommended v5 rows;
+- exclude older unrepaired compaction rows by default;
 - select additional strict passed rows and ranked high-quality non-passing rows
   from the remaining raw source.
 
@@ -133,6 +134,12 @@ def metadata_value(row: dict[str, Any], key: str, default: Any = None) -> Any:
     if isinstance(metadata, dict) and key in metadata:
         return metadata.get(key)
     return row.get(key, default)
+
+
+def is_compaction_source(source: str, metadata: dict[str, Any]) -> bool:
+    if source.startswith("compaction_"):
+        return True
+    return bool(metadata.get("compaction_original_row_id"))
 
 
 def iter_jsonl_zst(path: Path) -> Iterator[dict[str, Any]]:
@@ -355,6 +362,10 @@ def scan_records(args: argparse.Namespace) -> tuple[dict[str, RowRecord], list[R
             if original_row_id and original_row_id in skip_uuids:
                 stats["skip_superseded_original_id_field"] += 1
                 continue
+            if not args.include_non_recommended_compactions and is_compaction_source(source, metadata):
+                stats["skip_non_recommended_compaction_source"] += 1
+                stats[f"skip_non_recommended_compaction_source:{source}"] += 1
+                continue
 
             if hard_quality_ok(row, require_passed=True):
                 pass_records[uuid] = record_from_row(row, "strict_passed_remaining", True)
@@ -539,6 +550,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--target-passrate", type=float, action="append", default=[])
     parser.add_argument("--max-failed-per-task", type=int, default=3)
+    parser.add_argument(
+        "--include-non-recommended-compactions",
+        action="store_true",
+        help=(
+            "Include older compaction rows that were not recommended by the v5 "
+            "repair sidecars. Default is to exclude them because they can start "
+            "mid-trajectory or contain unrepaired prompt/process artifacts."
+        ),
+    )
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
 
@@ -585,6 +605,9 @@ def main() -> int:
             "recommended_v5": "included as passed rows",
             "superseded_sources": "skipped by UUID sidecars before remaining-row selection",
             "non_recommended_v5": "excluded",
+            "non_recommended_compactions": (
+                "excluded by default unless --include-non-recommended-compactions is set"
+            ),
             "failed_rows": (
                 "submitted, non-empty-patch, >=90% reasoning, positive API calls, "
                 "<=100k patch bytes, <=5M trajectory bytes, ranked by quality score"
