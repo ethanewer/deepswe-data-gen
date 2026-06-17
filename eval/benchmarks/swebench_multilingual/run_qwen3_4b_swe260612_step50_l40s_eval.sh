@@ -42,6 +42,9 @@ TEMPERATURE="${TEMPERATURE:-0.6}"
 GENERATION_STEP_LIMIT="${GENERATION_STEP_LIMIT:-250}"
 SKIP_EVALUATION="${SKIP_EVALUATION:-false}"
 RUN_SUFFIX="${RUN_SUFFIX:-}"
+ENABLE_DOCKER_STDIO_PROXY="${ENABLE_DOCKER_STDIO_PROXY:-true}"
+DOCKER_PROXY_PID=""
+DOCKER_PROXY_DIR=""
 
 if [ "$BASELINE_MODEL" != "true" ] && [ ! -d "$CHECKPOINT_STEP_DIR/model" ]; then
   echo "Checkpoint model directory does not exist: $CHECKPOINT_STEP_DIR/model" >&2
@@ -167,6 +170,13 @@ for sig in (signal.SIGTERM, signal.SIGKILL):
     time.sleep(5 if sig == signal.SIGTERM else 1)
 PY
   fi
+  if [ -n "$DOCKER_PROXY_PID" ]; then
+    kill "$DOCKER_PROXY_PID" 2>/dev/null || true
+    wait "$DOCKER_PROXY_PID" 2>/dev/null || true
+  fi
+  if [ -n "$DOCKER_PROXY_DIR" ]; then
+    rm -rf "$DOCKER_PROXY_DIR"
+  fi
 }
 trap cleanup EXIT
 
@@ -179,6 +189,32 @@ trap cleanup EXIT
 EVAL_WORKERS="${EVAL_WORKERS:-$EVAL_GPU_COUNT}"
 GENERATION_WORKERS="${GENERATION_WORKERS:-$EVAL_GPU_COUNT}"
 EXTRA_BODY="${EXTRA_BODY_JSON:-{\"top_p\":0.95,\"top_k\":20,\"min_p\":0,\"presence_penalty\":0}}"
+if [ "$ENABLE_DOCKER_STDIO_PROXY" = "true" ]; then
+  DOCKER_PROXY_DIR="$(mktemp -d "/tmp/swebench-docker-proxy.${SLURM_JOB_ID:-manual}.XXXXXX")"
+  DOCKER_PROXY_SOCKET="$DOCKER_PROXY_DIR/docker.sock"
+  "$PYTHON" "$REPO_ROOT/eval/benchmarks/swebench_multilingual/docker_stdio_proxy.py" \
+    "$DOCKER_PROXY_SOCKET" \
+    >"$DOCKER_PROXY_DIR/proxy.out" \
+    2>"$DOCKER_PROXY_DIR/proxy.err" &
+  DOCKER_PROXY_PID="$!"
+  for _ in $(seq 1 100); do
+    if [ -S "$DOCKER_PROXY_SOCKET" ]; then
+      break
+    fi
+    sleep 0.1
+  done
+  if [ ! -S "$DOCKER_PROXY_SOCKET" ]; then
+    echo "Docker stdio proxy did not create socket: $DOCKER_PROXY_SOCKET" >&2
+    exit 1
+  fi
+  export DOCKER_HOST="unix://$DOCKER_PROXY_SOCKET"
+  "$PYTHON" - <<'PY'
+import docker
+
+client = docker.from_env()
+print(f"Docker SDK proxy API version: {client.version().get('ApiVersion')}")
+PY
+fi
 RUN_ARGS=(
   "$PYTHON" -m eval.benchmarks.swebench_multilingual.run
   --harness mini-swe-agent \
