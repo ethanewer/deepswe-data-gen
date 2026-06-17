@@ -45,6 +45,9 @@ RUN_SUFFIX="${RUN_SUFFIX:-}"
 ENABLE_DOCKER_STDIO_PROXY="${ENABLE_DOCKER_STDIO_PROXY:-true}"
 DOCKER_PROXY_PID=""
 DOCKER_PROXY_DIR=""
+TRIAL_LOCK=""
+TRIAL_LOCK_ROOT=""
+TRIAL_COMPLETE=""
 
 if [ "$BASELINE_MODEL" != "true" ] && [ ! -d "$CHECKPOINT_STEP_DIR/model" ]; then
   echo "Checkpoint model directory does not exist: $CHECKPOINT_STEP_DIR/model" >&2
@@ -107,6 +110,33 @@ RUN_NAME="${RUN_STEM}-${DEVICE_LABEL}-${EVAL_GPU_COUNT}gpu-swebench-ml-${SUBSET_
 CONFIG_PATH="$REPO_ROOT/runs/serving_configs/${RUN_NAME}.json"
 SERVE_DIR="$REPO_ROOT/runs/serving/$RUN_NAME"
 OUTPUT_DIR="$REPO_ROOT/runs/swebench_ml/$RUN_NAME"
+
+if [ "${ENABLE_EVAL_TRIAL_LOCK:-true}" = "true" ] && [ -n "$RUN_SUFFIX" ]; then
+  TRIAL_LOCK_BASE="${EVAL_TRIAL_LOCK_DIR:-$REPO_ROOT/runs/eval_trial_locks}"
+  TRIAL_LOCK_KEY="${EVAL_TRIAL_LOCK_KEY:-${CHECKPOINT_LABEL}-${SUBSET_LABEL}-${RUN_SUFFIX}}"
+  SAFE_TRIAL_LOCK_KEY="$(printf '%s' "$TRIAL_LOCK_KEY" | tr -cs 'A-Za-z0-9_.=-' '_' | sed 's/^_*//; s/_*$//')"
+  SAFE_TRIAL_LOCK_KEY="${SAFE_TRIAL_LOCK_KEY:0:180}"
+  TRIAL_LOCK_ROOT="$TRIAL_LOCK_BASE/$SAFE_TRIAL_LOCK_KEY"
+  TRIAL_LOCK="$TRIAL_LOCK_ROOT/lock"
+  TRIAL_COMPLETE="$TRIAL_LOCK_ROOT/complete"
+  mkdir -p "$TRIAL_LOCK_ROOT"
+  if [ -f "$TRIAL_COMPLETE" ]; then
+    echo "Eval trial already complete; skipping: $TRIAL_LOCK_KEY"
+    cat "$TRIAL_COMPLETE"
+    exit 0
+  fi
+  if ! mkdir "$TRIAL_LOCK" 2>/dev/null; then
+    echo "Eval trial already claimed by another job; skipping: $TRIAL_LOCK_KEY"
+    cat "$TRIAL_LOCK/owner" 2>/dev/null || true
+    exit 0
+  fi
+  {
+    echo "run_name=$RUN_NAME"
+    echo "job_id=${SLURM_JOB_ID:-manual}"
+    echo "host=$(hostname)"
+    echo "started_at=$(date -Is)"
+  } >"$TRIAL_LOCK/owner"
+fi
 
 "$PYTHON" - "$CONFIG_PATH" "$MODEL_SOURCE" "$MODEL_NAME" "$PROXY_PORT" "${BACKEND_PORTS[@]}" <<'PY'
 import json
@@ -177,6 +207,9 @@ PY
   if [ -n "$DOCKER_PROXY_DIR" ]; then
     rm -rf "$DOCKER_PROXY_DIR"
   fi
+  if [ -n "$TRIAL_LOCK" ] && [ -d "$TRIAL_LOCK" ]; then
+    rm -rf "$TRIAL_LOCK"
+  fi
 }
 trap cleanup EXIT
 
@@ -236,3 +269,13 @@ if [ "$SKIP_EVALUATION" = "true" ]; then
   RUN_ARGS+=(--skip-evaluation)
 fi
 "${RUN_ARGS[@]}"
+if [ -n "$TRIAL_COMPLETE" ]; then
+  {
+    echo "run_name=$RUN_NAME"
+    echo "output_dir=$OUTPUT_DIR"
+    echo "job_id=${SLURM_JOB_ID:-manual}"
+    echo "host=$(hostname)"
+    echo "completed_at=$(date -Is)"
+  } >"$TRIAL_COMPLETE.tmp"
+  mv "$TRIAL_COMPLETE.tmp" "$TRIAL_COMPLETE"
+fi
