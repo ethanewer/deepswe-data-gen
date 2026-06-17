@@ -272,29 +272,55 @@ def tool_call_label_span(rendered: str, assistant_start_char: int) -> tuple[int,
     return tool_start, close + len("</tool_call>")
 
 
-def tokenize_chat_example(
-    example: dict[str, Any],
+def assistant_label_span(rendered: str, assistant_start_char: int) -> tuple[int, int] | None:
+    assistant_end = rendered.find("<|im_end|>", assistant_start_char)
+    if assistant_end == -1:
+        return None
+    end = assistant_end + len("<|im_end|>")
+    if rendered.startswith("\n", end):
+        end += 1
+    return assistant_start_char, end
+
+
+def token_span_from_offsets(offsets: list[tuple[int, int]], start_char: int, end_char: int) -> tuple[int, int] | None:
+    start_token = None
+    end_token = len(offsets)
+    for idx, (start, end) in enumerate(offsets):
+        if start_token is None and end > start_char:
+            start_token = idx
+        if start >= end_char:
+            end_token = idx
+            break
+    if start_token is None or end_token <= start_token:
+        return None
+    return start_token, end_token
+
+
+def encode_rendered_with_offsets(tokenizer: Any, rendered: str) -> tuple[list[int], list[tuple[int, int]]] | None:
+    try:
+        encoded = tokenizer(
+            rendered,
+            add_special_tokens=False,
+            return_offsets_mapping=True,
+        )
+    except (NotImplementedError, TypeError, ValueError):
+        return None
+    offsets = encoded.get("offset_mapping")
+    input_ids = encoded.get("input_ids")
+    if offsets is None or input_ids is None:
+        return None
+    return list(input_ids), [(int(start), int(end)) for start, end in offsets]
+
+
+def label_chat_example_slow(
+    rendered: str,
+    input_ids: list[int],
+    messages: list[dict[str, Any]],
+    tools: Any,
     tokenizer: Any,
-    *,
     chat_template: str,
-    sequence_length: int,
-    overlength_strategy: str = "split",
-    min_label_tokens: int = 1,
-    assistant_loss_target: str = "assistant",
-) -> Iterator[tuple[np.ndarray, np.ndarray, np.ndarray]]:
-    if assistant_loss_target not in ASSISTANT_LOSS_TARGETS:
-        raise ValueError(f"assistant_loss_target must be one of {ASSISTANT_LOSS_TARGETS}; got {assistant_loss_target}")
-
-    messages = example["messages"]
-    tools = example.get("tools")
-    if not messages:
-        return
-
-    rendered = render_chat(tokenizer, messages, tools, chat_template)
-    input_ids = encode_text(tokenizer, rendered)
-    if not input_ids:
-        return
-
+    assistant_loss_target: str,
+) -> tuple[np.ndarray, np.ndarray]:
     labels = np.full(len(input_ids), IGNORE_INDEX, dtype=np.int64)
     loss_weights = np.zeros(len(input_ids), dtype=np.float32)
     for idx, message in enumerate(messages):
@@ -317,6 +343,97 @@ def tokenize_chat_example(
         if end > start:
             labels[start:end] = np.asarray(input_ids[start:end], dtype=np.int64)
             loss_weights[start:end] = float(message.get("loss_weight", 1.0))
+    return labels, loss_weights
+
+
+def label_chat_example_fast(
+    rendered: str,
+    input_ids: list[int],
+    offsets: list[tuple[int, int]],
+    messages: list[dict[str, Any]],
+    assistant_loss_target: str,
+) -> tuple[np.ndarray, np.ndarray] | None:
+    labels = np.full(len(input_ids), IGNORE_INDEX, dtype=np.int64)
+    loss_weights = np.zeros(len(input_ids), dtype=np.float32)
+    search_pos = 0
+    for message in messages:
+        if message.get("role") != "assistant":
+            continue
+        assistant_start = rendered.find("<|im_start|>assistant", search_pos)
+        if assistant_start == -1:
+            return None
+        search_pos = assistant_start + len("<|im_start|>assistant")
+        if message.get("trainable") is False or message.get("loss") is False:
+            continue
+        if assistant_loss_target == "tool_calls":
+            char_span = tool_call_label_span(rendered, assistant_start)
+        else:
+            char_span = assistant_label_span(rendered, assistant_start)
+        if char_span is None:
+            continue
+        token_span = token_span_from_offsets(offsets, *char_span)
+        if token_span is None:
+            continue
+        start, end = token_span
+        labels[start:end] = np.asarray(input_ids[start:end], dtype=np.int64)
+        loss_weights[start:end] = float(message.get("loss_weight", 1.0))
+    return labels, loss_weights
+
+
+def tokenize_chat_example(
+    example: dict[str, Any],
+    tokenizer: Any,
+    *,
+    chat_template: str,
+    sequence_length: int,
+    overlength_strategy: str = "split",
+    min_label_tokens: int = 1,
+    assistant_loss_target: str = "assistant",
+) -> Iterator[tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    if assistant_loss_target not in ASSISTANT_LOSS_TARGETS:
+        raise ValueError(f"assistant_loss_target must be one of {ASSISTANT_LOSS_TARGETS}; got {assistant_loss_target}")
+
+    messages = example["messages"]
+    tools = example.get("tools")
+    if not messages:
+        return
+
+    rendered = render_chat(tokenizer, messages, tools, chat_template)
+    encoded_with_offsets = encode_rendered_with_offsets(tokenizer, rendered)
+    if encoded_with_offsets is None:
+        input_ids = encode_text(tokenizer, rendered)
+        labels, loss_weights = label_chat_example_slow(
+            rendered,
+            input_ids,
+            messages,
+            tools,
+            tokenizer,
+            chat_template,
+            assistant_loss_target,
+        )
+    else:
+        input_ids, offsets = encoded_with_offsets
+        fast_labels = label_chat_example_fast(
+            rendered,
+            input_ids,
+            offsets,
+            messages,
+            assistant_loss_target,
+        )
+        if fast_labels is None:
+            labels, loss_weights = label_chat_example_slow(
+                rendered,
+                input_ids,
+                messages,
+                tools,
+                tokenizer,
+                chat_template,
+                assistant_loss_target,
+            )
+        else:
+            labels, loss_weights = fast_labels
+    if not input_ids:
+        return
 
     ids = np.asarray(input_ids, dtype=np.int64)
     if int(np.count_nonzero(labels != IGNORE_INDEX)) < min_label_tokens:
