@@ -8,8 +8,11 @@ import copy
 import json
 import os
 import random
+import re
 import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
+from math import ceil
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -36,6 +39,29 @@ DEFAULT_CHAT_TEMPLATE = Path(
 THINK_OPEN = "<think>\n"
 THINK_CLOSE = "\n</think>"
 ASSISTANT_LOSS_TARGETS = ("assistant", "tool_calls")
+
+
+READ_COMMAND_RE = re.compile(
+    r"\b(cat|cd|find|grep|head|ls|pwd|rg|sed\s+-n|stat|tail|tree|wc|git\s+(status|diff|show|log|grep|ls-files))\b"
+)
+TEST_COMMAND_RE = re.compile(
+    r"\b(pytest|tox|nox|go\s+test|cargo\s+test|npm\s+test|pnpm\s+test|yarn\s+test|"
+    r"mvn\s+test|gradle\s+test|make\s+(test|check)|ctest|phpunit)\b"
+)
+WRITE_COMMAND_RE = re.compile(
+    r"(apply_patch|sed\s+-i|perl\s+-pi|python\s+- <<|python3\s+- <<|node\s+- <<|ruby\s+- <<|"
+    r"\btee\b|>\s*/|>>\s*/|\bmv\b|\bcp\b|\brm\b|\btouch\b|\bchmod\b|\bgit\s+apply\b)"
+)
+SUBMIT_COMMAND_RE = re.compile(r"\bsubmit\b|/submit|submit\.py")
+PATCH_TXT_WRITE_RE = re.compile(r"\bgit\s+diff\b.*(>\s*\S*patch\.txt|\|\s*tee\s+\S*patch\.txt)")
+PATCH_TXT_READ_RE = re.compile(r"\b(cat|sed|head|tail|wc|grep|stat|ls|test)\b.*\bpatch\.txt\b")
+MANUAL_PATCH_TXT_RE = re.compile(
+    r"(cat|tee|printf|echo).*(>\s*\S*patch\.txt|>>\s*\S*patch\.txt|\btee\s+\S*patch\.txt)"
+)
+VERIFY_COMMAND_RE = re.compile(
+    r"(\b(cat|sed|head|tail|wc|grep|stat|ls|test)\b.*\bpatch\.txt\b|"
+    r"\bgit\s+(diff|status)\b)"
+)
 
 
 def _rank_world() -> tuple[int, int]:
@@ -103,8 +129,7 @@ def assistant_reasoning_from_content(message: dict[str, Any]) -> str:
 def drop_assistant_content_preserving_reasoning(message: dict[str, Any]) -> None:
     reasoning = assistant_reasoning_from_content(message)
     if reasoning:
-        message["reasoning_content"] = reasoning
-        message["content"] = ""
+        message["content"] = f"{THINK_OPEN}{reasoning}{THINK_CLOSE}"
     else:
         message["content"] = ""
 
@@ -115,15 +140,40 @@ def apply_assistant_loss_policy(
     require_assistant_reasoning_for_loss: bool = False,
     require_assistant_tool_calls_for_loss: bool = False,
     drop_assistant_content_for_tool_calls: bool = False,
+    mask_tool_call_error_recovery: bool = False,
+    mask_manual_patch_artifact_turns: bool = False,
+    enable_turn_loss_weights: bool = False,
+    read_loss_weight: float = 0.5,
+    write_loss_weight: float = 1.0,
+    test_loss_weight: float = 1.0,
+    verify_loss_weight: float = 1.5,
+    submit_loss_weight: float = 2.0,
+    default_loss_weight: float = 1.0,
+    nonpassing_loss_multiplier: float = 1.0,
+    mask_nonpassing_submit_turns: bool = False,
+    mask_empty_patch_submit_turns: bool = False,
 ) -> dict[str, Any]:
     if (
         not require_assistant_reasoning_for_loss
         and not require_assistant_tool_calls_for_loss
         and not drop_assistant_content_for_tool_calls
+        and not mask_tool_call_error_recovery
+        and not mask_manual_patch_artifact_turns
+        and not enable_turn_loss_weights
+        and not mask_nonpassing_submit_turns
+        and not mask_empty_patch_submit_turns
     ):
         return example
 
-    for message in example.get("messages", []):
+    messages = example.get("messages", [])
+    passed = example_passed(example)
+    empty_patch = example_has_empty_patch(example)
+    mask_next_assistant = False
+    for message in messages:
+        if message.get("role") == "tool":
+            if mask_tool_call_error_recovery and "tool call error" in text_from_content(message.get("content")).lower():
+                mask_next_assistant = True
+            continue
         if message.get("role") != "assistant":
             continue
         has_tool_calls = assistant_has_valid_tool_calls(message)
@@ -133,7 +183,133 @@ def apply_assistant_loss_policy(
             message["loss"] = False
         if require_assistant_tool_calls_for_loss and not has_tool_calls:
             message["loss"] = False
+        action = assistant_turn_action(message)
+        if mask_next_assistant:
+            message["loss"] = False
+            mask_next_assistant = False
+        if mask_manual_patch_artifact_turns and action == "manual_patch_artifact":
+            message["loss"] = False
+        if mask_nonpassing_submit_turns and not passed and action == "submit":
+            message["loss"] = False
+        if mask_empty_patch_submit_turns and empty_patch and action == "submit":
+            message["loss"] = False
+        if enable_turn_loss_weights:
+            if action == "submit":
+                weight = submit_loss_weight
+            elif action == "verify":
+                weight = verify_loss_weight
+            elif action == "write":
+                weight = write_loss_weight
+            elif action == "test":
+                weight = test_loss_weight
+            elif action == "read":
+                weight = read_loss_weight
+            else:
+                weight = default_loss_weight
+            if not passed:
+                weight *= nonpassing_loss_multiplier
+            message["loss_weight"] = float(weight)
     return example
+
+
+def example_passed(example: dict[str, Any]) -> bool:
+    for key in ("passed", "pass", "resolved"):
+        if key in example:
+            return bool(example[key])
+    outcome = example.get("source_outcome")
+    if isinstance(outcome, dict):
+        for key in ("passed", "pass", "resolved"):
+            if key in outcome:
+                return bool(outcome[key])
+    metadata = example.get("metadata")
+    if isinstance(metadata, dict):
+        for key in ("passed", "pass", "resolved"):
+            if key in metadata:
+                return bool(metadata[key])
+    return False
+
+
+def _int_or_none(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, str):
+        value = value.strip()
+        if value.isdigit():
+            return int(value)
+    return None
+
+
+def example_patch_bytes(example: dict[str, Any]) -> int | None:
+    containers: list[dict[str, Any]] = [example]
+    for key in ("source_outcome", "metadata"):
+        value = example.get(key)
+        if isinstance(value, dict):
+            containers.append(value)
+    for container in containers:
+        for key in ("model_patch_bytes", "patch_bytes", "original_model_patch_bytes"):
+            value = _int_or_none(container.get(key))
+            if value is not None:
+                return value
+    patch = example.get("model_patch")
+    if isinstance(patch, str):
+        return len(patch.encode("utf-8"))
+    return None
+
+
+def example_has_empty_patch(example: dict[str, Any]) -> bool:
+    metadata = example.get("metadata")
+    if isinstance(metadata, dict):
+        for key in ("empty_patch", "missing_empty_patch_verification"):
+            if metadata.get(key) is True:
+                return True
+    patch_bytes = example_patch_bytes(example)
+    return patch_bytes == 0 if patch_bytes is not None else False
+
+
+def assistant_tool_commands(message: dict[str, Any]) -> list[str]:
+    commands: list[str] = []
+    for call in message.get("tool_calls") or []:
+        if not isinstance(call, dict):
+            continue
+        function = call.get("function")
+        if not isinstance(function, dict):
+            continue
+        arguments = function.get("arguments")
+        if isinstance(arguments, str):
+            try:
+                arguments = json.loads(arguments)
+            except json.JSONDecodeError:
+                pass
+        if isinstance(arguments, dict):
+            command = arguments.get("command")
+            if command not in (None, ""):
+                commands.append(str(command))
+    return commands
+
+
+def assistant_turn_action(message: dict[str, Any]) -> str:
+    commands = assistant_tool_commands(message)
+    if not commands:
+        return "other"
+    joined = "\n".join(commands)
+    lowered = joined.lower()
+    if "patch.txt" in lowered and MANUAL_PATCH_TXT_RE.search(lowered):
+        return "manual_patch_artifact"
+    if PATCH_TXT_WRITE_RE.search(lowered) or SUBMIT_COMMAND_RE.search(lowered):
+        return "submit"
+    if VERIFY_COMMAND_RE.search(lowered):
+        return "verify"
+    if TEST_COMMAND_RE.search(lowered):
+        return "test"
+    if WRITE_COMMAND_RE.search(lowered):
+        return "write"
+    if READ_COMMAND_RE.search(lowered):
+        return "read"
+    return "other"
 
 
 def tool_call_label_span(rendered: str, assistant_start_char: int) -> tuple[int, int] | None:
@@ -153,30 +329,57 @@ def tool_call_label_span(rendered: str, assistant_start_char: int) -> tuple[int,
     return tool_start, close + len("</tool_call>")
 
 
-def tokenize_chat_example(
-    example: dict[str, Any],
+def assistant_label_span(rendered: str, assistant_start_char: int) -> tuple[int, int] | None:
+    assistant_end = rendered.find("<|im_end|>", assistant_start_char)
+    if assistant_end == -1:
+        return None
+    end = assistant_end + len("<|im_end|>")
+    if rendered.startswith("\n", end):
+        end += 1
+    return assistant_start_char, end
+
+
+def token_span_from_offsets(offsets: list[tuple[int, int]], start_char: int, end_char: int) -> tuple[int, int] | None:
+    start_token = None
+    end_token = len(offsets)
+    for idx, (start, end) in enumerate(offsets):
+        if start_token is None and end > start_char:
+            start_token = idx
+        if start >= end_char:
+            end_token = idx
+            break
+    if start_token is None or end_token <= start_token:
+        return None
+    return start_token, end_token
+
+
+def encode_rendered_with_offsets(tokenizer: Any, rendered: str) -> tuple[list[int], list[tuple[int, int]]] | None:
+    try:
+        encoded = tokenizer(
+            rendered,
+            add_special_tokens=False,
+            return_offsets_mapping=True,
+        )
+    except (NotImplementedError, TypeError, ValueError):
+        return None
+    offsets = encoded.get("offset_mapping")
+    input_ids = encoded.get("input_ids")
+    if offsets is None or input_ids is None:
+        return None
+    return list(input_ids), [(int(start), int(end)) for start, end in offsets]
+
+
+def label_chat_example_slow(
+    rendered: str,
+    input_ids: list[int],
+    messages: list[dict[str, Any]],
+    tools: Any,
     tokenizer: Any,
-    *,
     chat_template: str,
-    sequence_length: int,
-    overlength_strategy: str = "split",
-    min_label_tokens: int = 1,
-    assistant_loss_target: str = "assistant",
-) -> Iterator[tuple[np.ndarray, np.ndarray]]:
-    if assistant_loss_target not in ASSISTANT_LOSS_TARGETS:
-        raise ValueError(f"assistant_loss_target must be one of {ASSISTANT_LOSS_TARGETS}; got {assistant_loss_target}")
-
-    messages = example["messages"]
-    tools = example.get("tools")
-    if not messages:
-        return
-
-    rendered = render_chat(tokenizer, messages, tools, chat_template)
-    input_ids = encode_text(tokenizer, rendered)
-    if not input_ids:
-        return
-
+    assistant_loss_target: str,
+) -> tuple[np.ndarray, np.ndarray]:
     labels = np.full(len(input_ids), IGNORE_INDEX, dtype=np.int64)
+    loss_weights = np.zeros(len(input_ids), dtype=np.float32)
     for idx, message in enumerate(messages):
         if message.get("role") != "assistant":
             continue
@@ -196,12 +399,104 @@ def tokenize_chat_example(
             end = len(encode_text(tokenizer, current))
         if end > start:
             labels[start:end] = np.asarray(input_ids[start:end], dtype=np.int64)
+            loss_weights[start:end] = float(message.get("loss_weight", 1.0))
+    return labels, loss_weights
+
+
+def label_chat_example_fast(
+    rendered: str,
+    input_ids: list[int],
+    offsets: list[tuple[int, int]],
+    messages: list[dict[str, Any]],
+    assistant_loss_target: str,
+) -> tuple[np.ndarray, np.ndarray] | None:
+    labels = np.full(len(input_ids), IGNORE_INDEX, dtype=np.int64)
+    loss_weights = np.zeros(len(input_ids), dtype=np.float32)
+    search_pos = 0
+    for message in messages:
+        if message.get("role") != "assistant":
+            continue
+        assistant_start = rendered.find("<|im_start|>assistant", search_pos)
+        if assistant_start == -1:
+            return None
+        search_pos = assistant_start + len("<|im_start|>assistant")
+        if message.get("trainable") is False or message.get("loss") is False:
+            continue
+        if assistant_loss_target == "tool_calls":
+            char_span = tool_call_label_span(rendered, assistant_start)
+        else:
+            char_span = assistant_label_span(rendered, assistant_start)
+        if char_span is None:
+            continue
+        token_span = token_span_from_offsets(offsets, *char_span)
+        if token_span is None:
+            continue
+        start, end = token_span
+        labels[start:end] = np.asarray(input_ids[start:end], dtype=np.int64)
+        loss_weights[start:end] = float(message.get("loss_weight", 1.0))
+    return labels, loss_weights
+
+
+def tokenize_chat_example(
+    example: dict[str, Any],
+    tokenizer: Any,
+    *,
+    chat_template: str,
+    sequence_length: int,
+    overlength_strategy: str = "split",
+    min_label_tokens: int = 1,
+    assistant_loss_target: str = "assistant",
+) -> Iterator[tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    if assistant_loss_target not in ASSISTANT_LOSS_TARGETS:
+        raise ValueError(f"assistant_loss_target must be one of {ASSISTANT_LOSS_TARGETS}; got {assistant_loss_target}")
+
+    messages = example["messages"]
+    tools = example.get("tools")
+    if not messages:
+        return
+
+    rendered = render_chat(tokenizer, messages, tools, chat_template)
+    encoded_with_offsets = encode_rendered_with_offsets(tokenizer, rendered)
+    if encoded_with_offsets is None:
+        input_ids = encode_text(tokenizer, rendered)
+        labels, loss_weights = label_chat_example_slow(
+            rendered,
+            input_ids,
+            messages,
+            tools,
+            tokenizer,
+            chat_template,
+            assistant_loss_target,
+        )
+    else:
+        input_ids, offsets = encoded_with_offsets
+        fast_labels = label_chat_example_fast(
+            rendered,
+            input_ids,
+            offsets,
+            messages,
+            assistant_loss_target,
+        )
+        if fast_labels is None:
+            labels, loss_weights = label_chat_example_slow(
+                rendered,
+                input_ids,
+                messages,
+                tools,
+                tokenizer,
+                chat_template,
+                assistant_loss_target,
+            )
+        else:
+            labels, loss_weights = fast_labels
+    if not input_ids:
+        return
 
     ids = np.asarray(input_ids, dtype=np.int64)
     if int(np.count_nonzero(labels != IGNORE_INDEX)) < min_label_tokens:
         return
     if ids.size <= sequence_length:
-        yield ids, labels
+        yield ids, labels, loss_weights
         return
 
     if overlength_strategy == "drop":
@@ -210,7 +505,7 @@ def tokenize_chat_example(
         chunk_ids = ids[:sequence_length]
         chunk_labels = labels[:sequence_length]
         if int(np.count_nonzero(chunk_labels != IGNORE_INDEX)) >= min_label_tokens:
-            yield chunk_ids, chunk_labels
+            yield chunk_ids, chunk_labels, loss_weights[:sequence_length]
         return
     if overlength_strategy != "split":
         raise ValueError(f"unknown overlength_strategy: {overlength_strategy}")
@@ -220,13 +515,14 @@ def tokenize_chat_example(
         chunk_ids = ids[start:end]
         chunk_labels = labels[start:end]
         if int(np.count_nonzero(chunk_labels != IGNORE_INDEX)) >= min_label_tokens:
-            yield chunk_ids, chunk_labels
+            yield chunk_ids, chunk_labels, loss_weights[start:end]
 
 
 @dataclass
 class PackedSample:
     input_ids: np.ndarray
     labels: np.ndarray
+    loss_weights: np.ndarray | None
     position_ids: np.ndarray
     seq_lens: list[int]
     seq_lens_padded: list[int]
@@ -240,6 +536,7 @@ class PackedSample:
             "seq_lens": self.seq_lens,
             "seq_lens_padded": self.seq_lens_padded,
             "attention_mask": self.attention_mask,
+            **({} if self.loss_weights is None else {"loss_weights": self.loss_weights}),
         }
 
 
@@ -249,16 +546,19 @@ class StreamingTHDPacker:
         self.pad_token_id = int(pad_token_id)
         self._ids: list[np.ndarray] = []
         self._labels: list[np.ndarray] = []
+        self._loss_weights: list[np.ndarray] = []
         self._doc_lens: list[int] = []
         self._used = 0
 
-    def add(self, input_ids: np.ndarray, labels: np.ndarray) -> Iterator[PackedSample]:
+    def add(self, input_ids: np.ndarray, labels: np.ndarray, loss_weights: np.ndarray | None = None) -> Iterator[PackedSample]:
         if input_ids.size > self.sequence_length:
             raise ValueError("documents must be split before packing")
         if self._used and self._used + input_ids.size > self.sequence_length:
             yield self.flush()
         self._ids.append(input_ids.astype(np.int64, copy=False))
         self._labels.append(labels.astype(np.int64, copy=False))
+        if loss_weights is not None:
+            self._loss_weights.append(loss_weights.astype(np.float32, copy=False))
         self._doc_lens.append(int(input_ids.size))
         self._used += int(input_ids.size)
         if self._used == self.sequence_length:
@@ -273,12 +573,15 @@ class StreamingTHDPacker:
             raise RuntimeError("cannot flush an empty packer")
         input_ids = np.concatenate(self._ids)
         labels = np.concatenate(self._labels)
+        loss_weights = np.concatenate(self._loss_weights) if self._loss_weights else None
         attention_mask = np.ones(input_ids.size, dtype=np.int64)
         seq_lens = list(self._doc_lens)
         pad = self.sequence_length - input_ids.size
         if pad:
             input_ids = np.pad(input_ids, (0, pad), constant_values=self.pad_token_id)
             labels = np.pad(labels, (0, pad), constant_values=IGNORE_INDEX)
+            if loss_weights is not None:
+                loss_weights = np.pad(loss_weights, (0, pad), constant_values=0.0)
             attention_mask = np.pad(attention_mask, (0, pad), constant_values=0)
             seq_lens.append(int(pad))
 
@@ -287,6 +590,7 @@ class StreamingTHDPacker:
         sample = PackedSample(
             input_ids=input_ids,
             labels=labels,
+            loss_weights=loss_weights,
             position_ids=position_ids,
             seq_lens=seq_lens,
             seq_lens_padded=list(seq_lens),
@@ -294,9 +598,26 @@ class StreamingTHDPacker:
         )
         self._ids = []
         self._labels = []
+        self._loss_weights = []
         self._doc_lens = []
         self._used = 0
         return sample
+
+    def zero_loss_sample(self) -> PackedSample:
+        input_ids = np.full(self.sequence_length, self.pad_token_id, dtype=np.int64)
+        labels = np.full(self.sequence_length, IGNORE_INDEX, dtype=np.int64)
+        loss_weights = np.zeros(self.sequence_length, dtype=np.float32)
+        attention_mask = np.zeros(self.sequence_length, dtype=np.int64)
+        position_ids = np.arange(self.sequence_length, dtype=np.int64)
+        return PackedSample(
+            input_ids=input_ids,
+            labels=labels,
+            loss_weights=loss_weights,
+            position_ids=position_ids,
+            seq_lens=[self.sequence_length],
+            seq_lens_padded=[self.sequence_length],
+            attention_mask=attention_mask,
+        )
 
 
 class OnlinePackedChatDataset(IterableDataset):
@@ -322,6 +643,7 @@ class OnlinePackedChatDataset(IterableDataset):
         shuffle_files: bool = True,
         seed: int = 33333,
         repeat: bool = True,
+        pad_to_pack_count: int = 0,
         skip_roots: list[str | Path] | None = None,
         log_every_packs: int = 100,
         shard_rank: int | None = None,
@@ -330,6 +652,18 @@ class OnlinePackedChatDataset(IterableDataset):
         require_assistant_tool_calls_for_loss: bool = False,
         drop_assistant_content_for_tool_calls: bool = False,
         assistant_loss_target: str = "assistant",
+        mask_tool_call_error_recovery: bool = False,
+        mask_manual_patch_artifact_turns: bool = False,
+        enable_turn_loss_weights: bool = False,
+        read_loss_weight: float = 0.5,
+        write_loss_weight: float = 1.0,
+        test_loss_weight: float = 1.0,
+        verify_loss_weight: float = 1.5,
+        submit_loss_weight: float = 2.0,
+        default_loss_weight: float = 1.0,
+        nonpassing_loss_multiplier: float = 1.0,
+        mask_nonpassing_submit_turns: bool = False,
+        mask_empty_patch_submit_turns: bool = False,
     ):
         super().__init__()
         self.tokenizer = tokenizer
@@ -345,6 +679,7 @@ class OnlinePackedChatDataset(IterableDataset):
         self.shuffle_files = bool(shuffle_files)
         self.seed = int(seed)
         self.repeat = bool(repeat)
+        self.pad_to_pack_count = int(pad_to_pack_count)
         self.skip_roots = [Path(root) for root in (skip_roots or [])]
         self.log_every_packs = int(log_every_packs)
         self.shard_rank = None if shard_rank is None else int(shard_rank)
@@ -352,6 +687,18 @@ class OnlinePackedChatDataset(IterableDataset):
         self.require_assistant_reasoning_for_loss = bool(require_assistant_reasoning_for_loss)
         self.require_assistant_tool_calls_for_loss = bool(require_assistant_tool_calls_for_loss)
         self.drop_assistant_content_for_tool_calls = bool(drop_assistant_content_for_tool_calls)
+        self.mask_tool_call_error_recovery = bool(mask_tool_call_error_recovery)
+        self.mask_manual_patch_artifact_turns = bool(mask_manual_patch_artifact_turns)
+        self.enable_turn_loss_weights = bool(enable_turn_loss_weights)
+        self.read_loss_weight = float(read_loss_weight)
+        self.write_loss_weight = float(write_loss_weight)
+        self.test_loss_weight = float(test_loss_weight)
+        self.verify_loss_weight = float(verify_loss_weight)
+        self.submit_loss_weight = float(submit_loss_weight)
+        self.default_loss_weight = float(default_loss_weight)
+        self.nonpassing_loss_multiplier = float(nonpassing_loss_multiplier)
+        self.mask_nonpassing_submit_turns = bool(mask_nonpassing_submit_turns)
+        self.mask_empty_patch_submit_turns = bool(mask_empty_patch_submit_turns)
         if assistant_loss_target not in ASSISTANT_LOSS_TARGETS:
             raise ValueError(f"assistant_loss_target must be one of {ASSISTANT_LOSS_TARGETS}; got {assistant_loss_target}")
         self.assistant_loss_target = assistant_loss_target
@@ -447,8 +794,20 @@ class OnlinePackedChatDataset(IterableDataset):
                     require_assistant_reasoning_for_loss=self.require_assistant_reasoning_for_loss,
                     require_assistant_tool_calls_for_loss=self.require_assistant_tool_calls_for_loss,
                     drop_assistant_content_for_tool_calls=self.drop_assistant_content_for_tool_calls,
+                    mask_tool_call_error_recovery=self.mask_tool_call_error_recovery,
+                    mask_manual_patch_artifact_turns=self.mask_manual_patch_artifact_turns,
+                    enable_turn_loss_weights=self.enable_turn_loss_weights,
+                    read_loss_weight=self.read_loss_weight,
+                    write_loss_weight=self.write_loss_weight,
+                    test_loss_weight=self.test_loss_weight,
+                    verify_loss_weight=self.verify_loss_weight,
+                    submit_loss_weight=self.submit_loss_weight,
+                    default_loss_weight=self.default_loss_weight,
+                    nonpassing_loss_multiplier=self.nonpassing_loss_multiplier,
+                    mask_nonpassing_submit_turns=self.mask_nonpassing_submit_turns,
+                    mask_empty_patch_submit_turns=self.mask_empty_patch_submit_turns,
                 )
-                for input_ids, labels in tokenize_chat_example(
+                for input_ids, labels, loss_weights in tokenize_chat_example(
                     example,
                     tokenizer,
                     chat_template=self.chat_template,
@@ -457,7 +816,7 @@ class OnlinePackedChatDataset(IterableDataset):
                     min_label_tokens=self.min_label_tokens,
                     assistant_loss_target=self.assistant_loss_target,
                 ):
-                    for packed in packer.add(input_ids, labels):
+                    for packed in packer.add(input_ids, labels, loss_weights if self.enable_turn_loss_weights else None):
                         packs_emitted += 1
                         emitted_total += 1
                         if self.log_every_packs and packs_emitted % self.log_every_packs == 0:
@@ -475,6 +834,16 @@ class OnlinePackedChatDataset(IterableDataset):
                 packs_emitted += 1
                 emitted_total += 1
                 yield packed.as_dict()
+
+            if self.pad_to_pack_count > 0:
+                while packs_emitted < self.pad_to_pack_count:
+                    packs_emitted += 1
+                    emitted_total += 1
+                    yield packer.zero_loss_sample().as_dict()
+                if packs_emitted > self.pad_to_pack_count:
+                    raise RuntimeError(
+                        f"worker emitted {packs_emitted:,} packs, exceeding pad_to_pack_count={self.pad_to_pack_count:,}"
+                    )
 
             if not self.repeat:
                 return
@@ -504,11 +873,24 @@ def inspect_packer(args: argparse.Namespace) -> int:
         require_assistant_tool_calls_for_loss=args.require_assistant_tool_calls_for_loss,
         drop_assistant_content_for_tool_calls=args.drop_assistant_content_for_tool_calls,
         assistant_loss_target=args.assistant_loss_target,
+        mask_tool_call_error_recovery=args.mask_tool_call_error_recovery,
+        mask_manual_patch_artifact_turns=args.mask_manual_patch_artifact_turns,
+        enable_turn_loss_weights=args.enable_turn_loss_weights,
+        read_loss_weight=args.read_loss_weight,
+        write_loss_weight=args.write_loss_weight,
+        test_loss_weight=args.test_loss_weight,
+        verify_loss_weight=args.verify_loss_weight,
+        submit_loss_weight=args.submit_loss_weight,
+        default_loss_weight=args.default_loss_weight,
+        nonpassing_loss_multiplier=args.nonpassing_loss_multiplier,
+        mask_nonpassing_submit_turns=args.mask_nonpassing_submit_turns,
+        mask_empty_patch_submit_turns=args.mask_empty_patch_submit_turns,
     )
     stats = {
         "packs": 0,
         "tokens": 0,
         "label_tokens": 0,
+        "effective_label_weight": 0.0,
         "max_docs_per_pack": 0,
         "sequence_length": args.sequence_length,
     }
@@ -516,30 +898,179 @@ def inspect_packer(args: argparse.Namespace) -> int:
         stats["packs"] += 1
         stats["tokens"] += int(len(sample["input_ids"]))
         stats["label_tokens"] += int(np.count_nonzero(np.asarray(sample["labels"]) != IGNORE_INDEX))
+        if "loss_weights" in sample:
+            stats["effective_label_weight"] += float(np.asarray(sample["loss_weights"], dtype=np.float32).sum())
         stats["max_docs_per_pack"] = max(stats["max_docs_per_pack"], len(sample["seq_lens"]))
-        if stats["packs"] >= args.max_packs:
+        if args.max_packs and stats["packs"] >= args.max_packs:
             break
     print(json.dumps(stats, indent=2, sort_keys=True))
     return 0 if stats["packs"] else 1
+
+
+def _dataset_for_count(args: argparse.Namespace, tokenizer: Any, *, shard_rank: int, shard_world_size: int) -> OnlinePackedChatDataset:
+    return OnlinePackedChatDataset(
+        tokenizer,
+        raw_root=args.raw_root,
+        chat_template_path=args.chat_template,
+        sequence_length=args.sequence_length,
+        max_rows_per_file=args.max_rows_per_file,
+        max_examples=args.max_examples,
+        overlength_strategy=args.overlength_strategy,
+        shuffle_files=False,
+        repeat=False,
+        log_every_packs=0,
+        shard_rank=shard_rank,
+        shard_world_size=shard_world_size,
+        require_assistant_reasoning_for_loss=args.require_assistant_reasoning_for_loss,
+        require_assistant_tool_calls_for_loss=args.require_assistant_tool_calls_for_loss,
+        drop_assistant_content_for_tool_calls=args.drop_assistant_content_for_tool_calls,
+        assistant_loss_target=args.assistant_loss_target,
+        mask_tool_call_error_recovery=args.mask_tool_call_error_recovery,
+        mask_manual_patch_artifact_turns=args.mask_manual_patch_artifact_turns,
+        enable_turn_loss_weights=args.enable_turn_loss_weights,
+        read_loss_weight=args.read_loss_weight,
+        write_loss_weight=args.write_loss_weight,
+        test_loss_weight=args.test_loss_weight,
+        verify_loss_weight=args.verify_loss_weight,
+        submit_loss_weight=args.submit_loss_weight,
+        default_loss_weight=args.default_loss_weight,
+        nonpassing_loss_multiplier=args.nonpassing_loss_multiplier,
+        mask_nonpassing_submit_turns=args.mask_nonpassing_submit_turns,
+        mask_empty_patch_submit_turns=args.mask_empty_patch_submit_turns,
+    )
+
+
+def _count_one_shard(args_dict: dict[str, Any], shard_id: int, total_workers: int) -> dict[str, Any]:
+    from transformers import AutoTokenizer
+
+    args = argparse.Namespace(**args_dict)
+    tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True, local_files_only=args.local_files_only)
+    if getattr(tokenizer, "pad_token_id", None) is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    rank = shard_id // args.num_workers
+    worker = shard_id % args.num_workers
+    dataset = _dataset_for_count(args, tokenizer, shard_rank=shard_id, shard_world_size=total_workers)
+    packs = 0
+    label_tokens = 0
+    effective_label_weight = 0.0
+    for sample in dataset:
+        packs += 1
+        label_tokens += int(np.count_nonzero(np.asarray(sample["labels"]) != IGNORE_INDEX))
+        if "loss_weights" in sample:
+            effective_label_weight += float(np.asarray(sample["loss_weights"], dtype=np.float32).sum())
+    return {
+        "rank": rank,
+        "worker": worker,
+        "shard_id": shard_id,
+        "packs": packs,
+        "label_tokens": label_tokens,
+        "effective_label_weight": effective_label_weight,
+    }
+
+
+def count_shards(args: argparse.Namespace) -> int:
+    total_workers = args.world_size * args.num_workers
+    worker_stats: list[dict[str, Any]]
+    if args.count_processes <= 1:
+        worker_stats = []
+        for shard_id in range(total_workers):
+            worker_stats.append(_count_one_shard(vars(args), shard_id, total_workers))
+    else:
+        count_processes = min(int(args.count_processes), total_workers)
+        worker_stats = []
+        with ProcessPoolExecutor(max_workers=count_processes) as executor:
+            futures = [
+                executor.submit(_count_one_shard, vars(args), shard_id, total_workers)
+                for shard_id in range(total_workers)
+            ]
+            for future in as_completed(futures):
+                worker_stats.append(future.result())
+        worker_stats.sort(key=lambda item: item["shard_id"])
+
+    max_worker_packs = max((item["packs"] for item in worker_stats), default=0)
+    packs_per_worker_multiple = max(1, args.packs_per_worker_multiple)
+    pad_to_pack_count = ceil(max_worker_packs / packs_per_worker_multiple) * packs_per_worker_multiple
+    local_samples_per_rank = pad_to_pack_count * args.num_workers
+    local_samples_per_step = args.local_batch_size * args.grad_accum_steps
+    if local_samples_per_rank % local_samples_per_step != 0:
+        pad_to_pack_count = ceil(local_samples_per_rank / local_samples_per_step) * local_samples_per_step
+        pad_to_pack_count = ceil(pad_to_pack_count / args.num_workers)
+        pad_to_pack_count = ceil(pad_to_pack_count / packs_per_worker_multiple) * packs_per_worker_multiple
+        local_samples_per_rank = pad_to_pack_count * args.num_workers
+    max_steps = local_samples_per_rank // local_samples_per_step
+
+    result = {
+        "raw_root": str(args.raw_root),
+        "chat_template": str(args.chat_template),
+        "sequence_length": args.sequence_length,
+        "world_size": args.world_size,
+        "num_workers": args.num_workers,
+        "local_batch_size": args.local_batch_size,
+        "grad_accum_steps": args.grad_accum_steps,
+        "global_batch_size": args.world_size * args.local_batch_size * args.grad_accum_steps,
+        "real_packs_total": sum(item["packs"] for item in worker_stats),
+        "real_label_tokens_total": sum(item["label_tokens"] for item in worker_stats),
+        "real_effective_label_weight_total": sum(item["effective_label_weight"] for item in worker_stats),
+        "max_worker_packs": max_worker_packs,
+        "pad_to_pack_count": pad_to_pack_count,
+        "padded_packs_total": pad_to_pack_count * total_workers,
+        "padding_packs_total": pad_to_pack_count * total_workers - sum(item["packs"] for item in worker_stats),
+        "max_steps": max_steps,
+        "final_checkpoint_step": max_steps - 1,
+        "worker_stats": worker_stats,
+    }
+    text = json.dumps(result, indent=2, sort_keys=True)
+    if args.output_json:
+        args.output_json.parent.mkdir(parents=True, exist_ok=True)
+        args.output_json.write_text(text + "\n", encoding="utf-8")
+    print(text)
+    return 0 if max_worker_packs else 1
+
+
+def add_common_dataset_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--model", default=DEFAULT_MODEL)
+    parser.add_argument("--raw-root", type=Path, default=RAW_ROOT)
+    parser.add_argument("--chat-template", type=Path, default=DEFAULT_CHAT_TEMPLATE)
+    parser.add_argument("--sequence-length", type=int, default=65536)
+    parser.add_argument("--max-rows-per-file", type=int, default=0)
+    parser.add_argument("--max-examples", type=int, default=64)
+    parser.add_argument("--overlength-strategy", choices=["split", "truncate", "drop"], default="split")
+    parser.add_argument("--require-assistant-reasoning-for-loss", action="store_true")
+    parser.add_argument("--require-assistant-tool-calls-for-loss", action="store_true")
+    parser.add_argument("--drop-assistant-content-for-tool-calls", action="store_true")
+    parser.add_argument("--assistant-loss-target", choices=ASSISTANT_LOSS_TARGETS, default="assistant")
+    parser.add_argument("--mask-tool-call-error-recovery", action="store_true")
+    parser.add_argument("--mask-manual-patch-artifact-turns", action="store_true")
+    parser.add_argument("--enable-turn-loss-weights", action="store_true")
+    parser.add_argument("--read-loss-weight", type=float, default=0.5)
+    parser.add_argument("--write-loss-weight", type=float, default=1.0)
+    parser.add_argument("--test-loss-weight", type=float, default=1.0)
+    parser.add_argument("--verify-loss-weight", type=float, default=1.5)
+    parser.add_argument("--submit-loss-weight", type=float, default=2.0)
+    parser.add_argument("--default-loss-weight", type=float, default=1.0)
+    parser.add_argument("--nonpassing-loss-multiplier", type=float, default=1.0)
+    parser.add_argument("--mask-nonpassing-submit-turns", action="store_true")
+    parser.add_argument("--mask-empty-patch-submit-turns", action="store_true")
+    parser.add_argument("--local-files-only", action=argparse.BooleanOptionalAction, default=True)
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", required=True)
     inspect = subparsers.add_parser("inspect")
-    inspect.add_argument("--model", default=DEFAULT_MODEL)
-    inspect.add_argument("--raw-root", type=Path, default=RAW_ROOT)
-    inspect.add_argument("--chat-template", type=Path, default=DEFAULT_CHAT_TEMPLATE)
-    inspect.add_argument("--sequence-length", type=int, default=65536)
-    inspect.add_argument("--max-rows-per-file", type=int, default=0)
-    inspect.add_argument("--max-examples", type=int, default=64)
+    add_common_dataset_args(inspect)
     inspect.add_argument("--max-packs", type=int, default=2)
-    inspect.add_argument("--overlength-strategy", choices=["split", "truncate", "drop"], default="split")
-    inspect.add_argument("--require-assistant-reasoning-for-loss", action="store_true")
-    inspect.add_argument("--require-assistant-tool-calls-for-loss", action="store_true")
-    inspect.add_argument("--drop-assistant-content-for-tool-calls", action="store_true")
-    inspect.add_argument("--assistant-loss-target", choices=ASSISTANT_LOSS_TARGETS, default="assistant")
-    inspect.add_argument("--local-files-only", action=argparse.BooleanOptionalAction, default=True)
+    count = subparsers.add_parser("count-shards")
+    add_common_dataset_args(count)
+    count.set_defaults(max_examples=0)
+    count.add_argument("--world-size", type=int, default=8)
+    count.add_argument("--num-workers", type=int, default=2)
+    count.add_argument("--local-batch-size", type=int, default=2)
+    count.add_argument("--grad-accum-steps", type=int, default=4)
+    count.add_argument("--packs-per-worker-multiple", type=int, default=4)
+    count.add_argument("--count-processes", type=int, default=1)
+    count.add_argument("--output-json", type=Path)
     return parser.parse_args()
 
 
@@ -547,6 +1078,8 @@ def main() -> int:
     args = parse_args()
     if args.command == "inspect":
         return inspect_packer(args)
+    if args.command == "count-shards":
+        return count_shards(args)
     raise AssertionError(args.command)
 
 

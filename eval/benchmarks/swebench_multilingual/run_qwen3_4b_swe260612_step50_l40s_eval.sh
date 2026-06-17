@@ -63,6 +63,10 @@ TEMPERATURE="${TEMPERATURE:-0.6}"
 GENERATION_STEP_LIMIT="${GENERATION_STEP_LIMIT:-250}"
 SKIP_EVALUATION="${SKIP_EVALUATION:-false}"
 RUN_SUFFIX="${RUN_SUFFIX:-}"
+DEVICE_LABEL="${DEVICE_LABEL:-l40s}"
+TRIAL_LOCK=""
+TRIAL_LOCK_ROOT=""
+TRIAL_COMPLETE=""
 
 if [ "$BASELINE_MODEL" != "true" ] && [ ! -d "$CHECKPOINT_STEP_DIR/model" ]; then
   echo "Checkpoint model directory does not exist: $CHECKPOINT_STEP_DIR/model" >&2
@@ -117,16 +121,44 @@ for offset in $(seq 1 "$EVAL_GPU_COUNT"); do
 done
 
 if [ "$BASELINE_MODEL" = "true" ]; then
-  RUN_STEM="qwen3-4b-thinking-base-${CHECKPOINT_LABEL}-${CONTEXT_LABEL}"
+  DEFAULT_RUN_STEM="qwen3-4b-thinking-base-${CHECKPOINT_LABEL}-${CONTEXT_LABEL}"
 else
-  RUN_STEM="qwen3-4b-thinking-swe260612-miniswe-${CHECKPOINT_LABEL}-${CONTEXT_LABEL}"
+  DEFAULT_RUN_STEM="qwen3-4b-thinking-swe260612-miniswe-${CHECKPOINT_LABEL}-${CONTEXT_LABEL}"
 fi
-RUN_NAME="${RUN_STEM}-l40s-${EVAL_GPU_COUNT}gpu-${BENCHMARK_LABEL}${RUN_SUFFIX:+-$RUN_SUFFIX}-${SLURM_JOB_ID:-manual}"
+RUN_STEM="${RUN_STEM:-$DEFAULT_RUN_STEM}"
+RUN_NAME="${RUN_STEM}-${DEVICE_LABEL}-${EVAL_GPU_COUNT}gpu-${BENCHMARK_LABEL}${RUN_SUFFIX:+-$RUN_SUFFIX}-${SLURM_JOB_ID:-manual}"
 CONFIG_PATH="$REPO_ROOT/runs/serving_configs/${RUN_NAME}.json"
 SERVE_DIR="$REPO_ROOT/runs/serving/$RUN_NAME"
 OUTPUT_DIR="$BENCHMARK_OUTPUT_ROOT/$RUN_NAME"
 SERVE_CACHE_DIR="${SERVE_CACHE_DIR:-/tmp/q3eval-${SLURM_JOB_ID:-manual}-real}"
 mkdir -p "$BENCHMARK_OUTPUT_ROOT"
+
+if [ "${ENABLE_EVAL_TRIAL_LOCK:-true}" = "true" ] && [ -n "$RUN_SUFFIX" ]; then
+  TRIAL_LOCK_BASE="${EVAL_TRIAL_LOCK_DIR:-$REPO_ROOT/runs/eval_trial_locks}"
+  TRIAL_LOCK_KEY="${EVAL_TRIAL_LOCK_KEY:-${CHECKPOINT_LABEL}-${BENCHMARK_LABEL}-${RUN_SUFFIX}}"
+  SAFE_TRIAL_LOCK_KEY="$(printf '%s' "$TRIAL_LOCK_KEY" | tr -cs 'A-Za-z0-9_.=-' '_' | sed 's/^_*//; s/_*$//')"
+  SAFE_TRIAL_LOCK_KEY="${SAFE_TRIAL_LOCK_KEY:0:180}"
+  TRIAL_LOCK_ROOT="$TRIAL_LOCK_BASE/$SAFE_TRIAL_LOCK_KEY"
+  TRIAL_LOCK="$TRIAL_LOCK_ROOT/lock"
+  TRIAL_COMPLETE="$TRIAL_LOCK_ROOT/complete"
+  mkdir -p "$TRIAL_LOCK_ROOT"
+  if [ -f "$TRIAL_COMPLETE" ]; then
+    echo "Eval trial already complete; skipping: $TRIAL_LOCK_KEY"
+    cat "$TRIAL_COMPLETE"
+    exit 0
+  fi
+  if ! mkdir "$TRIAL_LOCK" 2>/dev/null; then
+    echo "Eval trial already claimed by another job; skipping: $TRIAL_LOCK_KEY"
+    cat "$TRIAL_LOCK/owner" 2>/dev/null || true
+    exit 0
+  fi
+  {
+    echo "run_name=$RUN_NAME"
+    echo "job_id=${SLURM_JOB_ID:-manual}"
+    echo "host=$(hostname)"
+    echo "started_at=$(date -Is)"
+  } >"$TRIAL_LOCK/owner"
+fi
 
 "$PYTHON" - "$CONFIG_PATH" "$MODEL_SOURCE" "$MODEL_NAME" "$PROXY_PORT" "$SERVE_CACHE_DIR" "${BACKEND_PORTS[@]}" <<'PY'
 import json
@@ -197,6 +229,9 @@ for sig in (signal.SIGTERM, signal.SIGKILL):
     time.sleep(5 if sig == signal.SIGTERM else 1)
 PY
   fi
+  if [ -n "$TRIAL_LOCK" ] && [ -d "$TRIAL_LOCK" ]; then
+    rm -rf "$TRIAL_LOCK"
+  fi
 }
 trap cleanup EXIT
 
@@ -230,3 +265,13 @@ if [ "$SKIP_EVALUATION" = "true" ]; then
   RUN_ARGS+=(--skip-evaluation)
 fi
 "${RUN_ARGS[@]}"
+if [ -n "$TRIAL_COMPLETE" ]; then
+  {
+    echo "run_name=$RUN_NAME"
+    echo "output_dir=$OUTPUT_DIR"
+    echo "job_id=${SLURM_JOB_ID:-manual}"
+    echo "host=$(hostname)"
+    echo "completed_at=$(date -Is)"
+  } >"$TRIAL_COMPLETE.tmp"
+  mv "$TRIAL_COMPLETE.tmp" "$TRIAL_COMPLETE"
+fi

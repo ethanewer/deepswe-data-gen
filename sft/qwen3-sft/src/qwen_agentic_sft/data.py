@@ -339,7 +339,36 @@ def normalize_prompt_response(row: dict[str, Any]) -> dict[str, Any] | None:
         {"role": "user", "content": text_from_content(prompt)},
         {"role": "assistant", "content": merge_thinking(None, response)},
     ]
-    return {"messages": messages} if has_assistant_target(messages) else None
+    if not has_assistant_target(messages):
+        return None
+    out: dict[str, Any] = {"messages": messages}
+    preserve_example_metadata(row, out)
+    return out
+
+
+def preserve_example_metadata(row: dict[str, Any], out: dict[str, Any]) -> None:
+    """Keep compact row-level fields needed by loss policy and audits."""
+
+    for key in (
+        "passed",
+        "pass",
+        "resolved",
+        "source_outcome",
+        "metadata",
+        "uuid",
+        "task_id",
+        "teacher",
+        "language",
+        "difficulty",
+        "source",
+        "source_note",
+        "model_patch",
+        "model_patch_bytes",
+        "patch_bytes",
+        "original_model_patch_bytes",
+    ):
+        if key in row:
+            out[key] = row[key]
 
 
 def normalize_row(row: Any) -> dict[str, Any] | None:
@@ -373,6 +402,7 @@ def normalize_row(row: Any) -> dict[str, Any] | None:
     tools = normalize_tools(row.get("tools"))
     if tools is not None:
         out["tools"] = tools
+    preserve_example_metadata(row, out)
     return out
 
 
