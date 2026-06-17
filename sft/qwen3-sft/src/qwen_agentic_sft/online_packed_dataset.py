@@ -42,6 +42,7 @@ THINK_CLOSE = "\n</think>"
 REASONING_TAGS = (("<think>", "</think>"), ("<thought>", "</thought>"))
 ASSISTANT_LOSS_TARGETS = ("assistant", "tool_calls")
 MINI_SWE_SUBMIT_COMMAND = "echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && cat patch.txt"
+MINI_SWE_TOOL_CALL_ERROR_MARKER = "Tool call error:"
 PATCH_TXT_PATH_PATTERN = r"(?<![\w.-])(?:\./|/testbed/)?patch\.txt(?![\w.-])"
 PATCH_LIKE_PATH_PATTERN = (
     r"(?<![\w./-])(?:/tmp/|/testbed/|\./)?[\w./-]+\.(?:txt|patch|diff)(?![\w./-])"
@@ -344,6 +345,12 @@ def metadata_indicates_nonpassing(metadata: dict[str, Any]) -> bool:
     return False
 
 
+def is_tool_call_error_prompt(message: dict[str, Any]) -> bool:
+    if message.get("role") != "user":
+        return False
+    return MINI_SWE_TOOL_CALL_ERROR_MARKER in str(message.get("content") or "")
+
+
 def apply_assistant_loss_policy(
     example: dict[str, Any],
     *,
@@ -353,6 +360,7 @@ def apply_assistant_loss_policy(
     reject_manual_patch_targets: bool = False,
     reject_unverified_submit_targets: bool = False,
     reject_nonpassing_submit_targets: bool = False,
+    mask_assistant_after_tool_call_error: bool = False,
 ) -> dict[str, Any]:
     if (
         not require_assistant_reasoning_for_loss
@@ -361,6 +369,7 @@ def apply_assistant_loss_policy(
         and not reject_manual_patch_targets
         and not reject_unverified_submit_targets
         and not reject_nonpassing_submit_targets
+        and not mask_assistant_after_tool_call_error
     ):
         return example
 
@@ -380,8 +389,11 @@ def apply_assistant_loss_policy(
     patch_file_tainted = False
     seen_submit_command = False
     seen_manual_patch_target = False
+    after_tool_call_error_prompt = False
     for message in example.get("messages", []):
         if message.get("role") != "assistant":
+            if mask_assistant_after_tool_call_error and is_tool_call_error_prompt(message):
+                after_tool_call_error_prompt = True
             if previous_assistant_command:
                 previous_assistant_observations.append(str(message.get("content") or ""))
             continue
@@ -398,6 +410,8 @@ def apply_assistant_loss_policy(
         if seen_submit_command:
             message["loss"] = False
         if seen_manual_patch_target:
+            message["loss"] = False
+        if after_tool_call_error_prompt:
             message["loss"] = False
         if effective_reject_manual_patch_targets and has_manual_patch_target:
             message["loss"] = False
@@ -427,6 +441,7 @@ def apply_assistant_loss_policy(
                 patch_file_tainted = bool(has_manual_patch_target)
             previous_assistant_command = command
             previous_assistant_observations = []
+        after_tool_call_error_prompt = False
     return example
 
 
@@ -629,6 +644,7 @@ class OnlinePackedChatDataset(IterableDataset):
         reject_manual_patch_targets: bool = False,
         reject_unverified_submit_targets: bool = False,
         reject_nonpassing_submit_targets: bool = False,
+        mask_assistant_after_tool_call_error: bool = False,
     ):
         super().__init__()
         self.tokenizer = tokenizer
@@ -656,6 +672,7 @@ class OnlinePackedChatDataset(IterableDataset):
         self.reject_manual_patch_targets = bool(reject_manual_patch_targets)
         self.reject_unverified_submit_targets = bool(reject_unverified_submit_targets)
         self.reject_nonpassing_submit_targets = bool(reject_nonpassing_submit_targets)
+        self.mask_assistant_after_tool_call_error = bool(mask_assistant_after_tool_call_error)
         if assistant_loss_target not in ASSISTANT_LOSS_TARGETS:
             raise ValueError(f"assistant_loss_target must be one of {ASSISTANT_LOSS_TARGETS}; got {assistant_loss_target}")
         self.assistant_loss_target = assistant_loss_target
@@ -792,6 +809,7 @@ class OnlinePackedChatDataset(IterableDataset):
                     reject_manual_patch_targets=self.reject_manual_patch_targets,
                     reject_unverified_submit_targets=self.reject_unverified_submit_targets,
                     reject_nonpassing_submit_targets=self.reject_nonpassing_submit_targets,
+                    mask_assistant_after_tool_call_error=self.mask_assistant_after_tool_call_error,
                 )
                 for input_ids, labels in tokenize_chat_example(
                     example,
@@ -867,6 +885,7 @@ def inspect_packer(args: argparse.Namespace) -> int:
         reject_manual_patch_targets=args.reject_manual_patch_targets,
         reject_unverified_submit_targets=args.reject_unverified_submit_targets,
         reject_nonpassing_submit_targets=args.reject_nonpassing_submit_targets,
+        mask_assistant_after_tool_call_error=args.mask_assistant_after_tool_call_error,
     )
     stats = {
         "packs": 0,
@@ -907,6 +926,7 @@ def parse_args() -> argparse.Namespace:
     inspect.add_argument("--reject-manual-patch-targets", action="store_true")
     inspect.add_argument("--reject-unverified-submit-targets", action="store_true")
     inspect.add_argument("--reject-nonpassing-submit-targets", action="store_true")
+    inspect.add_argument("--mask-assistant-after-tool-call-error", action="store_true")
     inspect.add_argument("--local-files-only", action=argparse.BooleanOptionalAction, default=True)
     return parser.parse_args()
 
