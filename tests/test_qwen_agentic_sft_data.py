@@ -17,6 +17,7 @@ from qwen_agentic_sft.online_packed_dataset import (  # noqa: E402
     IGNORE_INDEX,
     apply_assistant_loss_policy,
     assistant_has_manual_patch_target,
+    assistant_has_risky_source_edit_target,
     tokenize_chat_example,
 )
 
@@ -834,3 +835,91 @@ def test_loss_policy_masks_turns_after_submit() -> None:
     assert filtered["messages"][1]["loss"] is False
     assert filtered["messages"][3]["loss"] is False
     assert filtered["messages"][5]["loss"] is False
+
+
+def test_risky_source_edit_detector_flags_linewise_source_construction() -> None:
+    risky_append = {
+        "role": "assistant",
+        "tool_calls": [
+            {
+                "function": {
+                    "name": "bash",
+                    "arguments": {"command": "echo '  BAD_ENUM,' >> gson/src/main/java/Foo.java"},
+                }
+            }
+        ],
+    }
+    risky_overwrite = {
+        "role": "assistant",
+        "tool_calls": [
+            {
+                "function": {
+                    "name": "bash",
+                    "arguments": {"command": "printf '%s\\n' 'export const x = 1' > src/index.ts"},
+                }
+            }
+        ],
+    }
+    safe_sed = {
+        "role": "assistant",
+        "tool_calls": [
+            {
+                "function": {
+                    "name": "bash",
+                    "arguments": {"command": "sed -i 's/old/new/' src/index.ts"},
+                }
+            }
+        ],
+    }
+    safe_patch = {
+        "role": "assistant",
+        "tool_calls": [
+            {
+                "function": {
+                    "name": "bash",
+                    "arguments": {"command": "git diff -- src/index.ts > patch.txt"},
+                }
+            }
+        ],
+    }
+
+    assert assistant_has_risky_source_edit_target(risky_append)
+    assert assistant_has_risky_source_edit_target(risky_overwrite)
+    assert not assistant_has_risky_source_edit_target(safe_sed)
+    assert not assistant_has_risky_source_edit_target(safe_patch)
+
+
+def test_loss_policy_masks_risky_source_edit_target_only() -> None:
+    example = {
+        "messages": [
+            {"role": "user", "content": "Fix the bug."},
+            {
+                "role": "assistant",
+                "reasoning": "I should inspect the file.",
+                "tool_calls": [{"function": {"name": "bash", "arguments": {"command": "sed -n '1,80p' src/index.ts"}}}],
+            },
+            {"role": "tool", "content": "<returncode>0</returncode><output>old</output>"},
+            {
+                "role": "assistant",
+                "reasoning": "I should append a replacement line.",
+                "tool_calls": [{"function": {"name": "bash", "arguments": {"command": "echo 'export const x = 1' >> src/index.ts"}}}],
+            },
+            {"role": "tool", "content": "<returncode>0</returncode><output></output>"},
+            {
+                "role": "assistant",
+                "reasoning": "I should inspect the diff.",
+                "tool_calls": [{"function": {"name": "bash", "arguments": {"command": "git diff -- src/index.ts"}}}],
+            },
+        ]
+    }
+
+    filtered = apply_assistant_loss_policy(
+        example,
+        require_assistant_reasoning_for_loss=True,
+        require_assistant_tool_calls_for_loss=True,
+        mask_risky_source_edit_targets=True,
+    )
+
+    assert filtered["messages"][1].get("loss") is not False
+    assert filtered["messages"][3]["loss"] is False
+    assert filtered["messages"][5].get("loss") is not False

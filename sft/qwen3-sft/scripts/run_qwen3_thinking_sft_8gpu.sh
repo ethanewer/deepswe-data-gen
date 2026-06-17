@@ -117,6 +117,7 @@ REJECT_MANUAL_PATCH_TARGETS="${REJECT_MANUAL_PATCH_TARGETS:-}"
 REJECT_UNVERIFIED_SUBMIT_TARGETS="${REJECT_UNVERIFIED_SUBMIT_TARGETS:-}"
 REJECT_NONPASSING_SUBMIT_TARGETS="${REJECT_NONPASSING_SUBMIT_TARGETS:-}"
 MASK_ASSISTANT_AFTER_TOOL_CALL_ERROR="${MASK_ASSISTANT_AFTER_TOOL_CALL_ERROR:-}"
+MASK_RISKY_SOURCE_EDIT_TARGETS="${MASK_RISKY_SOURCE_EDIT_TARGETS:-}"
 ENABLE_COMPILE="${ENABLE_COMPILE:-$DEFAULT_ENABLE_COMPILE}"
 ACTIVATION_CHECKPOINTING="${ACTIVATION_CHECKPOINTING:-true}"
 ENABLE_FSDP2_PREFETCH="${ENABLE_FSDP2_PREFETCH:-true}"
@@ -211,6 +212,9 @@ if [ -n "$REJECT_NONPASSING_SUBMIT_TARGETS" ]; then
 fi
 if [ -n "$MASK_ASSISTANT_AFTER_TOOL_CALL_ERROR" ]; then
   echo "Mask assistant after tool-call error prompts: $MASK_ASSISTANT_AFTER_TOOL_CALL_ERROR"
+fi
+if [ -n "$MASK_RISKY_SOURCE_EDIT_TARGETS" ]; then
+  echo "Mask risky direct source-edit targets: $MASK_RISKY_SOURCE_EDIT_TARGETS"
 fi
 if [ "$CHAT_TEMPLATE_SOURCE" = "tokenizer" ]; then
   echo "Chat template: tokenizer default"
@@ -328,6 +332,10 @@ if [ -n "$MASK_ASSISTANT_AFTER_TOOL_CALL_ERROR" ]; then
   args+=(--dataset.mask_assistant_after_tool_call_error "$MASK_ASSISTANT_AFTER_TOOL_CALL_ERROR")
 fi
 
+if [ -n "$MASK_RISKY_SOURCE_EDIT_TARGETS" ]; then
+  args+=(--dataset.mask_risky_source_edit_targets "$MASK_RISKY_SOURCE_EDIT_TARGETS")
+fi
+
 if [ "$CHAT_TEMPLATE_SOURCE" != "tokenizer" ]; then
   args+=(--dataset.chat_template_path "$CHAT_TEMPLATE")
 fi
@@ -373,6 +381,9 @@ if [ "$VALIDATION_ENABLED" = "true" ]; then
   fi
   if [ -n "$MASK_ASSISTANT_AFTER_TOOL_CALL_ERROR" ]; then
     args+=(--validation_dataset.mask_assistant_after_tool_call_error "$MASK_ASSISTANT_AFTER_TOOL_CALL_ERROR")
+  fi
+  if [ -n "$MASK_RISKY_SOURCE_EDIT_TARGETS" ]; then
+    args+=(--validation_dataset.mask_risky_source_edit_targets "$MASK_RISKY_SOURCE_EDIT_TARGETS")
   fi
   if [ "$CHAT_TEMPLATE_SOURCE" != "tokenizer" ]; then
     args+=(--validation_dataset.chat_template_path "$CHAT_TEMPLATE")

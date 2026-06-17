@@ -57,6 +57,11 @@ PATCH_TXT_SHELL_CREATE_PATTERN = (
     rf"|(^|[;&|\n]\s*)(:|true)\s*>\s*{PATCH_TXT_PATH_PATTERN}"
     rf"|(^|[;&|\n]\s*)cp\s+/dev/null\s+{PATCH_TXT_PATH_PATTERN}"
 )
+SOURCE_EDIT_PATH_PATTERN = (
+    r"(?<![\w./-])(?:\./|/testbed/)?[\w./-]+"
+    r"\.(?:py|pyi|js|jsx|ts|tsx|java|go|rs|php|c|cc|cpp|cxx|h|hh|hpp|hxx|"
+    r"cs|rb|swift|kt|kts|scala|sh|bash|zsh|fish)(?![\w./-])"
+)
 
 
 def command_references_git_diff(command: str) -> bool:
@@ -166,6 +171,31 @@ def command_has_untrusted_patch_redirect(command: str) -> bool:
         if not command_references_git_diff(match.group("body")):
             return True
     return False
+
+
+def command_has_risky_source_edit(command: str) -> bool:
+    """Detect brittle direct source construction via shell text redirection."""
+    text = command.lower()
+    if is_submit_command(text) or command_mentions_patch_file(command):
+        return False
+    text_redirect = (
+        rf"(?:>\s*(?P<overwrite>{SOURCE_EDIT_PATH_PATTERN})"
+        rf"|>>\s*(?P<append>{SOURCE_EDIT_PATH_PATTERN})"
+        rf"|\|\s*tee\s+(?:-a\s+)?(?P<tee>{SOURCE_EDIT_PATH_PATTERN}))"
+    )
+    line_writer = re.finditer(
+        rf"(^|[;&|\n]\s*)(echo|printf)\b(?P<body>[^;&\n]*?){text_redirect}",
+        text,
+        flags=re.DOTALL,
+    )
+    for match in line_writer:
+        if not command_references_git_diff(match.group("body")):
+            return True
+    heredoc_writer = re.finditer(
+        rf"(^|[;&|\n]\s*)cat\s+<<['\"]?[\w-]+['\"]?\s*{text_redirect}",
+        text,
+    )
+    return any(True for _ in heredoc_writer)
 
 
 def _rank_world() -> tuple[int, int]:
@@ -285,6 +315,10 @@ def assistant_has_manual_patch_target(message: dict[str, Any]) -> bool:
     return False
 
 
+def assistant_has_risky_source_edit_target(message: dict[str, Any]) -> bool:
+    return command_has_risky_source_edit(assistant_tool_command(message))
+
+
 def is_submit_command(command: str) -> bool:
     return "complete_task_and_submit_final_output" in command.lower()
 
@@ -361,6 +395,7 @@ def apply_assistant_loss_policy(
     reject_unverified_submit_targets: bool = False,
     reject_nonpassing_submit_targets: bool = False,
     mask_assistant_after_tool_call_error: bool = False,
+    mask_risky_source_edit_targets: bool = False,
 ) -> dict[str, Any]:
     if (
         not require_assistant_reasoning_for_loss
@@ -370,6 +405,7 @@ def apply_assistant_loss_policy(
         and not reject_unverified_submit_targets
         and not reject_nonpassing_submit_targets
         and not mask_assistant_after_tool_call_error
+        and not mask_risky_source_edit_targets
     ):
         return example
 
@@ -406,6 +442,7 @@ def apply_assistant_loss_policy(
         if drop_assistant_content_for_tool_calls and has_tool_calls:
             drop_assistant_content_preserving_reasoning(message)
         has_manual_patch_target = assistant_has_manual_patch_target(message)
+        has_risky_source_edit_target = assistant_has_risky_source_edit_target(message)
         is_submit = is_submit_command(command)
         if seen_submit_command:
             message["loss"] = False
@@ -424,6 +461,8 @@ def apply_assistant_loss_policy(
                 or patch_file_tainted
             )
         ):
+            message["loss"] = False
+        if mask_risky_source_edit_targets and has_risky_source_edit_target:
             message["loss"] = False
         if reject_nonpassing_submit_targets and nonpassing_row and is_submit:
             message["loss"] = False
@@ -645,6 +684,7 @@ class OnlinePackedChatDataset(IterableDataset):
         reject_unverified_submit_targets: bool = False,
         reject_nonpassing_submit_targets: bool = False,
         mask_assistant_after_tool_call_error: bool = False,
+        mask_risky_source_edit_targets: bool = False,
     ):
         super().__init__()
         self.tokenizer = tokenizer
@@ -673,6 +713,7 @@ class OnlinePackedChatDataset(IterableDataset):
         self.reject_unverified_submit_targets = bool(reject_unverified_submit_targets)
         self.reject_nonpassing_submit_targets = bool(reject_nonpassing_submit_targets)
         self.mask_assistant_after_tool_call_error = bool(mask_assistant_after_tool_call_error)
+        self.mask_risky_source_edit_targets = bool(mask_risky_source_edit_targets)
         if assistant_loss_target not in ASSISTANT_LOSS_TARGETS:
             raise ValueError(f"assistant_loss_target must be one of {ASSISTANT_LOSS_TARGETS}; got {assistant_loss_target}")
         self.assistant_loss_target = assistant_loss_target
@@ -810,6 +851,7 @@ class OnlinePackedChatDataset(IterableDataset):
                     reject_unverified_submit_targets=self.reject_unverified_submit_targets,
                     reject_nonpassing_submit_targets=self.reject_nonpassing_submit_targets,
                     mask_assistant_after_tool_call_error=self.mask_assistant_after_tool_call_error,
+                    mask_risky_source_edit_targets=self.mask_risky_source_edit_targets,
                 )
                 for input_ids, labels in tokenize_chat_example(
                     example,
@@ -886,6 +928,7 @@ def inspect_packer(args: argparse.Namespace) -> int:
         reject_unverified_submit_targets=args.reject_unverified_submit_targets,
         reject_nonpassing_submit_targets=args.reject_nonpassing_submit_targets,
         mask_assistant_after_tool_call_error=args.mask_assistant_after_tool_call_error,
+        mask_risky_source_edit_targets=args.mask_risky_source_edit_targets,
     )
     stats = {
         "packs": 0,
@@ -927,6 +970,7 @@ def parse_args() -> argparse.Namespace:
     inspect.add_argument("--reject-unverified-submit-targets", action="store_true")
     inspect.add_argument("--reject-nonpassing-submit-targets", action="store_true")
     inspect.add_argument("--mask-assistant-after-tool-call-error", action="store_true")
+    inspect.add_argument("--mask-risky-source-edit-targets", action="store_true")
     inspect.add_argument("--local-files-only", action=argparse.BooleanOptionalAction, default=True)
     return parser.parse_args()
 
