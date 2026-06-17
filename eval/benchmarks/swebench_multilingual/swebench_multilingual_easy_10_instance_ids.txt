@@ -1,0 +1,16 @@
+# swebench-multilingual-easy
+#
+# This fixed 10-task subset is used for fast recipe iteration. It is a
+# deliberately easier slice of the 30-task SWE-bench Multilingual subset, so
+# scores here are debugging signals and should not be reported as the full
+# swebench-multilingual score.
+phpoffice__phpspreadsheet-4186
+nlohmann__json-4237
+tokio-rs__tokio-4898
+apache__lucene-12196
+briannesbitt__carbon-2752
+vuejs__core-11589
+redis__redis-10764
+gin-gonic__gin-3741
+google__gson-2024
+php-cs-fixer__php-cs-fixer-8256

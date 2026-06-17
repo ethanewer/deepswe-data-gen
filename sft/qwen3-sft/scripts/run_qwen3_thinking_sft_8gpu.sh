@@ -87,6 +87,7 @@ GLOBAL_TOKENS="$((GLOBAL_BATCH_SIZE * PACK_SIZE))"
 MAX_STEPS="${MAX_STEPS:-1000}"
 LR="${LR:-1.0e-5}"
 MIN_LR="${MIN_LR:-$LR}"
+WEIGHT_DECAY="${WEIGHT_DECAY:-}"
 LR_WARMUP_STEPS="${LR_WARMUP_STEPS:-}"
 NUM_WORKERS="${NUM_WORKERS:-2}"
 MULTIPROCESSING_CONTEXT="${MULTIPROCESSING_CONTEXT:-fork}"
@@ -97,6 +98,18 @@ REQUIRE_ASSISTANT_REASONING_FOR_LOSS="${REQUIRE_ASSISTANT_REASONING_FOR_LOSS:-}"
 REQUIRE_ASSISTANT_TOOL_CALLS_FOR_LOSS="${REQUIRE_ASSISTANT_TOOL_CALLS_FOR_LOSS:-}"
 DROP_ASSISTANT_CONTENT_FOR_TOOL_CALLS="${DROP_ASSISTANT_CONTENT_FOR_TOOL_CALLS:-}"
 ASSISTANT_LOSS_TARGET="${ASSISTANT_LOSS_TARGET:-}"
+DATASET_REPEAT="${DATASET_REPEAT:-}"
+PAD_TO_PACK_COUNT="${PAD_TO_PACK_COUNT:-}"
+MASK_TOOL_CALL_ERROR_RECOVERY="${MASK_TOOL_CALL_ERROR_RECOVERY:-}"
+MASK_MANUAL_PATCH_ARTIFACT_TURNS="${MASK_MANUAL_PATCH_ARTIFACT_TURNS:-}"
+ENABLE_TURN_LOSS_WEIGHTS="${ENABLE_TURN_LOSS_WEIGHTS:-}"
+READ_LOSS_WEIGHT="${READ_LOSS_WEIGHT:-}"
+WRITE_LOSS_WEIGHT="${WRITE_LOSS_WEIGHT:-}"
+TEST_LOSS_WEIGHT="${TEST_LOSS_WEIGHT:-}"
+SUBMIT_LOSS_WEIGHT="${SUBMIT_LOSS_WEIGHT:-}"
+DEFAULT_LOSS_WEIGHT="${DEFAULT_LOSS_WEIGHT:-}"
+NONPASSING_LOSS_MULTIPLIER="${NONPASSING_LOSS_MULTIPLIER:-}"
+MASK_NONPASSING_SUBMIT_TURNS="${MASK_NONPASSING_SUBMIT_TURNS:-}"
 ENABLE_COMPILE="${ENABLE_COMPILE:-$DEFAULT_ENABLE_COMPILE}"
 ACTIVATION_CHECKPOINTING="${ACTIVATION_CHECKPOINTING:-true}"
 ENABLE_FSDP2_PREFETCH="${ENABLE_FSDP2_PREFETCH:-true}"
@@ -147,6 +160,12 @@ if [ -n "$REQUIRE_ASSISTANT_REASONING_FOR_LOSS" ] || [ -n "$REQUIRE_ASSISTANT_TO
 fi
 if [ -n "$DROP_ASSISTANT_CONTENT_FOR_TOOL_CALLS" ] || [ -n "$ASSISTANT_LOSS_TARGET" ]; then
   echo "Assistant tool-call loss shaping: drop_content=${DROP_ASSISTANT_CONTENT_FOR_TOOL_CALLS:-config} target=${ASSISTANT_LOSS_TARGET:-config}"
+fi
+if [ -n "$ENABLE_TURN_LOSS_WEIGHTS" ]; then
+  echo "Assistant turn loss weights: enabled=${ENABLE_TURN_LOSS_WEIGHTS} read=${READ_LOSS_WEIGHT:-config} write=${WRITE_LOSS_WEIGHT:-config} test=${TEST_LOSS_WEIGHT:-config} submit=${SUBMIT_LOSS_WEIGHT:-config} nonpassing_multiplier=${NONPASSING_LOSS_MULTIPLIER:-config}"
+fi
+if [ -n "$DATASET_REPEAT" ] || [ -n "$PAD_TO_PACK_COUNT" ]; then
+  echo "Dataset finite pass: repeat=${DATASET_REPEAT:-config} pad_to_pack_count=${PAD_TO_PACK_COUNT:-config}"
 fi
 if [ "$CHAT_TEMPLATE_SOURCE" = "tokenizer" ]; then
   echo "Chat template: tokenizer default"
@@ -208,6 +227,10 @@ args=(
   --checkpoint.v4_compatible "$CHECKPOINT_V4_COMPATIBLE"
 )
 
+if [ -n "$WEIGHT_DECAY" ]; then
+  args+=(--optimizer.weight_decay "$WEIGHT_DECAY")
+fi
+
 if [ -n "$LR_WARMUP_STEPS" ]; then
   args+=(--lr_scheduler.lr_warmup_steps "$LR_WARMUP_STEPS")
 fi
@@ -230,6 +253,54 @@ fi
 
 if [ -n "$ASSISTANT_LOSS_TARGET" ]; then
   args+=(--dataset.assistant_loss_target "$ASSISTANT_LOSS_TARGET")
+fi
+
+if [ -n "$DATASET_REPEAT" ]; then
+  args+=(--dataset.repeat "$DATASET_REPEAT")
+fi
+
+if [ -n "$PAD_TO_PACK_COUNT" ]; then
+  args+=(--dataset.pad_to_pack_count "$PAD_TO_PACK_COUNT")
+fi
+
+if [ -n "$MASK_TOOL_CALL_ERROR_RECOVERY" ]; then
+  args+=(--dataset.mask_tool_call_error_recovery "$MASK_TOOL_CALL_ERROR_RECOVERY")
+fi
+
+if [ -n "$MASK_MANUAL_PATCH_ARTIFACT_TURNS" ]; then
+  args+=(--dataset.mask_manual_patch_artifact_turns "$MASK_MANUAL_PATCH_ARTIFACT_TURNS")
+fi
+
+if [ -n "$ENABLE_TURN_LOSS_WEIGHTS" ]; then
+  args+=(--dataset.enable_turn_loss_weights "$ENABLE_TURN_LOSS_WEIGHTS")
+fi
+
+if [ -n "$READ_LOSS_WEIGHT" ]; then
+  args+=(--dataset.read_loss_weight "$READ_LOSS_WEIGHT")
+fi
+
+if [ -n "$WRITE_LOSS_WEIGHT" ]; then
+  args+=(--dataset.write_loss_weight "$WRITE_LOSS_WEIGHT")
+fi
+
+if [ -n "$TEST_LOSS_WEIGHT" ]; then
+  args+=(--dataset.test_loss_weight "$TEST_LOSS_WEIGHT")
+fi
+
+if [ -n "$SUBMIT_LOSS_WEIGHT" ]; then
+  args+=(--dataset.submit_loss_weight "$SUBMIT_LOSS_WEIGHT")
+fi
+
+if [ -n "$DEFAULT_LOSS_WEIGHT" ]; then
+  args+=(--dataset.default_loss_weight "$DEFAULT_LOSS_WEIGHT")
+fi
+
+if [ -n "$NONPASSING_LOSS_MULTIPLIER" ]; then
+  args+=(--dataset.nonpassing_loss_multiplier "$NONPASSING_LOSS_MULTIPLIER")
+fi
+
+if [ -n "$MASK_NONPASSING_SUBMIT_TURNS" ]; then
+  args+=(--dataset.mask_nonpassing_submit_turns "$MASK_NONPASSING_SUBMIT_TURNS")
 fi
 
 if [ "$CHAT_TEMPLATE_SOURCE" != "tokenizer" ]; then

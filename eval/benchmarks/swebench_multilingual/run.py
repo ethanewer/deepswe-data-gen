@@ -68,7 +68,11 @@ def load_defaults(path: Path) -> dict:
 
 
 def read_instance_ids(path: Path) -> list[str]:
-    return [line.strip() for line in path.read_text().splitlines() if line.strip()]
+    return [
+        line.strip()
+        for line in path.read_text().splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
 
 
 def resolve_cli_paths(args: argparse.Namespace) -> None:
