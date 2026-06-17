@@ -17,6 +17,8 @@ from qwen_agentic_sft.online_packed_dataset import (  # noqa: E402
     IGNORE_INDEX,
     apply_assistant_loss_policy,
     assistant_turn_action,
+    example_has_empty_patch,
+    example_passed,
     tokenize_chat_example,
 )
 
@@ -380,6 +382,73 @@ def test_empty_patch_submit_is_masked() -> None:
     }
     filtered = apply_assistant_loss_policy(
         example,
+        require_assistant_reasoning_for_loss=True,
+        require_assistant_tool_calls_for_loss=True,
+        enable_turn_loss_weights=True,
+        submit_loss_weight=2.0,
+        nonpassing_loss_multiplier=0.75,
+        mask_empty_patch_submit_turns=True,
+    )
+
+    submit_turn = filtered["messages"][1]
+    assert assistant_turn_action(submit_turn) == "submit"
+    assert submit_turn["loss"] is False
+
+
+def test_normalization_preserves_pass_metadata_for_weighting() -> None:
+    row = {
+        "messages": [
+            {"role": "user", "content": "Finish the task."},
+            {
+                "role": "assistant",
+                "reasoning": "The patch is ready to submit.",
+                "content": "",
+                "tool_calls": [{"function": {"name": "bash", "arguments": {"command": "submit"}}}],
+            },
+        ],
+        "source_outcome": {"passed": True, "model_patch_bytes": 128},
+    }
+    normalized = normalize_row(row)
+    assert normalized is not None
+    assert example_passed(normalized)
+    assert not example_has_empty_patch(normalized)
+
+    filtered = apply_assistant_loss_policy(
+        normalized,
+        require_assistant_reasoning_for_loss=True,
+        require_assistant_tool_calls_for_loss=True,
+        enable_turn_loss_weights=True,
+        submit_loss_weight=2.0,
+        nonpassing_loss_multiplier=0.75,
+        mask_empty_patch_submit_turns=True,
+    )
+
+    submit_turn = filtered["messages"][1]
+    assert assistant_turn_action(submit_turn) == "submit"
+    assert submit_turn.get("loss") is not False
+    assert submit_turn["loss_weight"] == 2.0
+
+
+def test_normalization_preserves_empty_patch_metadata_for_submit_masking() -> None:
+    row = {
+        "messages": [
+            {"role": "user", "content": "Finish the task."},
+            {
+                "role": "assistant",
+                "reasoning": "The patch is ready to submit.",
+                "content": "",
+                "tool_calls": [{"function": {"name": "bash", "arguments": {"command": "submit"}}}],
+            },
+        ],
+        "source_outcome": {"passed": False, "model_patch_bytes": 0},
+    }
+    normalized = normalize_row(row)
+    assert normalized is not None
+    assert not example_passed(normalized)
+    assert example_has_empty_patch(normalized)
+
+    filtered = apply_assistant_loss_policy(
+        normalized,
         require_assistant_reasoning_for_loss=True,
         require_assistant_tool_calls_for_loss=True,
         enable_turn_loss_weights=True,
