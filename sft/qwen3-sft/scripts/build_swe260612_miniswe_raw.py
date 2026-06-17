@@ -19,6 +19,7 @@ if str(SRC_DIR) not in sys.path:
 
 from build_swebench_ml_sft_mix import BASH_TOOL, adapt_to_bash_tool, json_dumps
 from qwen_agentic_sft.data import discover_raw_files, iter_jsonl_rows, normalize_row
+from qwen_agentic_sft.online_packed_dataset import assistant_has_manual_patch_target
 
 
 DEFAULT_INPUT_JSONL = Path(
@@ -60,6 +61,14 @@ def is_positive_reward(value: Any) -> bool:
             return float(value.strip()) > 0
         except ValueError:
             return is_trueish(value)
+    return False
+
+
+def has_manual_patch_context(example: dict[str, Any]) -> bool:
+    """Return true when a normalized trajectory hand-assembles patch.txt."""
+    for message in example.get("messages") or []:
+        if isinstance(message, dict) and assistant_has_manual_patch_target(message):
+            return True
     return False
 
 
@@ -212,6 +221,12 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
             if transformed is None:
                 rows_skipped += 1
                 return
+            if args.drop_manual_patch_context_rows and has_manual_patch_context(transformed):
+                rows_skipped += 1
+                transform_stats["rows_filtered_manual_patch_context"] = (
+                    transform_stats.get("rows_filtered_manual_patch_context", 0) + 1
+                )
+                return
             emitted = {
                 "messages": transformed["messages"],
                 "tools": transformed.get("tools", BASH_TOOL),
@@ -331,6 +346,7 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
         "outcome_filter": {
             "include_failed": args.include_failed,
             "include_nonpositive_reward": args.include_nonpositive_reward,
+            "drop_manual_patch_context_rows": args.drop_manual_patch_context_rows,
         },
         "rows_seen": rows_seen,
         "rows_written": rows_written,
@@ -366,6 +382,14 @@ def parse_args() -> argparse.Namespace:
         help="include rows with reward <= 0; disabled by default",
     )
     parser.add_argument("--single-tool-calls", action="store_true")
+    parser.add_argument(
+        "--drop-manual-patch-context-rows",
+        action="store_true",
+        help=(
+            "drop rows where the normalized assistant hand-assembles patch.txt "
+            "from echo/cat/cp/diff fragments instead of relying on repository state"
+        ),
+    )
     parser.add_argument(
         "--allow-uuid-file",
         type=Path,
