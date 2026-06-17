@@ -16,6 +16,7 @@ import json
 import os
 import shlex
 import subprocess
+import sys
 import time
 import tomllib
 import traceback
@@ -42,6 +43,20 @@ BENCHMARK_PROFILE_BY_STYLE = {
     "planned": "deepswe",
 }
 BENCHMARK_PROFILE_CHOICES = ("auto", "swebench-multilingual", "deepswe", "datagen-strict")
+EMPTY_OUTPUT_REMINDER = (
+    "The last command produced no patch/source diff output. Inspect the relevant "
+    "source file and make a real source change before creating or submitting a patch."
+)
+PATCH_TXT_EMPTY_REMINDER = (
+    "patch.txt is empty. Do not submit it or write patch text by hand; inspect the "
+    "source, fix the edit, regenerate patch.txt from git diff, and verify the real diff "
+    "with a non-empty patch preview."
+)
+WEAK_PATCH_CHECK_REMINDER = (
+    "This only checked part of the patch. Before submitting, run a non-empty patch "
+    "preview such as test -s patch.txt && sed -n '1,240p' patch.txt and confirm it is "
+    "a real unified diff for the intended source changes."
+)
 
 
 def utc_now() -> str:
@@ -175,16 +190,26 @@ def build_model_kwargs(
     return model_kwargs
 
 
+def sanitized_task_env(env: dict[str, str] | None = None) -> dict[str, str]:
+    """Return an environment for commands that should run inside the task image."""
+    clean = dict(os.environ if env is None else env)
+    for key in ("PYTHONPATH", "PYTHONHOME", "PYDEPS_OVERLAY"):
+        clean.pop(key, None)
+    return clean
+
+
 def run_shell(
     command: str,
     *,
     cwd: Path | str | None = None,
     timeout: int = 300,
     check: bool = False,
+    env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(
         ["bash", "-lc", command],
         cwd=str(cwd) if cwd else None,
+        env=env,
         text=True,
         encoding="utf-8",
         errors="replace",
@@ -339,11 +364,90 @@ exec /usr/bin/find "$@"
     return agent_bin
 
 
+def command_reads_patch_txt(command: str) -> bool:
+    return bool(re.search(r"(^|[;&|]\s*)(cat|less|more|sed\b[^;&|]*|awk\b[^;&|]*)\s+[^;&|]*patch\.txt\b", command))
+
+
+def command_is_weak_patch_check(command: str) -> bool:
+    if "patch.txt" not in command:
+        return False
+    return bool(re.search(r"(^|[;&|]\s*)(head|tail|grep|wc)\b", command)) and not command_reads_patch_txt(command)
+
+
+def command_requests_diff_output(command: str) -> bool:
+    if "git diff" not in command:
+        return False
+    if re.search(r">\s*\S*patch\.txt\b", command):
+        return False
+    return not bool(re.search(r"--(check|name-only|name-status|stat|summary|quiet)\b", command))
+
+
+def reminder_for_output(command: str, output: dict[str, Any]) -> str:
+    if output.get("returncode") not in (0, None):
+        return ""
+    text = str(output.get("output") or "").strip()
+    if command_reads_patch_txt(command) and not text:
+        return PATCH_TXT_EMPTY_REMINDER
+    if command_requests_diff_output(command) and not text:
+        return EMPTY_OUTPUT_REMINDER
+    if command_is_weak_patch_check(command):
+        return WEAK_PATCH_CHECK_REMINDER
+    return ""
+
+
+class SanitizedLocalEnvironment(LocalEnvironment):
+    """LocalEnvironment that keeps runner Python overlays out of task commands."""
+
+    def execute(self, action: dict, cwd: str = "", *, timeout: int | None = None) -> dict[str, Any]:
+        command = action.get("command", "")
+        cwd = cwd or self.config.cwd or os.getcwd()
+        try:
+            result = subprocess.run(
+                command,
+                shell=True,
+                text=True,
+                cwd=cwd,
+                env=sanitized_task_env(os.environ | self.config.env),
+                timeout=timeout or self.config.timeout,
+                encoding="utf-8",
+                errors="replace",
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+            )
+            output = {"output": result.stdout, "returncode": result.returncode, "exception_info": ""}
+        except Exception as e:
+            raw_output = getattr(e, "output", None)
+            raw_output = (
+                raw_output.decode("utf-8", errors="replace") if isinstance(raw_output, bytes) else (raw_output or "")
+            )
+            output = {
+                "output": raw_output,
+                "returncode": -1,
+                "exception_info": f"An error occurred while executing the command: {e}",
+                "extra": {"exception_type": type(e).__name__, "exception": str(e)},
+            }
+        self._check_finished(output)
+        return output
+
+
+class ReminderEnvironment(SanitizedLocalEnvironment):
+    """LocalEnvironment variant that annotates selected outputs with neutral reminders."""
+
+    def execute(self, action: dict, cwd: str = "", *, timeout: int | None = None) -> dict[str, Any]:
+        output = super().execute(action, cwd=cwd, timeout=timeout)
+        reminder = reminder_for_output(str(action.get("command") or ""), output)
+        if reminder:
+            extra = output.setdefault("extra", {})
+            extra["reminder"] = reminder
+        return output
+
+
 def build_agent(args: argparse.Namespace, workdir: str, trajectory_path: Path) -> DefaultAgent:
     config = yaml.safe_load(args.config_file.read_text(encoding="utf-8")) or {}
     extra_body = json.loads(args.extra_body_json) if args.extra_body_json else None
     benchmark_profile = resolve_benchmark_profile(args)
     environment_config = config.get("environment", {}) if isinstance(config.get("environment"), dict) else {}
+    datagen_harness = config.get("datagen_harness", {}) if isinstance(config.get("datagen_harness"), dict) else {}
 
     model_class, model_name = resolve_model_class_and_name(benchmark_profile, args.litellm_model)
     use_native_openrouter = model_class == "openrouter"
@@ -389,7 +493,8 @@ def build_agent(args: argparse.Namespace, workdir: str, trajectory_path: Path) -
     if command_timeout is None:
         configured_timeout = environment_config.get("timeout")
         command_timeout = int(configured_timeout) if configured_timeout is not None else 30
-    env = LocalEnvironment(
+    environment_class = ReminderEnvironment if datagen_harness.get("observation_reminders") else SanitizedLocalEnvironment
+    env = environment_class(
         cwd=workdir,
         timeout=command_timeout,
         env=local_env,
@@ -408,7 +513,8 @@ def reset_repo(workdir: str, base_commit: str) -> dict[str, Any]:
         f"git checkout {base} && "
         "git clean -fd"
     )
-    result = run_shell(command, timeout=300)
+    reset_timeout = int(os.environ.get("DATAGEN_REPO_RESET_TIMEOUT", "900"))
+    result = run_shell(command, timeout=reset_timeout)
     return {"returncode": result.returncode, "output_tail": result.stdout[-4000:]}
 
 
@@ -427,7 +533,7 @@ def run_verifier(args: argparse.Namespace) -> dict[str, Any]:
     stdout_path = args.workspace / "verifier.stdout.log"
     started = utc_now()
     try:
-        result = run_shell("bash /tests/test.sh", timeout=3600)
+        result = run_shell("bash /tests/test.sh", timeout=3600, env=sanitized_task_env())
         stdout_path.write_text(result.stdout, encoding="utf-8")
         returncode = result.returncode
         exception = None
@@ -452,6 +558,8 @@ def run_verifier(args: argparse.Namespace) -> dict[str, Any]:
 
 def host_workspace_path(workspace: Path) -> Path:
     """Return the host-visible workspace when running under a /workspace mount."""
+    if os.environ.get("DATAGEN_HOST_WORKSPACE"):
+        return Path(os.environ["DATAGEN_HOST_WORKSPACE"])
     home = os.environ.get("HOME")
     if home:
         home_path = Path(home)
@@ -682,4 +790,17 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    exit_code = 0
+    try:
+        main()
+    except SystemExit as exc:
+        exit_code = int(exc.code) if isinstance(exc.code, int) else 1
+    except BaseException:  # noqa: BLE001 - make container shutdown deterministic
+        traceback.print_exc()
+        exit_code = 1
+    finally:
+        try:
+            sys.stdout.flush()
+            sys.stderr.flush()
+        finally:
+            os._exit(exit_code)

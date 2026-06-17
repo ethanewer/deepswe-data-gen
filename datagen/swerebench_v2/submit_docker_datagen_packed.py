@@ -45,9 +45,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model-timeout", type=int, default=600)
     parser.add_argument("--agent-wall-time-limit", type=int, default=2700)
     parser.add_argument("--command-timeout", type=int, default=180)
+    parser.add_argument("--max-concurrent-pulls", type=int, default=2)
     parser.add_argument("--min-docker-free-gb", type=float, default=18.0)
     parser.add_argument("--docker-space-check-interval", type=int, default=30)
     parser.add_argument("--benchmark-profile", default="auto")
+    parser.add_argument("--config-file", type=Path, help="Optional mini-swe-agent config passed to the Docker runner.")
     parser.add_argument("--env-file", type=Path, default=Path("/wbl-fast/usrs/ee/code-swe-data/.env"))
     parser.add_argument("--keep-images", action="store_true", help="Do not remove task images after rows finish.")
     parser.add_argument("--rerun-existing", action="store_true", help="Do not skip workspaces that already contain model traces.")
@@ -106,6 +108,7 @@ def write_sbatch(args: argparse.Namespace, chunk_count: int, chunk_dir: Path) ->
         array_spec = f"{array_spec}%{args.array_concurrency}"
     remove_image_arg = "" if args.keep_images else " \\\n  --remove-image-after-run"
     skip_existing_arg = "" if args.rerun_existing else " \\\n  --skip-existing-result"
+    config_file_arg = f" \\\n  --config-file {shell_quote(args.config_file.resolve())}" if args.config_file else ""
     script = f"""#!/usr/bin/env bash
 #SBATCH -J {args.job_name}
 #SBATCH -p {args.partition}
@@ -162,10 +165,11 @@ echo "repo_root=$REPO_ROOT"
   --model-timeout {args.model_timeout} \\
   --agent-wall-time-limit {args.agent_wall_time_limit} \\
   --command-timeout {args.command_timeout} \\
+  --max-concurrent-pulls {args.max_concurrent_pulls} \\
   --min-docker-free-gb {args.min_docker_free_gb} \\
   --docker-space-check-interval {args.docker_space_check_interval} \\
   --benchmark-profile {shell_quote(args.benchmark_profile)} \\
-  --env-file {shell_quote(args.env_file)}{skip_existing_arg}{remove_image_arg}
+  --env-file {shell_quote(args.env_file)}{config_file_arg}{skip_existing_arg}{remove_image_arg}
 """
     script_path.write_text(script, encoding="utf-8")
     script_path.chmod(0o755)

@@ -14,6 +14,7 @@ download_one() {
 }
 
 download_one "moonshotai/Kimi-K2.6" "$KIMI_MODEL_PATH"
+download_one "moonshotai/Kimi-K2.7-Code" "$KIMI27_CODE_MODEL_PATH"
 download_one "XiaomiMiMo/MiMo-V2.5" "$MIMO_MODEL_PATH"
 download_one "Qwen/Qwen3.6-27B" "$QWEN36_MODEL_PATH"
 download_one "Qwen/Qwen3.6-35B-A3B-FP8" "$QWEN36_MOE_FP8_MODEL_PATH"

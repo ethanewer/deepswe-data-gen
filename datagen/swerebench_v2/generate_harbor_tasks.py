@@ -44,6 +44,13 @@ def parse_args() -> argparse.Namespace:
         help="Specific instance_id to include. Can be passed multiple times.",
     )
     parser.add_argument(
+        "--instance-id-file",
+        type=Path,
+        action="append",
+        default=[],
+        help="File containing one instance_id per line. Can be passed multiple times.",
+    )
+    parser.add_argument(
         "--instruction-style",
         choices=("deepswe", "swe_rebench", "original", "rewritten"),
         default="deepswe",
@@ -100,6 +107,12 @@ def load_selected_ids(
 ) -> list[str]:
     selected = []
     requested = set(args.instance_id)
+    for id_file in args.instance_id_file:
+        requested.update(
+            line.strip()
+            for line in id_file.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        )
     with path.open(newline="", encoding="utf-8") as handle:
         for row in csv.DictReader(handle):
             if requested and row["instance_id"] not in requested:

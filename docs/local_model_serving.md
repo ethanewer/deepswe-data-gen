@@ -38,6 +38,14 @@ Kimi K2.6:
 - Snapshot revision: `7eb5002f6aadc958aed6a9177b7ed26bb94011bb`
 - Local path: `/scratch/local_model_serving/models/moonshotai_Kimi-K2.6.snapshot`
 
+Kimi K2.7-Code:
+
+- Hub repo: `moonshotai/Kimi-K2.7-Code`
+- Quantization: official Moonshot compressed-tensors/native INT4 checkpoint
+- Snapshot revision: `74797c9c62378b951a1f6fcf5c4631024e9b8bef`
+- Shared local path:
+  `/wbl-fast/usrs/ee/code-swe-data/runtime/local_model_serving/models/moonshotai_Kimi-K2.7-Code.snapshot`
+
 MiMo V2.5:
 
 - Hub repo: `XiaomiMiMo/MiMo-V2.5`
@@ -130,6 +138,21 @@ Default OpenAI-compatible base URL: `http://localhost:18000/v1`
 
 Kimi uses TP8, `compressed-tensors`, Kimi reasoning/tool parsers, 128K context,
 FlashInfer attention, and disables FlashInfer all-reduce fusion/autotune.
+
+Kimi K2.7-Code via vLLM:
+
+```bash
+LOCAL_MODEL_SERVING_ROOT=/wbl-fast/usrs/ee/code-swe-data/runtime/local_model_serving \
+  /wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/scripts/local_model_serving/serve_kimi27_code_vllm.sh
+```
+
+Default OpenAI-compatible base URL: `http://localhost:18010/v1`
+
+Prepared H200 Slurm launcher:
+
+```bash
+sbatch /wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/scripts/local_model_serving/serve_kimi27_code_h200_slurm.sbatch
+```
 
 MiMo V2.5 via SGLang:
 

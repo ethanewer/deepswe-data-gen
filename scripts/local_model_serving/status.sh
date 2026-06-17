@@ -11,7 +11,12 @@ echo "hf_cache=$HUGGINGFACE_HUB_CACHE"
 echo "hf_xet_cache=$HF_XET_CACHE"
 echo
 
-for model_path in "$KIMI_MODEL_PATH" "$MIMO_MODEL_PATH"; do
+for model_path in \
+  "$KIMI_MODEL_PATH" \
+  "$KIMI27_CODE_MODEL_PATH" \
+  "$MIMO_MODEL_PATH" \
+  "$QWEN36_MODEL_PATH" \
+  "$QWEN36_MOE_FP8_MODEL_PATH"; do
   if [[ -L "$model_path" ]]; then
     echo "$model_path -> $(readlink "$model_path")"
   elif [[ -e "$model_path" ]]; then

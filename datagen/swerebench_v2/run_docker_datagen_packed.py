@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import contextlib
 import dataclasses
 import json
 import os
@@ -108,6 +109,16 @@ def parse_args() -> argparse.Namespace:
         help="Override the command timeout from the selected mini-swe-agent config.",
     )
     parser.add_argument("--pull-retries", type=int, default=3)
+    parser.add_argument(
+        "--max-concurrent-pulls",
+        type=int,
+        default=2,
+        help=(
+            "Maximum concurrent docker pull operations inside one packed node. "
+            "The rollout worker count is unchanged; this only avoids registry/"
+            "daemon storms when many workers start with uncached images."
+        ),
+    )
     parser.add_argument(
         "--min-docker-free-gb",
         type=float,
@@ -244,6 +255,41 @@ def run_command(command: list[str], stdout: Path, stderr: Path, timeout: int | N
     return process.returncode
 
 
+def result_json_saved(workspace: Path) -> bool:
+    result_path = workspace / "result.json"
+    try:
+        return result_path.exists() and result_path.stat().st_size > 2
+    except OSError:
+        return False
+
+
+def run_command_until_result(
+    command: list[str],
+    stdout: Path,
+    stderr: Path,
+    result_workspace: Path,
+    timeout: int | None = None,
+) -> int:
+    stdout.parent.mkdir(parents=True, exist_ok=True)
+    stderr.parent.mkdir(parents=True, exist_ok=True)
+    started = time.monotonic()
+    with stdout.open("ab") as out, stderr.open("ab") as err:
+        process = subprocess.Popen(command, stdout=out, stderr=err)
+        while True:
+            status = process.poll()
+            if status is not None:
+                return status
+            if result_json_saved(result_workspace):
+                process.kill()
+                process.wait(timeout=10)
+                return 0
+            if timeout is not None and time.monotonic() - started > timeout:
+                process.kill()
+                process.wait(timeout=10)
+                raise subprocess.TimeoutExpired(command, timeout)
+            time.sleep(5)
+
+
 def remove_image(image: str, log_path: Path) -> None:
     ref = docker_image_ref(image)
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -307,6 +353,8 @@ def archive_retryable_result(workspace: Path) -> None:
 
 pull_locks: dict[str, threading.Lock] = {}
 pull_locks_guard = threading.Lock()
+pull_semaphores: dict[int, threading.Semaphore] = {}
+pull_semaphores_guard = threading.Lock()
 docker_login_lock = threading.Lock()
 docker_login_attempted = False
 
@@ -314,6 +362,14 @@ docker_login_attempted = False
 def pull_lock(image: str) -> threading.Lock:
     with pull_locks_guard:
         return pull_locks.setdefault(image, threading.Lock())
+
+
+def pull_limit(limit: int) -> contextlib.AbstractContextManager[None]:
+    if limit <= 0:
+        return contextlib.nullcontext()
+    with pull_semaphores_guard:
+        semaphore = pull_semaphores.setdefault(limit, threading.Semaphore(limit))
+    return semaphore
 
 
 def ensure_docker_login(log_path: Path) -> None:
@@ -344,7 +400,7 @@ def ensure_docker_login(log_path: Path) -> None:
                 log.write(f"docker_login_error={type(exc).__name__}\n".encode())
 
 
-def ensure_image(image: str, log_path: Path, retries: int) -> tuple[bool, str]:
+def ensure_image(image: str, log_path: Path, retries: int, max_concurrent_pulls: int) -> tuple[bool, str]:
     ref = docker_image_ref(image)
     inspect = subprocess.run(
         ["docker", "image", "inspect", ref],
@@ -363,14 +419,15 @@ def ensure_image(image: str, log_path: Path, retries: int) -> tuple[bool, str]:
             return True, "present"
         ensure_docker_login(log_path)
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        for attempt in range(1, retries + 1):
-            with log_path.open("ab") as log:
-                log.write(f"docker_pull_attempt={attempt}\n".encode())
-                status = subprocess.run(["docker", "pull", ref], stdout=log, stderr=log).returncode
-            if status == 0:
-                return True, "pulled"
-            if attempt < retries:
-                time.sleep(20 * attempt)
+        with pull_limit(max_concurrent_pulls):
+            for attempt in range(1, retries + 1):
+                with log_path.open("ab") as log:
+                    log.write(f"docker_pull_attempt={attempt}\n".encode())
+                    status = subprocess.run(["docker", "pull", ref], stdout=log, stderr=log).returncode
+                if status == 0:
+                    return True, "pulled"
+                if attempt < retries:
+                    time.sleep(20 * attempt)
         return False, f"pull_failed:{status}"
 
 
@@ -414,6 +471,7 @@ def base_environment(args: argparse.Namespace, workspace: Path, row: ManifestRow
         "PIP_CACHE_DIR": str(cache_root / "pip"),
         "PYDEPS_OVERLAY": str(pydeps_overlay),
         "PYTHONPATH": pythonpath,
+        "DATAGEN_HOST_WORKSPACE": str(workspace),
         "DATAGEN_CODE_COMMIT": datagen_code_commit(),
         "SSL_CERT_FILE": str(ca_bundle),
         "REQUESTS_CA_BUNDLE": str(ca_bundle),
@@ -453,6 +511,14 @@ def docker_run_command(args: argparse.Namespace, row: ManifestRow) -> list[str]:
         "true" if getattr(args, "eligible_for_controlled_comparison", False) else "false"
     )
     reason_excluded_from_comparison = getattr(args, "reason_excluded_from_comparison", "")
+    container_suffix = "-".join(
+        [
+            safe_name(row.rollout_id),
+            safe_name(row.index),
+            str(os.getpid()),
+            str(time.monotonic_ns()),
+        ]
+    )
     command = [
         "docker",
         "run",
@@ -462,7 +528,7 @@ def docker_run_command(args: argparse.Namespace, row: ManifestRow) -> list[str]:
         f"--cpus={args.cpus_per_worker}",
         f"--memory={args.memory_per_worker}",
         "--name",
-        f"{safe_name(args.job_name)}-{safe_name(row.instance_id)}-{int(time.time())}",
+        f"{safe_name(args.job_name)}-{safe_name(row.instance_id)}-{container_suffix}",
         "-v",
         f"{shared_root}:{shared_root}:rw",
         "-v",
@@ -610,7 +676,7 @@ def run_row(args: argparse.Namespace, row: ManifestRow, log_dir: Path) -> dict[s
         return {"instance_id": row.instance_id, "status": 0, "state": "skipped_existing"}
     archive_retryable_result(row.workspace)
     wait_for_docker_space(args, pull_log)
-    ok, pull_state = ensure_image(row.image, pull_log, args.pull_retries)
+    ok, pull_state = ensure_image(row.image, pull_log, args.pull_retries, args.max_concurrent_pulls)
     if not ok:
         write_failure(args, row, 125, stdout_log, stderr_log, pull_state)
         return {"instance_id": row.instance_id, "status": 125, "state": pull_state}
@@ -618,7 +684,13 @@ def run_row(args: argparse.Namespace, row: ManifestRow, log_dir: Path) -> dict[s
     command = docker_run_command(args, row)
     status = 124
     try:
-        status = run_command(command, stdout_log, stderr_log, timeout=args.agent_wall_time_limit + 4200)
+        status = run_command_until_result(
+            command,
+            stdout_log,
+            stderr_log,
+            row.workspace,
+            timeout=args.agent_wall_time_limit + 4200,
+        )
     except subprocess.TimeoutExpired:
         stderr_log.parent.mkdir(parents=True, exist_ok=True)
         with stderr_log.open("ab") as err:
@@ -626,6 +698,8 @@ def run_row(args: argparse.Namespace, row: ManifestRow, log_dir: Path) -> dict[s
     finally:
         if args.remove_image_after_run:
             remove_image(row.image, pull_log)
+    if result_json_saved(row.workspace):
+        return {"instance_id": row.instance_id, "status": 0, "state": "done"}
     if status != 0 and not (row.workspace / "result.json").exists():
         write_failure(args, row, status, stdout_log, stderr_log, f"docker run exited with status {status}")
     return {"instance_id": row.instance_id, "status": status, "state": "done" if status == 0 else "docker_failed"}

@@ -10,6 +10,9 @@ not benchmark runners.
 
 Generated outputs should go under `runs/` unless they are committed source data.
 
+See `docs/swerebench_datagen_harness.md` for the current SWE-rebench datagen
+harness, audit/export, compaction, other-source, and raw source dataset tools.
+
 ## SWE-rebench V2
 
 The default generated SWE-rebench V2 subset is confidence-filtered and limited

@@ -377,6 +377,25 @@ JSON
     docker_pull_image() {{
       local status=0
       local logged_in=0
+      if [[ "$CONTAINER_SOURCE" == "dockerd" && -f "$TASK_DIR/environment/Dockerfile.prepared" ]]; then
+        if [[ "$AUTH_FIRST" -eq 1 && "$DOCKER_LOGIN_FROM_ENROOT" -eq 1 && -n "$DOCKER_USER" ]]; then
+          docker_login_from_enroot || true
+        fi
+        if docker image inspect "$DOCKER_PULL_REF" >/dev/null 2>&1; then
+          echo "docker_image_present=$DOCKER_PULL_REF"
+          return 0
+        fi
+        : >"$WORKSPACE/docker-build.log"
+        echo "docker_build_image=$DOCKER_PULL_REF" | tee -a "$WORKSPACE/docker-build.log"
+        docker build -t "$DOCKER_PULL_REF" -f "$TASK_DIR/environment/Dockerfile.prepared" "$TASK_DIR" >>"$WORKSPACE/docker-build.log" 2>&1
+        status=$?
+        if [[ "$status" -eq 0 ]]; then
+          echo "docker_build=ok"
+          return 0
+        fi
+        echo "docker_build=failed status=$status"
+        return "$status"
+      fi
       if [[ "$AUTH_FIRST" -eq 1 && "$DOCKER_LOGIN_FROM_ENROOT" -eq 1 && -n "$DOCKER_USER" ]]; then
         docker_login_from_enroot || true
         logged_in=1
