@@ -125,7 +125,7 @@ if policy.get("max_pass_per_task") != 4:
 if allowlist.get("counts", {}).get("selected_max_rollouts_per_task", 0) > 4:
     raise SystemExit("allowlist has a task with more than 4 selected passing rollouts")
 rows = int(data_view.get("rows_written") or 0)
-if rows < 10_000:
+if rows < 8_000:
     raise SystemExit(f"final data view has unexpectedly few rows: {rows}")
 print(
     "v75 data manifest ok: "

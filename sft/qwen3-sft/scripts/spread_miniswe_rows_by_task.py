@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import shutil
 from pathlib import Path
@@ -82,6 +83,54 @@ def load_rows(input_root: Path) -> tuple[dict[str, dict[str, Any]], dict[str, An
     }
 
 
+def assistant_sequence_fingerprint(row: dict[str, Any]) -> tuple[str, int, int]:
+    assistant_messages = [
+        message
+        for message in row.get("messages", [])
+        if isinstance(message, dict) and message.get("role") == "assistant"
+    ]
+    payload = json.dumps(assistant_messages, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest(), len(assistant_messages), len(payload)
+
+
+def drop_duplicate_long_assistant_sequences(
+    rows: list[dict[str, Any]],
+    *,
+    min_turns: int,
+    min_chars: int,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    seen: dict[str, str] = {}
+    kept: list[dict[str, Any]] = []
+    dropped: list[dict[str, Any]] = []
+    for row in rows:
+        digest, turns, chars = assistant_sequence_fingerprint(row)
+        uuid = row_uuid(row)
+        if turns < min_turns or chars < min_chars:
+            kept.append(row)
+            continue
+        first_uuid = seen.get(digest)
+        if first_uuid is not None:
+            dropped.append(
+                {
+                    "uuid": uuid,
+                    "task_id": row_task_id(row),
+                    "duplicate_of_uuid": first_uuid,
+                    "assistant_sequence_sha256": digest,
+                    "assistant_turns": turns,
+                    "assistant_sequence_chars": chars,
+                }
+            )
+            continue
+        seen[digest] = uuid
+        kept.append(row)
+    return kept, {
+        "duplicate_long_assistant_sequence_min_turns": min_turns,
+        "duplicate_long_assistant_sequence_min_chars": min_chars,
+        "dropped_duplicate_long_assistant_sequences": len(dropped),
+        "duplicate_long_assistant_sequence_sample": dropped[:25],
+    }
+
+
 def write_shards(rows: list[dict[str, Any]], data_dir: Path, shards: int) -> list[dict[str, Any]]:
     data_dir.mkdir(parents=True, exist_ok=True)
     handles = [
@@ -126,6 +175,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--training-order-jsonl", type=Path, required=True)
     parser.add_argument("--output-root", type=Path, required=True)
     parser.add_argument("--shards", type=int, default=64)
+    parser.add_argument("--drop-duplicate-long-assistant-sequences", action="store_true")
+    parser.add_argument("--duplicate-long-assistant-min-turns", type=int, default=4)
+    parser.add_argument("--duplicate-long-assistant-min-chars", type=int, default=2000)
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
 
@@ -155,6 +207,20 @@ def main() -> int:
 
     extra_rows = [row for uuid, row in sorted(rows_by_uuid.items()) if uuid not in used]
     ordered_rows.extend(extra_rows)
+    assistant_dedupe_stats: dict[str, Any] = {
+        "drop_duplicate_long_assistant_sequences": args.drop_duplicate_long_assistant_sequences,
+        "duplicate_long_assistant_sequence_min_turns": args.duplicate_long_assistant_min_turns,
+        "duplicate_long_assistant_sequence_min_chars": args.duplicate_long_assistant_min_chars,
+        "dropped_duplicate_long_assistant_sequences": 0,
+        "duplicate_long_assistant_sequence_sample": [],
+    }
+    if args.drop_duplicate_long_assistant_sequences:
+        ordered_rows, assistant_dedupe_stats = drop_duplicate_long_assistant_sequences(
+            ordered_rows,
+            min_turns=args.duplicate_long_assistant_min_turns,
+            min_chars=args.duplicate_long_assistant_min_chars,
+        )
+        assistant_dedupe_stats["drop_duplicate_long_assistant_sequences"] = True
     shard_stats = write_shards(ordered_rows, args.output_root / "data", args.shards)
 
     manifest = {
@@ -167,6 +233,7 @@ def main() -> int:
         "extra_rows_appended": len(extra_rows),
         "missing_ordered_uuids": len(missing_ordered_uuids),
         "missing_ordered_uuid_sample": missing_ordered_uuids[:25],
+        "assistant_sequence_deduplication": assistant_dedupe_stats,
         "input_stats": input_stats,
         "shards": shard_stats,
     }

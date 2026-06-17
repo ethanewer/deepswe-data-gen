@@ -53,6 +53,7 @@ echo "Target passing traces: $TARGET_PASS_TRACES"
   --input-root "$RAW_VIEW_ROOT" \
   --training-order-jsonl "$ALLOWLIST_ROOT/selected_pass_records_training_order.jsonl" \
   --output-root "$FINAL_VIEW_ROOT" \
+  --drop-duplicate-long-assistant-sequences \
   --shards "$SHARDS" \
   "${overwrite_args[@]}"
 
