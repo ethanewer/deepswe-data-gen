@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
-"""Filter Mini-SWE-aligned JSONL views that contain manual patch artifacts.
+"""Filter Mini-SWE-aligned JSONL views that contain bad context artifacts.
 
 The online trainer can mask assistant turns that hand-write patch.txt, but the
 bad patch construction remains visible as context. For SWE-bench SFT, those
 whole trajectories are risky enough to remove from mixed passrate views.
+
+Likewise, rows with explicit "No tool calls found" recovery prompts expose the
+model to bad assistant-action context even when the offending assistant turn is
+masked from loss.
 """
 
 from __future__ import annotations
@@ -23,6 +27,12 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from qwen_agentic_sft.online_packed_dataset import assistant_has_manual_patch_target, assistant_tool_command
+
+NO_TOOL_CALL_ERROR_MARKERS = (
+    "No tool calls found in the response",
+    "Every response MUST include at least one tool call",
+)
+TOOL_CALL_ERROR_MARKER = "Tool call error:"
 
 
 def input_data_root(path: Path) -> Path:
@@ -46,12 +56,53 @@ def manual_patch_commands(row: dict[str, Any]) -> list[str]:
     return commands
 
 
+def has_no_tool_call_error(row: dict[str, Any]) -> bool:
+    for message in row.get("messages") or []:
+        if not isinstance(message, dict) or message.get("role") != "user":
+            continue
+        content = str(message.get("content") or "")
+        if all(marker in content for marker in NO_TOOL_CALL_ERROR_MARKERS):
+            return True
+    return False
+
+
+def has_any_tool_call_error(row: dict[str, Any]) -> bool:
+    for message in row.get("messages") or []:
+        if not isinstance(message, dict) or message.get("role") != "user":
+            continue
+        if TOOL_CALL_ERROR_MARKER in str(message.get("content") or ""):
+            return True
+    return False
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input-root", type=Path, required=True)
     parser.add_argument("--output-root", type=Path, required=True)
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--example-limit", type=int, default=20)
+    parser.add_argument(
+        "--drop-manual-patch-context-rows",
+        action="store_true",
+        default=True,
+        help="drop rows where assistant commands hand-assemble patch.txt; enabled by default",
+    )
+    parser.add_argument(
+        "--keep-manual-patch-context-rows",
+        action="store_false",
+        dest="drop_manual_patch_context_rows",
+        help="do not drop rows with assistant manual patch.txt construction",
+    )
+    parser.add_argument(
+        "--drop-no-tool-call-error-rows",
+        action="store_true",
+        help='drop rows containing explicit "No tool calls found" recovery prompts',
+    )
+    parser.add_argument(
+        "--drop-any-tool-call-error-rows",
+        action="store_true",
+        help="drop rows containing any Mini-SWE tool-call parser error prompt",
+    )
     return parser.parse_args()
 
 
@@ -82,12 +133,22 @@ def main() -> int:
                 stats["rows_seen"] += 1
                 file_stats["rows_seen"] += 1
                 row = json.loads(text)
-                commands = manual_patch_commands(row)
+                commands = manual_patch_commands(row) if args.drop_manual_patch_context_rows else []
+                drop_reasons: list[str] = []
                 if commands:
+                    drop_reasons.append("manual_patch_context")
+                if args.drop_no_tool_call_error_rows and has_no_tool_call_error(row):
+                    drop_reasons.append("no_tool_call_error_context")
+                elif args.drop_any_tool_call_error_rows and has_any_tool_call_error(row):
+                    drop_reasons.append("tool_call_error_context")
+                if drop_reasons:
                     passed = row_passed(row)
-                    stats["rows_dropped_manual_patch_context"] += 1
+                    stats["rows_dropped"] += 1
                     stats["dropped_passed" if passed else "dropped_nonpassing"] += 1
-                    file_stats["rows_dropped_manual_patch_context"] += 1
+                    file_stats["rows_dropped"] += 1
+                    for reason in drop_reasons:
+                        stats[f"rows_dropped_{reason}"] += 1
+                        file_stats[f"rows_dropped_{reason}"] += 1
                     if len(examples) < args.example_limit:
                         examples.append(
                             {
@@ -98,6 +159,7 @@ def main() -> int:
                                 "uuid": row.get("uuid")
                                 or (row.get("source_outcome") or {}).get("uuid"),
                                 "passed": passed,
+                                "drop_reasons": drop_reasons,
                                 "manual_patch_commands": commands[:3],
                             }
                         )
@@ -114,7 +176,11 @@ def main() -> int:
         "input_root": str(args.input_root),
         "input_data_root": str(source_root),
         "output_root": str(args.output_root),
-        "filter": "drop whole Mini-SWE-aligned rows with assistant manual patch.txt construction",
+        "filter": {
+            "drop_manual_patch_context_rows": args.drop_manual_patch_context_rows,
+            "drop_no_tool_call_error_rows": args.drop_no_tool_call_error_rows,
+            "drop_any_tool_call_error_rows": args.drop_any_tool_call_error_rows,
+        },
         "stats": dict(sorted(stats.items())),
         "per_file": per_file,
         "examples": examples,

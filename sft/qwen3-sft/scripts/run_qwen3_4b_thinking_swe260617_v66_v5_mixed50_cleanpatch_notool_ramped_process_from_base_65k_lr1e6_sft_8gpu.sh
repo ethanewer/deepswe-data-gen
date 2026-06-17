@@ -2,29 +2,31 @@
 set -euo pipefail
 
 # Base-start ramped-passrate recipe for the 2026-06-17 v5 compaction-aware
-# mixed50 view after dropping whole trajectories that hand-assemble patch.txt.
+# mixed50 view after dropping:
+#   - whole trajectories that hand-assemble patch.txt; and
+#   - whole trajectories containing explicit "No tool calls found" recovery
+#     prompts.
+#
+# Motivation:
+#   v62 learned useful behavior early but later evals showed repeated no-tool
+#   responses.  The online loss policy masks no-tool assistant turns, but those
+#   failed interactions still remain visible as context.  This recipe removes
+#   the matching rows while keeping the broader mixed pass/non-pass dataset.
 #
 # Data view:
-#   swerebench-v5-compaction-mixed50-cleanpatch-ramped-miniswe-aligned
-#
-# Policy:
-#   - start from Qwen/Qwen3-4B-Thinking-2507
-#   - do not use prefix expansion
-#   - include recommended v5 compactions and ranked high-quality non-passing rows
-#   - remove rows containing manual patch-file construction as model-visible context
-#   - train full trajectories and mask non-passing submit targets
+#   swerebench-v5-compaction-mixed50-cleanpatch-notool-ramped-miniswe-aligned
 
 export CONFIG="${CONFIG:-configs/qwen3_4b_thinking_swe260612_highquality_65k_online_packed_sft_8gpu.yaml}"
 export MODEL="${MODEL:-Qwen/Qwen3-4B-Thinking-2507}"
-export TRAIN_RAW_ROOT="${TRAIN_RAW_ROOT:-/wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260617/swerebench-v5-compaction-mixed50-cleanpatch-ramped-miniswe-aligned/data}"
-export CHECKPOINT_DIR="${CHECKPOINT_DIR:-/scratch/ewer/qwen3-sft-local/outputs/qwen3_4b_thinking_swe260617_v64_v5_mixed50_cleanpatch_ramped_process_from_base_65k_lr1e6_s1200_assistant_h200_8gpu_sft}"
-export RUN_NAME="${RUN_NAME:-qwen3_4b_thinking_swe260617_v64_v5_mixed50_cleanpatch_ramped_process_from_base_65k_lr1e6_s1200_assistant_h200_8gpu_sft}"
+export TRAIN_RAW_ROOT="${TRAIN_RAW_ROOT:-/wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260617/swerebench-v5-compaction-mixed50-cleanpatch-notool-ramped-miniswe-aligned/data}"
+export CHECKPOINT_DIR="${CHECKPOINT_DIR:-/scratch/ewer/qwen3-sft-local/outputs/qwen3_4b_thinking_swe260617_v66_v5_mixed50_cleanpatch_notool_ramped_process_from_base_65k_lr1e6_s1000_assistant_h200_8gpu_sft}"
+export RUN_NAME="${RUN_NAME:-qwen3_4b_thinking_swe260617_v66_v5_mixed50_cleanpatch_notool_ramped_process_from_base_65k_lr1e6_s1000_assistant_h200_8gpu_sft}"
 
 export PACK_SIZE="${PACK_SIZE:-65536}"
 export LOCAL_BATCH_SIZE="${LOCAL_BATCH_SIZE:-2}"
 export GRAD_ACCUM_STEPS="${GRAD_ACCUM_STEPS:-1}"
 export GLOBAL_BATCH_SIZE="${GLOBAL_BATCH_SIZE:-16}"
-export MAX_STEPS="${MAX_STEPS:-1200}"
+export MAX_STEPS="${MAX_STEPS:-1000}"
 export CKPT_EVERY_STEPS="${CKPT_EVERY_STEPS:-50}"
 export VAL_EVERY_STEPS="${VAL_EVERY_STEPS:-1000}"
 
@@ -47,7 +49,7 @@ export FSDP2_FORWARD_PREFETCH_DEPTH="${FSDP2_FORWARD_PREFETCH_DEPTH:-1}"
 export OVERLENGTH_STRATEGY="${OVERLENGTH_STRATEGY:-split}"
 export SHUFFLE_FILES="${SHUFFLE_FILES:-false}"
 export SHUFFLE_JSONL_ROWS="${SHUFFLE_JSONL_ROWS:-false}"
-export DATASET_SEED="${DATASET_SEED:-61764}"
+export DATASET_SEED="${DATASET_SEED:-61766}"
 export REQUIRE_ASSISTANT_REASONING_FOR_LOSS="${REQUIRE_ASSISTANT_REASONING_FOR_LOSS:-true}"
 export REQUIRE_ASSISTANT_TOOL_CALLS_FOR_LOSS="${REQUIRE_ASSISTANT_TOOL_CALLS_FOR_LOSS:-true}"
 export DROP_ASSISTANT_CONTENT_FOR_TOOL_CALLS="${DROP_ASSISTANT_CONTENT_FOR_TOOL_CALLS:-true}"
