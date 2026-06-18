@@ -1,0 +1,160 @@
+# v76 Qwen3-4B-Thinking SFT recipe.
+#
+# Goal: test whether the best v54 data view scales better with gentler
+# optimizer dynamics. This recipe intentionally uses the exact processed v54
+# examples and materialized assistant loss masks, then changes only training
+# hyperparameters:
+# - base Qwen/Qwen3-4B-Thinking-2507 start
+# - no prefix expansion
+# - 65k online packing
+# - finite one epoch with dataset padding, not repeat-forever training
+# - global batch size 32 via grad accumulation
+# - lower LR than v54/v75, 10% warmup, cosine decay, AdamW betas 0.9/0.95
+
+recipe: TrainFinetuneRecipeForNextTokenPrediction
+
+step_scheduler:
+  # Global/local batch sizes are counts of packed sequences, not tokens.
+  # With 8 GPUs and grad_accum=2: 32 * 65,536 = 2,097,152 tokens/update.
+  global_batch_size: 32
+  local_batch_size: 2
+  ckpt_every_steps: 50
+  val_every_steps: 1000
+  max_steps: 150
+
+dist_env:
+  backend: nccl
+  timeout_minutes: 60
+
+rng:
+  _target_: nemo_automodel.components.training.rng.StatefulRNG
+  seed: 61676
+  ranked: true
+
+model:
+  _target_: nemo_automodel.NeMoAutoModelForCausalLM.from_pretrained
+  pretrained_model_name_or_path: Qwen/Qwen3-4B-Thinking-2507
+  attn_implementation: flash_attention_3
+  torch_dtype: bf16
+  output_hidden_states: true
+
+compile:
+  enabled: false
+  mode: default
+  fullgraph: false
+  dynamic: true
+  backend: null
+
+fp8:
+  enabled: false
+
+checkpoint:
+  enabled: true
+  checkpoint_dir: checkpoints/qwen3_4b_thinking_swe260616_v76_v54_processed_from_base_65k_lr5e7_gbs32_one_epoch_sft/
+  model_save_format: safetensors
+  save_consolidated: final
+  v4_compatible: true
+
+distributed:
+  strategy: fsdp2
+  dp_size: none
+  tp_size: 1
+  cp_size: 1
+  pp_size: 1
+  ep_size: 1
+  sequence_parallel: false
+  activation_checkpointing: true
+  enable_compile: true
+  enable_fsdp2_prefetch: true
+  fsdp2_backward_prefetch_depth: 3
+  fsdp2_forward_prefetch_depth: 1
+
+clip_grad_norm:
+  enabled: true
+  max_norm: 1.0
+
+loss_fn:
+  _target_: nemo_automodel.components.loss.linear_ce.FusedLinearCrossEntropy
+
+dataset:
+  _target_: qwen_agentic_sft.online_packed_dataset.OnlinePackedChatDataset
+  raw_root: /wbl-fast/usrs/ee/code-swe-data/runtime/hf_datasets/qwen3-4b-thinking-sft-v54-raw2030-strictpassed-processed/data
+  chat_template_path: /wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/eval/chat_templates/qwen3_thinking_acc.jinja2
+  sequence_length: 65536
+  max_rows_per_file: 0
+  max_examples: 0
+  parquet_batch_size: 128
+  overlength_strategy: split
+  min_label_tokens: 1
+  shuffle_files: false
+  seed: 61676
+  repeat: false
+  pad_to_pack_count: 0
+  log_every_packs: 100
+  # The uploaded processed v54 rows already include loss:false on masked
+  # assistant turns and tool-call content has already been reduced to reasoning.
+  require_assistant_reasoning_for_loss: false
+  require_assistant_tool_calls_for_loss: false
+  drop_assistant_content_for_tool_calls: false
+  assistant_loss_target: assistant
+  mask_tool_call_error_recovery: false
+  mask_manual_patch_artifact_turns: false
+  enable_turn_loss_weights: false
+  mask_nonpassing_submit_turns: false
+  mask_empty_patch_submit_turns: false
+
+dataloader:
+  _target_: torchdata.stateful_dataloader.StatefulDataLoader
+  collate_fn:
+    _target_: nemo_automodel.components.datasets.utils.packed_sequence_thd_collater
+  batch_size: 2
+  shuffle: false
+  num_workers: 2
+  multiprocessing_context: fork
+  pin_memory: true
+  persistent_workers: false
+  prefetch_factor: 2
+
+validation_dataset:
+  _target_: qwen_agentic_sft.online_packed_dataset.OnlinePackedChatDataset
+  raw_root: data/smoke_raw
+  chat_template_path: /wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/eval/chat_templates/qwen3_thinking_acc.jinja2
+  sequence_length: 65536
+  max_rows_per_file: 0
+  max_examples: 128
+  parquet_batch_size: 128
+  overlength_strategy: split
+  min_label_tokens: 1
+  shuffle_files: false
+  seed: 61676
+  repeat: false
+  log_every_packs: 0
+  require_assistant_reasoning_for_loss: false
+  require_assistant_tool_calls_for_loss: false
+  drop_assistant_content_for_tool_calls: false
+  assistant_loss_target: assistant
+
+validation_dataloader:
+  _target_: torchdata.stateful_dataloader.StatefulDataLoader
+  collate_fn:
+    _target_: nemo_automodel.components.datasets.utils.packed_sequence_thd_collater
+  batch_size: 1
+  shuffle: false
+  num_workers: 1
+  multiprocessing_context: fork
+  pin_memory: true
+  persistent_workers: false
+  prefetch_factor: 2
+
+optimizer:
+  _target_: torch.optim.AdamW
+  betas: [0.9, 0.95]
+  eps: 1.0e-8
+  lr: 5.0e-7
+  weight_decay: 1.0e-4
+  fused: true
+
+lr_scheduler:
+  lr_decay_style: cosine
+  lr_warmup_steps: 15
+  min_lr: 5.0e-8
