@@ -93,8 +93,6 @@ dataset:
   overlength_strategy: split
   min_label_tokens: 1
   shuffle_files: false
-  shuffle_jsonl_rows: false
-  jsonl_offsets_path: null
   seed: 61654
   repeat: true
   log_every_packs: 100
