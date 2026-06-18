@@ -232,6 +232,93 @@ lower-memory text path for Qwen3-VL text: native RMSNorm and eager MLP with a
 65,536-token MLP chunk cap.  Compiled 131k packs still OOM for the 8B text tower
 on the measured 8 x H200 node.
 
+## Run The 8B VL Text Weights As Qwen3
+
+For 8B SFT, prefer converting the Qwen3-VL text weights into a normal Qwen3
+causal-LM checkpoint before training. This avoids constructing the full
+`Qwen3VLForConditionalGeneration` class and prevents distributed trainers from
+touching unused vision modules.
+
+Build the checkpoint once:
+
+```bash
+cd /wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/sft/qwen3-sft
+./scripts/prepare_qwen3_vl_text_checkpoint.py \
+  --output-dir data/qwen3_vl_8b_text_checkpoint
+./scripts/save_qwen3_vl_text_as_qwen3_checkpoint.py \
+  --input-dir data/qwen3_vl_8b_text_checkpoint \
+  --output-dir data/qwen3_vl_8b_text_as_qwen3_checkpoint
+```
+
+The converter writes a real safetensors checkpoint with `model_type: qwen3`,
+`architectures: ["Qwen3ForCausalLM"]`, and tensor keys renamed from
+`model.language_model.*` to `model.*`. It is not just an index rewrite.
+
+Submit the two-node H200 v75 processed-data recipe:
+
+```bash
+sbatch scripts/slurm_qwen3_8b_vl_text_as_qwen3_v75_hf_processed_2node_h200_sft.sbatch
+```
+
+Useful sweep overrides:
+
+```bash
+sbatch \
+  --export=ALL,LR=1.0e-6,MIN_LR=1.0e-7,MAX_STEPS=100,CKPT_EVERY_STEPS=50,LR_WARMUP_STEPS=25 \
+  scripts/slurm_qwen3_8b_vl_text_as_qwen3_v75_hf_processed_2node_h200_sft.sbatch
+```
+
+## Run The 8B SWIFT Recipe
+
+The MS-SWIFT recipe is a simpler fallback path for debugging full-parameter SFT.
+It follows the Qwen3 SWIFT best-practice shape: full tuning
+(`--train_type full` in the installed SWIFT 3.9.1 container), DeepSpeed ZeRO-3,
+BF16, Liger, FlashAttention, and sequence packing. The recipe passes
+`--do_train true` explicitly and freezes the unused visual tower with
+`--freeze_vit true --freeze_aligner true` because this is text-only SFT from a
+Qwen3-VL text checkpoint.
+
+The processed v75 dataset stores assistant tool calls in `message.tool_calls`
+and shell observations as `role=tool`. SWIFT's standard messages preprocessor
+only preserves `role`, `content`, and `loss` inside each message, and its native
+tool-role conversion is stricter than the mini-swe-agent traces. First
+materialize a SWIFT JSONL view that appends each assistant tool call into
+assistant `content` as `<tool_call>...</tool_call>` and renders tool observations
+as user-side `<tool_response>...</tool_response>` blocks:
+
+```bash
+python3 scripts/materialize_swift_messages_dataset.py \
+  --input-root /wbl-fast/usrs/ee/code-swe-data/runtime/hf_upload/qwen3-4b-thinking-sft-v75-verification-strictpassed-cap4-processed \
+  --output-dir data/qwen3_v75_swift_messages
+```
+
+Submit the two-node H200 LR sweep:
+
+```bash
+sbatch \
+  --export=ALL,LR=1e-5,RUN_NAME=qwen3_vl_8b_v75_swift_lr1e5_s100_2node_h200,OUTPUT_DIR=$PWD/checkpoints/qwen3_vl_8b_v75_swift_lr1e5_s100_2node_h200 \
+  scripts/slurm_qwen3_vl_8b_v75_swift_2node_h200_sft.sbatch
+
+sbatch \
+  --export=ALL,LR=1e-6,RUN_NAME=qwen3_vl_8b_v75_swift_lr1e6_s100_2node_h200,OUTPUT_DIR=$PWD/checkpoints/qwen3_vl_8b_v75_swift_lr1e6_s100_2node_h200 \
+  scripts/slurm_qwen3_vl_8b_v75_swift_2node_h200_sft.sbatch
+```
+
+The wrapper uses the prebuilt SWIFT container
+`modelscope:ubuntu22.04-cuda12.8.1-py311-torch2.8.0-vllm0.11.0-modelscope1.31.0-swift3.9.1`
+through direct Docker on the allocated Slurm nodes. Defaults are 2 nodes x 8 H200 GPUs, `PACKING_LENGTH=65536`,
+`PER_DEVICE_BATCH_SIZE=1`, `GRAD_ACCUM_STEPS=1`, and therefore 16 packed
+sequences or 1,048,576 tokens per optimizer update. The default distributed
+backend is memory-first FSDP:
+
+- `--fsdp "full_shard auto_wrap"`
+- `transformer_layer_cls_to_wrap=["Qwen3VLTextDecoderLayer"]`
+- FSDP activation checkpointing enabled
+- `limit_all_gathers=true`, `forward_prefetch=false`, `backward_prefetch=backward_post`
+
+The earlier ZeRO-3 backend can be requested with `DISTRIBUTED_BACKEND=deepspeed`,
+but it OOMed on the first 65k backward pass in this environment.
+
 ## Throughput Sweep
 
 ```bash
