@@ -1,4 +1,12 @@
 #!/usr/bin/env bash
+# Execution setting: LOCAL-GPU (DeepSWE), teardown step.
+# Purpose: stop the local DeepSWE eval stack (Pier jobs, per-GPU vLLM servers,
+# round-robin proxy) and remove DeepSWE task containers/networks, without
+# touching unrelated GPU 0 work. NOTE: PROCESS_REGEX matches the
+# Qwen/Qwen3.6-27B-FP8 vllm command literally -- override PROCESS_REGEX (or kill
+# replicas via runs/deepswe-local-vllm/*.pid) when serving a different MODEL.
+# Key env vars: TERM_GRACE_SEC.
+# Prerequisites: docker; pgrep.
 set -euo pipefail
 
 # Stop the local DeepSWE eval stack used for Qwen/Qwen3.6-27B-FP8. This avoids

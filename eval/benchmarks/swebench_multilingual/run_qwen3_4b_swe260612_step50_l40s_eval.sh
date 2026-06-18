@@ -1,4 +1,35 @@
 #!/usr/bin/env bash
+# =============================================================================
+# Execution setting: SLURM-GPU (L40S) -- served-checkpoint driver
+#
+# Purpose: serve a ready Hugging Face SFT checkpoint (Qwen3-4B-Thinking,
+# swe260612 miniswe-aligned) with local vLLM (one backend per GPU behind a
+# round-robin proxy) and run the SWE-bench Multilingual (or Verified) predictive
+# subset through the mini-swe-agent harness + official swebench Docker
+# evaluation. This is the inner driver exec'd by the slurm_* wrappers and by the
+# warm_wait wrapper; it can also be run directly inside an interactive SLURM
+# allocation.
+#
+# NeMo note: the retired NeMo DCP-consolidation path was REMOVED. This script
+# now serves CHECKPOINT_STEP_DIR directly as a ready HF checkpoint (ms-swift
+# output, *.safetensors). It no longer puts Automodel/src on PYTHONPATH and no
+# longer runs offline_hf_consolidation.py / export_dcp_torchsave_to_hf.py.
+#
+# Key env vars:
+#   REPO_ROOT            repo root (defaults to SLURM_SUBMIT_DIR or fixed path)
+#   PYTHON               eval venv python (default $REPO_ROOT/.venv/bin/python)
+#   EVAL_GPU_COUNT       vLLM backends / GPUs (default 4)
+#   BASELINE_MODEL       true -> serve the HF base MODEL_NAME instead of a ckpt
+#   CHECKPOINT_DIR       SFT run dir; CHECKPOINT_STEP_DIR=its step subdir
+#   CHECKPOINT_STEP_DIR  servable HF checkpoint dir (contains *.safetensors)
+#   MODEL_NAME           base/served model id (default Qwen/Qwen3-4B-Thinking-2507)
+#   BENCHMARK            multilingual | verified
+#   CONTEXT_LABEL/MAX_TOKENS/TEMPERATURE/GENERATION_STEP_LIMIT/RUN_SUFFIX
+#
+# Prerequisites: GPU allocation; eval venv at $PYTHON; Docker reachable for the
+# official swebench evaluation; a servable HF checkpoint at CHECKPOINT_STEP_DIR
+# (unless BASELINE_MODEL=true).
+# =============================================================================
 set -euo pipefail
 
 DEFAULT_REPO_ROOT="/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen"
@@ -22,7 +53,10 @@ if ! [[ "$EVAL_GPU_COUNT" =~ ^[1-9][0-9]*$ ]]; then
 fi
 
 BASELINE_MODEL="${BASELINE_MODEL:-false}"
-CHECKPOINT_DIR="${CHECKPOINT_DIR:-$REPO_ROOT/sft/qwen3-sft/checkpoints/qwen3_4b_thinking_swe260612_miniswe_aligned_passed_65k_reasoning_toolcall_h200_4gpu_sft}"
+# CHECKPOINT_DIR/CHECKPOINT_STEP_DIR must point at a servable HF checkpoint dir
+# (ms-swift output, containing *.safetensors). It is served as-is; no NeMo DCP
+# consolidation is performed.
+CHECKPOINT_DIR="${CHECKPOINT_DIR:-$REPO_ROOT/sft/qwen3/checkpoints/qwen3_4b_thinking_swe260612_miniswe_aligned_passed_65k_reasoning_toolcall_h200_4gpu_sft}"
 CHECKPOINT_STEP_DIR="${CHECKPOINT_STEP_DIR:-$CHECKPOINT_DIR/epoch_0_step_49}"
 if [ "$BASELINE_MODEL" = "true" ]; then
   CHECKPOINT_LABEL="${CHECKPOINT_LABEL:-base}"
@@ -31,9 +65,6 @@ else
 fi
 CONTEXT_LABEL="${CONTEXT_LABEL:-65k}"
 MODEL_NAME="${MODEL_NAME:-Qwen/Qwen3-4B-Thinking-2507}"
-CONSOLIDATED_DIR="${CONSOLIDATED_DIR:-$CHECKPOINT_STEP_DIR/model/consolidated}"
-CONSOLIDATED_READY="$CONSOLIDATED_DIR/.complete"
-CONSOLIDATED_LOCK="$CHECKPOINT_STEP_DIR/model/.consolidate.lock"
 BENCHMARK="${BENCHMARK:-multilingual}"
 case "$BENCHMARK" in
   multilingual)
@@ -71,48 +102,16 @@ TRIAL_LOCK=""
 TRIAL_LOCK_ROOT=""
 TRIAL_COMPLETE=""
 
-if [ "$BASELINE_MODEL" != "true" ] && [ ! -d "$CHECKPOINT_STEP_DIR/model" ]; then
-  echo "Checkpoint model directory does not exist: $CHECKPOINT_STEP_DIR/model" >&2
+if [ "$BASELINE_MODEL" != "true" ] && ! compgen -G "$CHECKPOINT_STEP_DIR/*.safetensors" >/dev/null; then
+  echo "No servable HF checkpoint (*.safetensors) found in: $CHECKPOINT_STEP_DIR" >&2
   exit 1
 fi
-
-export PYTHONPATH="$REPO_ROOT/sft/qwen3-sft/third_party/Automodel:$REPO_ROOT/sft/qwen3-sft/src${PYTHONPATH:+:$PYTHONPATH}"
 
 if [ "$BASELINE_MODEL" = "true" ]; then
   MODEL_SOURCE="$MODEL_NAME"
 else
-  MODEL_SOURCE="$CONSOLIDATED_DIR"
-fi
-
-if [ "$BASELINE_MODEL" != "true" ] && { ! compgen -G "$CONSOLIDATED_DIR/*.safetensors" >/dev/null || [ ! -f "$CONSOLIDATED_READY" ]; }; then
-  echo "Consolidating $CHECKPOINT_STEP_DIR/model -> $CONSOLIDATED_DIR"
-  (
-    flock -x 9
-    if ! compgen -G "$CONSOLIDATED_DIR/*.safetensors" >/dev/null || [ ! -f "$CONSOLIDATED_READY" ]; then
-      TMP_CONSOLIDATED_DIR="${CONSOLIDATED_DIR}.tmp.${SLURM_JOB_ID:-manual}.$$"
-      rm -rf "$TMP_CONSOLIDATED_DIR"
-      mkdir -p "$TMP_CONSOLIDATED_DIR"
-      if [ -d "$CHECKPOINT_STEP_DIR/model/.hf_metadata" ]; then
-        "$REPO_ROOT/sft/qwen3-sft/.venv/bin/python" \
-          "$REPO_ROOT/sft/qwen3-sft/third_party/Automodel/tools/offline_hf_consolidation.py" \
-          --backend gloo \
-          --model-name "$MODEL_NAME" \
-          --input-dir "$CHECKPOINT_STEP_DIR/model" \
-          --output-dir "$TMP_CONSOLIDATED_DIR" \
-          --cast-dtype bf16
-      else
-        "$REPO_ROOT/sft/qwen3-sft/.venv/bin/python" \
-          "$REPO_ROOT/eval/benchmarks/swebench_multilingual/export_dcp_torchsave_to_hf.py" \
-          --model-name "$MODEL_NAME" \
-          --input-dir "$CHECKPOINT_STEP_DIR/model" \
-          --output-dir "$TMP_CONSOLIDATED_DIR" \
-          --dtype bf16
-      fi
-      rm -rf "$CONSOLIDATED_DIR"
-      mv "$TMP_CONSOLIDATED_DIR" "$CONSOLIDATED_DIR"
-      touch "$CONSOLIDATED_READY"
-    fi
-  ) 9>"$CONSOLIDATED_LOCK"
+  # Serve the ready HF checkpoint directory directly (ms-swift output).
+  MODEL_SOURCE="$CHECKPOINT_STEP_DIR"
 fi
 
 BASE_PORT=$((20000 + (${SLURM_JOB_ID:-0} % 20000)))

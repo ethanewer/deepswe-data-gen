@@ -1,4 +1,14 @@
 #!/usr/bin/env bash
+# Execution setting: SLURM-GPU (default H200) -- multi-trial driver loop.
+# Purpose: run N trials of the served-checkpoint driver
+# (run_qwen3_4b_swe260612_step50_l40s_eval.sh) over the SWE-bench Multilingual
+# easy-10 debugging subset, one driver invocation per trial (distinct
+# RUN_SUFFIX), for fast SFT iteration. The easy-10 subset is intentionally
+# separate from the reportable predictive-30 benchmark.
+# Key env vars: TRIALS, TRIAL_START / TRIAL_INDICES, CHECKPOINT_DIR /
+# CHECKPOINT_STEP_DIR (servable HF checkpoint), CHECKPOINT_LABEL, EVAL_GPU_COUNT,
+# CONTEXT_LABEL, MAX_TOKENS, INSTANCE_IDS_PATH (default the easy-10 list).
+# Prerequisites: see the driver header (servable HF checkpoint, eval venv, Docker).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -22,7 +32,7 @@ export SUBSET_LABEL="${SUBSET_LABEL:-swebench-multilingual-easy}"
 export BENCHMARK="${BENCHMARK:-multilingual}"
 export BENCHMARK_LABEL="${BENCHMARK_LABEL:-swebench-ml-${SUBSET_LABEL}}"
 export DEVICE_LABEL="${DEVICE_LABEL:-h200}"
-export CHECKPOINT_DIR="${CHECKPOINT_DIR:-/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/sft/qwen3-sft/checkpoints/qwen3_4b_thinking_swe260617_v73_mixed50_weighted_one_epoch_65k_sft}"
+export CHECKPOINT_DIR="${CHECKPOINT_DIR:-/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/sft/qwen3/checkpoints/qwen3_4b_thinking_swe260617_v73_mixed50_weighted_one_epoch_65k_sft}"
 export CHECKPOINT_STEP_DIR="${CHECKPOINT_STEP_DIR:-$CHECKPOINT_DIR/epoch_0_step_49}"
 export CHECKPOINT_LABEL="${CHECKPOINT_LABEL:-v73-mixed50-weighted-oneepoch-s49}"
 export CONTEXT_LABEL="${CONTEXT_LABEL:-65k}"

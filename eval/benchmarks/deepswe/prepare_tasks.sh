@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+# Execution setting: LOCAL-GPU (DeepSWE), setup step (no GPU).
+# Purpose: sparse-checkout the DeepSWE task definitions and verify the five
+# easiest-5 tasks exist. run_eval_local.sh expects TASKS_DIR to point at the
+# tasks directory created here ($DEST/tasks).
+# Key env vars: DEST (default /tmp/deep-swe), REMOTE, REF.
+# Prerequisites: git.
 set -euo pipefail
 
 # Fetch DeepSWE task definitions locally. The eval launch script expects

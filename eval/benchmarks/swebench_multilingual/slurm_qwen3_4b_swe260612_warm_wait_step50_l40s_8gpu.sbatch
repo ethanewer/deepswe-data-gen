@@ -10,6 +10,29 @@
 #SBATCH --output=logs/slurm-eval-qwen3-4b-swe260612-warm-step50-l40s-8g-%j.out
 #SBATCH --error=logs/slurm-eval-qwen3-4b-swe260612-warm-step50-l40s-8g-%j.err
 
+# =============================================================================
+# Execution setting: SLURM-GPU (L40S, 8 GPUs) -- warm-wait wrapper
+#
+# Purpose: grab an L40S allocation early (before training finishes), run a base-
+# model vLLM smoke test to warm caches, then POLL until the training checkpoint
+# at CHECKPOINT_STEP_DIR is written and settled, and finally exec the step50
+# driver (run_qwen3_4b_swe260612_step50_l40s_eval.sh) on the warmed allocation.
+# Use this to minimize GPU idle time when an eval should start the moment a
+# training checkpoint lands.
+#
+# NeMo note: the retired NeMo DCP-consolidation path was removed. This wrapper
+# no longer puts Automodel/src on PYTHONPATH and waits for a ready HF checkpoint
+# (a *.safetensors file) rather than NeMo DCP metadata. The step50 driver serves
+# CHECKPOINT_STEP_DIR directly.
+#
+# Key env vars: CHECKPOINT_DIR/CHECKPOINT_STEP_DIR (servable HF checkpoint dir),
+# BASE_MODEL_NAME, EVAL_GPU_COUNT, POLL_SECONDS, STABILIZE_SECONDS,
+# TRAINING_LOG / TRAIN_LOG_GLOB (training log to report latest step while
+# waiting), SMOKE_* (warm-up smoke serve knobs).
+#
+# Prerequisites: SLURM L40S partition; eval venv at $PYTHON; Docker reachable
+# for the official swebench evaluation run by the driver.
+# =============================================================================
 set -euo pipefail
 
 DEFAULT_REPO_ROOT="/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen"
@@ -30,7 +53,9 @@ if [ ! -x "$PYTHON" ]; then
   exit 1
 fi
 
-CHECKPOINT_DIR="${CHECKPOINT_DIR:-$REPO_ROOT/sft/qwen3-sft/checkpoints/qwen3_4b_thinking_swe260612_miniswe_aligned_passed_65k_reasoning_toolcall_h200_4gpu_sft}"
+# CHECKPOINT_STEP_DIR must be a servable HF checkpoint dir (ms-swift output,
+# containing *.safetensors). It is served as-is by the step50 driver.
+CHECKPOINT_DIR="${CHECKPOINT_DIR:-$REPO_ROOT/sft/qwen3/checkpoints/qwen3_4b_thinking_swe260612_miniswe_aligned_passed_65k_reasoning_toolcall_h200_4gpu_sft}"
 CHECKPOINT_STEP_DIR="${CHECKPOINT_STEP_DIR:-$CHECKPOINT_DIR/epoch_0_step_49}"
 CHECKPOINT_LABEL="${CHECKPOINT_LABEL:-step50}"
 BASE_MODEL_NAME="${BASE_MODEL_NAME:-Qwen/Qwen3-4B-Thinking-2507}"
@@ -41,8 +66,6 @@ SMOKE_MAX_MODEL_LEN="${SMOKE_MAX_MODEL_LEN:-65536}"
 SMOKE_GPU_MEMORY_UTILIZATION="${SMOKE_GPU_MEMORY_UTILIZATION:-0.9}"
 SMOKE_REQUIRE_TOOL_CALL="${SMOKE_REQUIRE_TOOL_CALL:-false}"
 TRAIN_LOG_GLOB="${TRAIN_LOG_GLOB:-$REPO_ROOT/logs/slurm-qwen3-4b-swe260612-h200-4g-*.err}"
-
-export PYTHONPATH="$REPO_ROOT/sft/qwen3-sft/third_party/Automodel:$REPO_ROOT/sft/qwen3-sft/src${PYTHONPATH:+:$PYTHONPATH}"
 
 echo "job_id=${SLURM_JOB_ID:-manual}"
 echo "node=${SLURMD_NODENAME:-$(hostname)}"
@@ -196,11 +219,11 @@ trap - EXIT
 nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv,noheader,nounits
 
 checkpoint_ready() {
-  [ -f "$CHECKPOINT_STEP_DIR/model/.metadata" ] && return 0
-  [ -d "$CHECKPOINT_STEP_DIR/model/.hf_metadata" ] && compgen -G "$CHECKPOINT_STEP_DIR/model/*.safetensors" >/dev/null
+  # Ready when ms-swift has written the HF checkpoint weights.
+  compgen -G "$CHECKPOINT_STEP_DIR/*.safetensors" >/dev/null
 }
 
-echo "Waiting for checkpoint model files in: $CHECKPOINT_STEP_DIR/model"
+echo "Waiting for checkpoint model files in: $CHECKPOINT_STEP_DIR"
 while ! checkpoint_ready; do
   latest_step=""
   if [ -n "${TRAINING_LOG:-}" ] && [ -f "$TRAINING_LOG" ]; then

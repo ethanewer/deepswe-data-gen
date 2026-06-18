@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
+# Execution setting: LOCAL-GPU (DeepSWE).
+# Purpose: start one vLLM OpenAI-compatible server per GPU (default GPUs 1-7,
+# leaving GPU 0 free) at BASE_PORT+gpu, so serve_round_robin_proxy.sh can fan
+# requests across them. Runs in the foreground unless wrapped by tmux/screen/
+# nohup or with RUN_IN_BACKGROUND=1.
+# Key env vars: MODEL (served model; default Qwen/Qwen3.6-27B-FP8 -- override
+# for any model), SERVED_MODEL_NAME, GPUS_CSV (default 1,2,3,4,5,6,7),
+# BASE_PORT (default 8100), MAX_MODEL_LEN, GPU_MEMORY_UTILIZATION, VENV_BIN,
+# RUN_IN_BACKGROUND.
+# Prerequisites: GPUs available; .venv-swe-uv with vllm installed.
 set -euo pipefail
-
-# Start one vLLM OpenAI-compatible server per GPU, leaving GPU 0 free.
-# The commands intentionally run in the foreground unless wrapped by a process
-# manager such as tmux, screen, nohup, or this script with RUN_IN_BACKGROUND=1.
 
 MODEL="${MODEL:-Qwen/Qwen3.6-27B-FP8}"
 SERVED_MODEL_NAME="${SERVED_MODEL_NAME:-$MODEL}"

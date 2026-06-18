@@ -1,8 +1,16 @@
 #!/usr/bin/env bash
+# Execution setting: LOCAL-GPU (DeepSWE).
+# Purpose: launch the DeepSWE easiest-5 eval (5 fixed tasks, n attempts each)
+# through Pier/mini-swe-agent against the local round-robin proxy. Writes the
+# active job name to /tmp/deepswe_active_job_name.txt for monitor_job.sh.
+# Key env vars: TASKS_DIR (from prepare_tasks.sh), JOBS_DIR, MODEL (litellm id,
+# e.g. openai/<served-model>), JOB_PREFIX, N_ATTEMPTS, N_CONCURRENT,
+# OPENAI_BASE_URL_VALUE (default http://172.17.0.1.nip.io:8000/v1 -- the proxy
+# as seen from inside Pier task containers), OPENAI_API_KEY_VALUE, PIER_BIN.
+# Prerequisites: prepare_tasks.sh run; serve_vllm_replicas.sh +
+# serve_round_robin_proxy.sh up; patch_pier_proxy_safe_ports.sh applied; pier
+# and Docker available.
 set -euo pipefail
-
-# Launch the DeepSWE easiest-5 eval through Pier/mini-swe-agent against the
-# local round-robin OpenAI-compatible proxy.
 
 TASKS_DIR="${TASKS_DIR:-/tmp/deep-swe/tasks}"
 JOBS_DIR="${JOBS_DIR:-runs/pier-jobs}"

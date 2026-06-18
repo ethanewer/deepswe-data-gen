@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+# Execution setting: LOCAL-GPU (DeepSWE), setup step (no GPU).
+# Purpose: add port 8000 to Pier's Squid Safe_ports so task containers can reach
+# the local round-robin proxy on host port 8000. Idempotent.
+# Key env vars: PYTHON_BIN (used to locate the installed Pier), TARGET (override
+# path to pier/environments/agent_setup.py if Pier is installed elsewhere).
+# Prerequisites: Pier installed (so agent_setup.py can be found/patched).
 set -euo pipefail
 
 # Pier's task egress proxy only allowed HTTP ports 80 and 443 in the installed

@@ -1,6 +1,6 @@
 # Qwen3-VL-2B Text SFT SWE-bench Tracking
 
-Run root: `/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/sft/qwen3-sft/checkpoints/qwen3_vl_2b_text_h200_4gpu_40k_hq3x_reasoning90_lr5e6_s400_418791`
+Run root: `/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/sft/qwen3/checkpoints/qwen3_vl_2b_text_h200_4gpu_40k_hq3x_reasoning90_lr5e6_s400_418791`
 
 Training setup:
 - Base model: `Qwen/Qwen3-VL-2B-Thinking`

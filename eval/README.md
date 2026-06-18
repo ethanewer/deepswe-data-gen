@@ -6,13 +6,70 @@ This module contains benchmark code in this repo.
 
 - `eval/model/`: shared OpenAI-compatible model configuration and local serving helpers.
 - `eval/run_all.py`: config-driven runner for all benchmarks.
+- `eval/serving/configs/`: recorded local vLLM serving configs (see that dir's README).
 - `eval/benchmarks/deepswe/`: DeepSWE easiest-5 subset benchmark through Pier/mini-swe-agent.
 - `eval/benchmarks/swebench_multilingual/`: 30-task predictive SWE-bench Multilingual subset.
+- `eval/benchmarks/swebench_verified/`: 20-task predictive SWE-bench Verified subset.
 - `eval/benchmarks/livecodebench_v6/`: LiveCodeBench v6 50-task predictive subset and 175-task full slice.
+- `eval/terminal_bench/`: vendored Terminus-2 agent library (see Harnesses below).
 
 Run outputs go under `runs/` and are gitignored. API keys are read from
 environment variables. The OpenHands adapter writes a temporary LLM config under
 the run output directory unless you pass `--openhands-llm-config`.
+
+## Serving vs Runners
+
+There are two distinct layers, and they are kept separate on purpose:
+
+- **Serving plumbing (`eval/model/`)**: brings up an OpenAI-compatible endpoint.
+  `eval.model.serving` starts one vLLM process per GPU; `eval.model.round_robin_proxy`
+  fans requests across replicas; `eval.model.serve_from_config` does both from a
+  recorded JSON config in `eval/serving/configs/`. This layer only *serves a
+  model*; it knows nothing about benchmarks.
+- **Per-benchmark runners**: each `eval/benchmarks/<name>/run.py` is the
+  OpenAI-compatible runner that drives an agent harness and scores results. It
+  talks to *any* OpenAI-compatible `--api-base` — a hosted API (DeepSeek /
+  OpenRouter) or a locally served endpoint from the serving layer. The shell /
+  sbatch scripts next to each `run.py` are convenience wrappers that wire a
+  specific execution setting (local GPUs, SLURM GPUs, or OpenRouter) to that
+  `run.py`. The serving config / replica setup and the runner are composed, not
+  coupled.
+
+## Benchmarks x execution settings
+
+Which wrapper scripts exist per benchmark, by where the model runs. Every
+benchmark's `run.py` additionally works directly against any hosted API. "serve
+config" is the recorded `eval/serving/configs/` config most associated with the
+benchmark (the local/SLURM serving setups; OpenRouter needs none).
+
+| Benchmark | LOCAL-GPU | SLURM-GPU | OPENROUTER-API | serve config |
+| --- | --- | --- | --- | --- |
+| deepswe | `serve_vllm_replicas.sh` + `serve_round_robin_proxy.sh` + `run_eval_local.sh` (Pier) | — | via `run.py --api-base` | per-GPU vLLM replicas (no JSON config) |
+| swebench_multilingual | via `run.py --api-base` (e.g. against a `serve_from_config` endpoint) | `slurm_qwen3_4b_swe260612_step50_l40s_{8,4}gpu.sbatch`, `..._warm_wait_...8gpu.sbatch`, `slurm_qwen3vl2b_text_8gpu.sbatch`, `slurm_qwen3vl2b_text_h200_1gpu.sbatch` | `run_qwen3.5-9b_openrouter_easy10_eval.sh` | `qwen3_vl_2b_text_*`, `qwen3_5_9b_8gpu_131k_tools.json` |
+| swebench_verified | via `run.py --api-base` | — | via `run.py --api-base` | (reuses SWE-bench ML serve configs) |
+| livecodebench_v6 | via `run.py --api-base` (against a `serve_from_config` endpoint) | — | via `run.py --api-base` | `qwen3_4b_thinking_2507_8gpu_65k.json`, `qwen3_5_4b_8gpu_262k_mtp_tools.json` |
+
+Per-benchmark setup details: `eval/benchmarks/deepswe/README.md`,
+`eval/benchmarks/swebench_multilingual/README.md`,
+`eval/benchmarks/livecodebench_v6/README.md`.
+
+## Results
+
+Committed result write-ups live in `eval/results/` (indexed by
+`eval/results/README.md`). Full artifacts (traces, predictions, official report
+JSONs, logs) live under `runs/`, which is **gitignored**. The committed
+`predictive_*` files and `defaults.json` in each benchmark directory are
+subset-definition **inputs** written by `build_predictive_subset.py`, not
+results.
+
+## Harnesses
+
+`mini-swe-agent` is the default generation harness for the SWE-bench benchmarks
+(it writes `preds.json` and runs the official `swebench.harness.run_evaluation`).
+The SWE-bench Multilingual runner also supports `openhands-swe`, `opencode`, and
+`terminus-2`. The `terminus-2` harness uses the vendored agent library in
+`eval/terminal_bench/` (a Terminus-2 agent implementation, not a standalone /
+orphan benchmark — it has no `run.py`); see `eval/terminal_bench/README.md`.
 
 ## Model Config
 
@@ -268,6 +325,20 @@ LiveCodeBench v6 predictive 50:
   --api-base https://api.deepseek.com \
   --api-key-env DEEPSEEK_API_KEY
 ```
+
+SWE-bench Verified predictive 20:
+
+```bash
+.venv-swe-uv/bin/python -m eval.benchmarks.swebench_verified.run \
+  --model deepseek-v4-flash \
+  --litellm-model openai/deepseek-v4-flash \
+  --api-base https://api.deepseek.com \
+  --api-key-env DEEPSEEK_API_KEY
+```
+
+This is the 20-task predictive subset (`predictive_20_instance_ids.txt`, built
+by `build_predictive_subset.py`). Like SWE-bench Multilingual, it defaults to the
+`mini-swe-agent` harness and the official `swebench.harness.run_evaluation`.
 
 LiveCodeBench v6 full 175-task slice:
 

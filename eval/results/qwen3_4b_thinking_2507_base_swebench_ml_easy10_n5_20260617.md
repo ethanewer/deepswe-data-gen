@@ -48,7 +48,7 @@ Legend: ✅ resolved · ❌ unresolved (patch failed tests) · ⬜ empty patch �
 ## Notes
 
 - Only `tokio-rs__tokio-4898` solved in any trial, resolving in 3/5 trials.
-- This easy-10 n=5 baseline was not present in `origin/main` before this commit; `origin/main` already had the older 30-task `Qwen/Qwen3-4B-Thinking-2507` baseline in `eval/benchmark_results.md`.
+- This easy-10 n=5 baseline was not present in `origin/main` before this commit; `origin/main` already had the older 30-task `Qwen/Qwen3-4B-Thinking-2507` baseline in `eval/results/2026-06-06_local-8gpu_livecodebench-swebench-ml.md`.
 
 ## Report files
 

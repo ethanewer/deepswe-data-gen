@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# Execution setting: LOCAL-GPU (DeepSWE), host-side monitor.
+# Purpose: poll the running Pier job's result.json and print trial
+# completed/errored/running/pending counts until finished_at is set.
+# Key env vars: JOBS_DIR (default runs/pier-jobs), JOB_NAME (default read from
+# /tmp/deepswe_active_job_name.txt written by run_eval_local.sh), INTERVAL_SEC,
+# PYTHON_BIN.
+# Prerequisites: a Pier job started by run_eval_local.sh (its result.json must exist).
 set -euo pipefail
 
 JOBS_DIR="${JOBS_DIR:-runs/pier-jobs}"

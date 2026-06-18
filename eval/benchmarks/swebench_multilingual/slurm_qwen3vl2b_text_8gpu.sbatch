@@ -1,15 +1,30 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=swe-q3vl2b-h200
-#SBATCH --partition=h200
-#SBATCH --gres=gpu:h200:1
+#SBATCH --job-name=swe-qwen3vl2b
+#SBATCH --partition=l40s-8gpu
+#SBATCH --gres=gpu:l40s:8
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=32
-#SBATCH --mem=250G
+#SBATCH --cpus-per-task=96
+#SBATCH --mem=1200G
 #SBATCH --time=08:00:00
-#SBATCH --output=logs/slurm-swebench-ml-h200-1g-%j.out
-#SBATCH --error=logs/slurm-swebench-ml-h200-1g-%j.err
+#SBATCH --output=logs/slurm-swebench-ml-%j.out
+#SBATCH --error=logs/slurm-swebench-ml-%j.err
 
+# =============================================================================
+# Execution setting: SLURM-GPU (L40S, 8 GPUs). (Despite the historical
+# "run_local_served" name, this is a SLURM batch job, hence the slurm_ prefix.)
+#
+# Purpose: serve a Qwen3-VL-2B text checkpoint from a serving config with local
+# vLLM (round-robin proxy on :8000), then run the SWE-bench Multilingual
+# predictive-30 subset via mini-swe-agent + official swebench Docker evaluation,
+# and write timing.json.
+#
+# Key env vars: MODEL_CONFIG (eval/serving/configs/qwen3_vl_2b_text_*.json;
+# default the 8gpu 40k start config), MODEL_NAME, CHECKPOINT_LABEL,
+# CONTEXT_LABEL, MAX_TOKENS, GENERATION_WORKERS, EVAL_WORKERS, API_BASE,
+# OUTPUT_DIR/SERVE_DIR/RUN_NAME.
+# Prerequisites: SLURM L40S partition; eval venv at $PYTHON; Docker reachable.
+# =============================================================================
 set -euo pipefail
 
 REPO_ROOT="${REPO_ROOT:-/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen}"
@@ -17,18 +32,19 @@ SCRIPT_DIR="$REPO_ROOT/eval/benchmarks/swebench_multilingual"
 cd "$REPO_ROOT"
 
 PYTHON="${PYTHON:-$REPO_ROOT/.venv/bin/python}"
-MODEL_CONFIG="${MODEL_CONFIG:-eval/serving/configs/qwen3_vl_2b_text_start_h200_1gpu_40k.json}"
+MODEL_CONFIG="${MODEL_CONFIG:-eval/serving/configs/qwen3_vl_2b_text_start_8gpu_40k.json}"
 CHECKPOINT_LABEL="${CHECKPOINT_LABEL:-start}"
 CONTEXT_LABEL="${CONTEXT_LABEL:-40k}"
 RUN_SUFFIX="${RUN_SUFFIX:-$(date -u +%Y%m%dT%H%M%SZ)}"
-RUN_NAME="${RUN_NAME:-qwen3-vl-2b-text-${CHECKPOINT_LABEL}-${CONTEXT_LABEL}-h200-1gpu-swebench-ml-p30-${RUN_SUFFIX}}"
+RUN_NAME="${RUN_NAME:-qwen3-vl-2b-text-${CHECKPOINT_LABEL}-${CONTEXT_LABEL}-swebench-ml-p30-${RUN_SUFFIX}}"
 OUTPUT_DIR="${OUTPUT_DIR:-runs/swebench_ml/${RUN_NAME}}"
 SERVE_DIR="${SERVE_DIR:-runs/serving/${RUN_NAME}}"
 MODEL_NAME="${MODEL_NAME:-Qwen/Qwen3-VL-2B-Thinking}"
 LITELLM_MODEL="${LITELLM_MODEL:-openai/${MODEL_NAME}}"
+API_BASE="${API_BASE:-http://127.0.0.1:8000/v1}"
 TEMPERATURE="${TEMPERATURE:-0.6}"
 MAX_TOKENS="${MAX_TOKENS:-16384}"
-GENERATION_WORKERS="${GENERATION_WORKERS:-1}"
+GENERATION_WORKERS="${GENERATION_WORKERS:-8}"
 EVAL_WORKERS="${EVAL_WORKERS:-4}"
 SERVE_HEALTH_TIMEOUT="${SERVE_HEALTH_TIMEOUT:-2400}"
 EXTRA_BODY_JSON="${EXTRA_BODY_JSON:-{\"top_p\":0.95,\"top_k\":20,\"min_p\":0,\"presence_penalty\":0}}"
@@ -36,17 +52,6 @@ EXTRA_BODY_JSON="${EXTRA_BODY_JSON:-{\"top_p\":0.95,\"top_k\":20,\"min_p\":0,\"p
 export PATH="$REPO_ROOT/.venv/bin:$PATH"
 export PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}"
 export OPENAI_API_KEY="${OPENAI_API_KEY:-dummy}"
-
-PROXY_PORT="$("$PYTHON" - "$MODEL_CONFIG" <<'PY'
-import json
-import sys
-
-with open(sys.argv[1]) as f:
-    cfg = json.load(f)
-print(cfg["serve"].get("proxy_port", 8000))
-PY
-)"
-API_BASE="${API_BASE:-http://127.0.0.1:${PROXY_PORT}/v1}"
 
 mkdir -p "$OUTPUT_DIR" "$SERVE_DIR" logs
 
@@ -62,6 +67,7 @@ import time
 
 manifest = json.loads(open(sys.argv[1]).read())
 processes = manifest.get("processes", [])
+
 for entry in processes:
     pid = entry.get("pid")
     if not pid:
@@ -70,6 +76,7 @@ for entry in processes:
         os.killpg(pid, signal.SIGTERM)
     except ProcessLookupError:
         pass
+
 deadline = time.time() + 30
 while time.time() < deadline:
     alive = []
@@ -85,6 +92,7 @@ while time.time() < deadline:
     if not alive:
         break
     time.sleep(1)
+
 for entry in processes:
     pid = entry.get("pid")
     if not pid:
@@ -107,17 +115,15 @@ start_seconds="$(date +%s)"
   --background \
   --health-timeout "$SERVE_HEALTH_TIMEOUT"
 
-"$PYTHON" - "$PROXY_PORT" <<'PY'
-import sys
+"$PYTHON" - <<'PY'
 import time
 import urllib.request
 
-port = sys.argv[1]
 deadline = time.time() + 120
 last_error = ""
 while time.time() < deadline:
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=5) as response:
+        with urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=5) as response:
             if response.status == 200:
                 raise SystemExit(0)
     except Exception as exc:
@@ -151,6 +157,7 @@ end_seconds="$(date +%s)"
 import json
 import pathlib
 
+path = pathlib.Path("$OUTPUT_DIR/timing.json")
 payload = {
     "run_name": "$RUN_NAME",
     "checkpoint_label": "$CHECKPOINT_LABEL",
@@ -167,7 +174,6 @@ payload = {
     "max_tokens": int("$MAX_TOKENS"),
     "temperature": float("$TEMPERATURE"),
 }
-path = pathlib.Path("$OUTPUT_DIR/timing.json")
 path.write_text(json.dumps(payload, indent=2) + "\n")
 print(json.dumps(payload, indent=2), flush=True)
 PY

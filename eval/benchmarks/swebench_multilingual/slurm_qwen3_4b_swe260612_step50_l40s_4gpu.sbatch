@@ -10,6 +10,15 @@
 #SBATCH --output=logs/slurm-eval-qwen3-4b-swe260612-step50-l40s-4g-%j.out
 #SBATCH --error=logs/slurm-eval-qwen3-4b-swe260612-step50-l40s-4g-%j.err
 
+# =============================================================================
+# Execution setting: SLURM-GPU (L40S, 4 GPUs) -- thin wrapper.
+# Purpose: request a 4-GPU L40S allocation and exec the served-checkpoint driver
+# run_qwen3_4b_swe260612_step50_l40s_eval.sh with EVAL_GPU_COUNT=4. The
+# matching 8-GPU wrapper is slurm_qwen3_4b_swe260612_step50_l40s_8gpu.sbatch.
+# Key env vars: EVAL_GPU_COUNT (default 4) plus everything the driver accepts
+# (CHECKPOINT_STEP_DIR, CHECKPOINT_LABEL, BENCHMARK, ...).
+# Prerequisites: see the driver header (servable HF checkpoint, eval venv, Docker).
+# =============================================================================
 set -euo pipefail
 
 DEFAULT_REPO_ROOT="/wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen"
