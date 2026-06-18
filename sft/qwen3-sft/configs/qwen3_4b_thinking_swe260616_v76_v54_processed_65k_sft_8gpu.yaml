@@ -52,8 +52,9 @@ checkpoint:
   enabled: true
   checkpoint_dir: checkpoints/qwen3_4b_thinking_swe260616_v76_v54_processed_from_base_65k_lr5e7_gbs32_one_epoch_sft/
   model_save_format: safetensors
-  save_consolidated: final
+  save_consolidated: false
   v4_compatible: true
+  dcp_process_group_backend: gloo
 
 distributed:
   strategy: fsdp2
