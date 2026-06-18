@@ -38,7 +38,23 @@ DEFAULT_CHAT_TEMPLATE = Path(
 )
 THINK_OPEN = "<think>\n"
 THINK_CLOSE = "\n</think>"
+REASONING_TAGS = (("<think>", "</think>"), ("<thought>", "</thought>"))
 ASSISTANT_LOSS_TARGETS = ("assistant", "tool_calls")
+MINI_SWE_SUBMIT_COMMAND = "echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && cat patch.txt"
+PATCH_TXT_PATH_PATTERN = r"(?<![\w.-])(?:\./|/testbed/)?patch\.txt(?![\w.-])"
+PATCH_LIKE_PATH_PATTERN = (
+    r"(?<![\w./-])(?:/tmp/|/testbed/|\./)?[\w./-]+\.(?:txt|patch|diff)(?![\w./-])"
+)
+PATCH_TXT_WRITE_PATTERN = (
+    rf"(>\s*{PATCH_TXT_PATH_PATTERN}"
+    rf"|\|\s*tee\s+(-a\s+)?{PATCH_TXT_PATH_PATTERN}"
+    rf"|\btee\s+(-a\s+)?{PATCH_TXT_PATH_PATTERN})"
+)
+PATCH_TXT_SHELL_CREATE_PATTERN = (
+    rf"(^|[;&|\n]\s*)(touch|truncate)\b[^;&|\n]*{PATCH_TXT_PATH_PATTERN}"
+    rf"|(^|[;&|\n]\s*)(:|true)\s*>\s*{PATCH_TXT_PATH_PATTERN}"
+    rf"|(^|[;&|\n]\s*)cp\s+/dev/null\s+{PATCH_TXT_PATH_PATTERN}"
+)
 
 
 READ_COMMAND_RE = re.compile(
@@ -119,19 +135,46 @@ def assistant_reasoning_from_content(message: dict[str, Any]) -> str:
         if value not in (None, "", [], {}):
             return text_from_content(value).strip()
     content = text_from_content(message.get("content"))
-    start = content.find("<think>")
-    end = content.find("</think>", start + len("<think>"))
-    if start == -1 or end == -1:
-        return ""
-    return content[start + len("<think>") : end].strip()
+    for open_tag, close_tag in REASONING_TAGS:
+        start = content.find(open_tag)
+        end = content.find(close_tag, start + len(open_tag))
+        if start != -1 and end != -1:
+            reasoning = content[start + len(open_tag) : end].strip()
+            if reasoning:
+                return reasoning
+            remainder = content[end + len(close_tag) :].strip()
+            if message.get("tool_calls") and remainder:
+                return remainder
+            return ""
+    return ""
 
 
 def drop_assistant_content_preserving_reasoning(message: dict[str, Any]) -> None:
     reasoning = assistant_reasoning_from_content(message)
     if reasoning:
-        message["content"] = f"{THINK_OPEN}{reasoning}{THINK_CLOSE}"
+        message["reasoning_content"] = reasoning
+        message["content"] = ""
     else:
         message["content"] = ""
+
+
+def is_trueish_metadata_value(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "passed", "pass"}
+    return False
+
+
+def metadata_indicates_nonpassing(metadata: dict[str, Any]) -> bool:
+    source_outcome = metadata.get("source_outcome")
+    if isinstance(source_outcome, dict) and "passed" in source_outcome:
+        return not is_trueish_metadata_value(source_outcome.get("passed"))
+    if "passed" in metadata:
+        return not is_trueish_metadata_value(metadata.get("passed"))
+    return False
 
 
 def apply_assistant_loss_policy(
@@ -140,6 +183,9 @@ def apply_assistant_loss_policy(
     require_assistant_reasoning_for_loss: bool = False,
     require_assistant_tool_calls_for_loss: bool = False,
     drop_assistant_content_for_tool_calls: bool = False,
+    reject_manual_patch_targets: bool = False,
+    reject_unverified_submit_targets: bool = False,
+    reject_nonpassing_submit_targets: bool = False,
     mask_tool_call_error_recovery: bool = False,
     mask_manual_patch_artifact_turns: bool = False,
     enable_turn_loss_weights: bool = False,
@@ -157,6 +203,9 @@ def apply_assistant_loss_policy(
         not require_assistant_reasoning_for_loss
         and not require_assistant_tool_calls_for_loss
         and not drop_assistant_content_for_tool_calls
+        and not reject_manual_patch_targets
+        and not reject_unverified_submit_targets
+        and not reject_nonpassing_submit_targets
         and not mask_tool_call_error_recovery
         and not mask_manual_patch_artifact_turns
         and not enable_turn_loss_weights
@@ -166,16 +215,36 @@ def apply_assistant_loss_policy(
         return example
 
     messages = example.get("messages", [])
+    metadata = example.get("metadata") or {}
+    nonpassing_row = metadata_indicates_nonpassing(metadata)
+    allow_manual_patch_context = (
+        bool(metadata.get("allow_manual_patch_context"))
+        or metadata.get("source") == "current_empty_diff_recovery"
+    )
+    effective_reject_manual_patch_targets = (
+        reject_manual_patch_targets and not allow_manual_patch_context
+    )
     passed = example_passed(example)
     empty_patch = example_has_empty_patch(example)
     mask_next_assistant = False
+    previous_assistant_command = ""
+    previous_assistant_observations: list[str] = []
+    visible_patch_since_write = False
+    patch_file_tainted = False
+    seen_submit_command = False
+    seen_manual_patch_target = False
     for message in messages:
         if message.get("role") == "tool":
             if mask_tool_call_error_recovery and "tool call error" in text_from_content(message.get("content")).lower():
                 mask_next_assistant = True
+            if previous_assistant_command:
+                previous_assistant_observations.append(text_from_content(message.get("content")))
             continue
         if message.get("role") != "assistant":
             continue
+        if previous_assistant_command and observation_has_visible_patch_output("\n".join(previous_assistant_observations)):
+            visible_patch_since_write = True
+            previous_assistant_observations = []
         has_tool_calls = assistant_has_valid_tool_calls(message)
         if drop_assistant_content_for_tool_calls and has_tool_calls:
             drop_assistant_content_preserving_reasoning(message)
@@ -184,9 +253,30 @@ def apply_assistant_loss_policy(
         if require_assistant_tool_calls_for_loss and not has_tool_calls:
             message["loss"] = False
         action = assistant_turn_action(message)
+        command = assistant_tool_command(message)
+        is_submit = is_submit_command(command)
+        has_manual_patch_target = assistant_has_manual_patch_target(message)
+        if seen_submit_command:
+            message["loss"] = False
+        if seen_manual_patch_target:
+            message["loss"] = False
         if mask_next_assistant:
             message["loss"] = False
             mask_next_assistant = False
+        if effective_reject_manual_patch_targets and has_manual_patch_target:
+            message["loss"] = False
+        if (
+            reject_unverified_submit_targets
+            and is_submit
+            and (
+                not command_prepares_patch_for_submit(previous_assistant_command)
+                or not visible_patch_since_write
+                or patch_file_tainted
+            )
+        ):
+            message["loss"] = False
+        if reject_nonpassing_submit_targets and nonpassing_row and is_submit:
+            message["loss"] = False
         if mask_manual_patch_artifact_turns and action == "manual_patch_artifact":
             message["loss"] = False
         if mask_nonpassing_submit_turns and not passed and action == "submit":
@@ -209,6 +299,16 @@ def apply_assistant_loss_policy(
             if not passed:
                 weight *= nonpassing_loss_multiplier
             message["loss_weight"] = float(weight)
+        if is_submit:
+            seen_submit_command = True
+        if effective_reject_manual_patch_targets and has_manual_patch_target:
+            seen_manual_patch_target = True
+        if command:
+            if command_writes_patch_file(command):
+                visible_patch_since_write = False
+                patch_file_tainted = has_manual_patch_target
+            previous_assistant_command = command
+            previous_assistant_observations = []
     return example
 
 
@@ -289,6 +389,184 @@ def assistant_tool_commands(message: dict[str, Any]) -> list[str]:
             if command not in (None, ""):
                 commands.append(str(command))
     return commands
+
+
+def assistant_tool_command(message: dict[str, Any]) -> str:
+    commands = assistant_tool_commands(message)
+    return commands[0] if commands else ""
+
+
+def command_references_git_diff(command: str) -> bool:
+    text = command.lower()
+    return bool(
+        re.search(r"\bgit\s+diff\b", text)
+        or re.search(r"['\"]git['\"]\s*,\s*['\"]diff['\"]", text)
+    )
+
+
+def command_mentions_patch_file(command: str) -> bool:
+    return bool(re.search(PATCH_TXT_PATH_PATTERN, command.lower()))
+
+
+def command_has_script_patch_write(command: str) -> bool:
+    text = command.lower()
+    if not command_mentions_patch_file(command):
+        return False
+    return bool(
+        re.search(r"\bopen\s*\([^)\n]*patch\.txt[^)\n]*['\"]w", text)
+        or re.search(r"patch\.txt[^;\n]*\.open\s*\([^)\n]*['\"]w", text)
+        or ("patch.txt" in text and "write_text" in text)
+        or re.search(r"\bwritefilesync\s*\([^)\n]*patch\.txt", text)
+    )
+
+
+def _normalized_shell_path(path: str) -> str:
+    path = path.strip().strip("'\"")
+    if path.startswith("./"):
+        path = path[2:]
+    if path.startswith("/testbed/"):
+        path = path[len("/testbed/") :]
+    return path
+
+
+def _same_patch_txt_path(path: str) -> bool:
+    return _normalized_shell_path(path) == "patch.txt"
+
+
+def _path_has_prior_git_diff_write(command: str, path: str, end: int) -> bool:
+    target = re.escape(path)
+    prior = command[:end]
+    for segment in re.split(r"(?:&&|\n)", prior):
+        if not command_references_git_diff(segment):
+            continue
+        if re.search(rf"(?:>\s*|\|\s*tee\s+(-a\s+)?){target}(?:\s|$|[;&|])", segment):
+            return True
+    return False
+
+
+def command_has_untrusted_patch_assembly(command: str) -> bool:
+    """Detect patch.txt assembled from patch fragments not made by git diff."""
+    text = command.lower()
+    copy_like = re.finditer(
+        rf"(^|[;&|\n]\s*)(cat|cp|mv)\b(?P<body>[^;&|\n]*)\s+(?:>\s*)?{PATCH_TXT_PATH_PATTERN}",
+        text,
+    )
+    for match in copy_like:
+        body = match.group("body")
+        source_paths = [
+            path
+            for path in re.findall(PATCH_LIKE_PATH_PATTERN, body)
+            if not _same_patch_txt_path(path)
+        ]
+        if not source_paths and re.search(r"\b/dev/null\b", body):
+            return True
+        if not source_paths:
+            continue
+        for path in source_paths:
+            if not _path_has_prior_git_diff_write(text, path, match.start()):
+                return True
+    return False
+
+
+def command_has_untrusted_patch_append(command: str) -> bool:
+    text = command.lower()
+    append_segments = re.finditer(
+        rf"(^|[;&\n]\s*)(?P<body>[^;&\n]*?)"
+        rf"(?:>>\s*{PATCH_TXT_PATH_PATTERN}|\|\s*tee\s+-a\s+{PATCH_TXT_PATH_PATTERN})",
+        text,
+    )
+    for match in append_segments:
+        if not command_references_git_diff(match.group("body")):
+            return True
+    return False
+
+
+def command_has_untrusted_patch_redirect(command: str) -> bool:
+    text = command.lower()
+    redirect_segments = re.finditer(
+        rf"(^|[;&|\n]\s*)(cat|tee|echo|printf)\b(?P<body>[^;&|\n]*?)"
+        rf"(?:>\s*{PATCH_TXT_PATH_PATTERN}|\|\s*tee\s+(-a\s+)?{PATCH_TXT_PATH_PATTERN}"
+        rf"|\btee\s+(-a\s+)?{PATCH_TXT_PATH_PATTERN})",
+        text,
+    )
+    for match in redirect_segments:
+        source_paths = [
+            path
+            for path in re.findall(PATCH_LIKE_PATH_PATTERN, match.group("body"))
+            if not _same_patch_txt_path(path)
+        ]
+        if source_paths and all(
+            _path_has_prior_git_diff_write(text, path, match.start())
+            for path in source_paths
+        ):
+            continue
+        if not command_references_git_diff(match.group("body")):
+            return True
+    return False
+
+
+def is_submit_command(command: str) -> bool:
+    return "complete_task_and_submit_final_output" in command.lower()
+
+
+def command_prepares_patch_for_submit(command: str) -> bool:
+    text = command.lower()
+    if not command_mentions_patch_file(command) or is_submit_command(text):
+        return False
+    if command_references_git_diff(command) and re.search(rf"\|\s*tee\s+(-a\s+)?{PATCH_TXT_PATH_PATTERN}", text):
+        return True
+    if re.search(
+        rf"(^|[;&|\n]\s*)(cat|grep|sed|head|tail)\b[^;&]*{PATCH_TXT_PATH_PATTERN}",
+        text,
+        flags=re.DOTALL,
+    ):
+        return True
+    return False
+
+
+def command_writes_patch_file(command: str) -> bool:
+    text = command.lower()
+    if not command_mentions_patch_file(command) or is_submit_command(text):
+        return False
+    return bool(re.search(PATCH_TXT_WRITE_PATTERN, text) or command_has_script_patch_write(command))
+
+
+def assistant_has_manual_patch_target(message: dict[str, Any]) -> bool:
+    """Detect targets that hand-write patch.txt instead of editing the tree."""
+    command = assistant_tool_command(message)
+    text = command.lower()
+    if not command_mentions_patch_file(command):
+        return False
+    if text.strip() == MINI_SWE_SUBMIT_COMMAND.lower():
+        return False
+    if re.search(PATCH_TXT_SHELL_CREATE_PATTERN, text):
+        return True
+    if command_has_untrusted_patch_append(command):
+        return True
+    if "diff -u /dev/null" in text:
+        return True
+    if command_has_untrusted_patch_assembly(command):
+        return True
+    if command_has_untrusted_patch_redirect(command):
+        return True
+    if command_has_script_patch_write(command) and not command_references_git_diff(command):
+        return True
+    return False
+
+
+def text_has_unified_diff_header(text: str) -> bool:
+    return bool(
+        "diff --git" in text
+        and re.search(r"(?m)^--- (?:a/|/dev/null)", text)
+        and re.search(r"(?m)^\+\+\+ (?:b/|/dev/null)", text)
+    )
+
+
+def observation_has_visible_patch_output(observation: str) -> bool:
+    matches = re.findall(r"<output>\n?(.*?)</output>", observation, flags=re.DOTALL)
+    if matches:
+        return any(text_has_unified_diff_header(match) for match in matches)
+    return text_has_unified_diff_header(observation)
 
 
 def assistant_turn_action(message: dict[str, Any]) -> str:
@@ -652,6 +930,9 @@ class OnlinePackedChatDataset(IterableDataset):
         require_assistant_tool_calls_for_loss: bool = False,
         drop_assistant_content_for_tool_calls: bool = False,
         assistant_loss_target: str = "assistant",
+        reject_manual_patch_targets: bool = False,
+        reject_unverified_submit_targets: bool = False,
+        reject_nonpassing_submit_targets: bool = False,
         mask_tool_call_error_recovery: bool = False,
         mask_manual_patch_artifact_turns: bool = False,
         enable_turn_loss_weights: bool = False,
@@ -687,6 +968,9 @@ class OnlinePackedChatDataset(IterableDataset):
         self.require_assistant_reasoning_for_loss = bool(require_assistant_reasoning_for_loss)
         self.require_assistant_tool_calls_for_loss = bool(require_assistant_tool_calls_for_loss)
         self.drop_assistant_content_for_tool_calls = bool(drop_assistant_content_for_tool_calls)
+        self.reject_manual_patch_targets = bool(reject_manual_patch_targets)
+        self.reject_unverified_submit_targets = bool(reject_unverified_submit_targets)
+        self.reject_nonpassing_submit_targets = bool(reject_nonpassing_submit_targets)
         self.mask_tool_call_error_recovery = bool(mask_tool_call_error_recovery)
         self.mask_manual_patch_artifact_turns = bool(mask_manual_patch_artifact_turns)
         self.enable_turn_loss_weights = bool(enable_turn_loss_weights)
@@ -794,6 +1078,9 @@ class OnlinePackedChatDataset(IterableDataset):
                     require_assistant_reasoning_for_loss=self.require_assistant_reasoning_for_loss,
                     require_assistant_tool_calls_for_loss=self.require_assistant_tool_calls_for_loss,
                     drop_assistant_content_for_tool_calls=self.drop_assistant_content_for_tool_calls,
+                    reject_manual_patch_targets=self.reject_manual_patch_targets,
+                    reject_unverified_submit_targets=self.reject_unverified_submit_targets,
+                    reject_nonpassing_submit_targets=self.reject_nonpassing_submit_targets,
                     mask_tool_call_error_recovery=self.mask_tool_call_error_recovery,
                     mask_manual_patch_artifact_turns=self.mask_manual_patch_artifact_turns,
                     enable_turn_loss_weights=self.enable_turn_loss_weights,
@@ -873,6 +1160,9 @@ def inspect_packer(args: argparse.Namespace) -> int:
         require_assistant_tool_calls_for_loss=args.require_assistant_tool_calls_for_loss,
         drop_assistant_content_for_tool_calls=args.drop_assistant_content_for_tool_calls,
         assistant_loss_target=args.assistant_loss_target,
+        reject_manual_patch_targets=args.reject_manual_patch_targets,
+        reject_unverified_submit_targets=args.reject_unverified_submit_targets,
+        reject_nonpassing_submit_targets=args.reject_nonpassing_submit_targets,
         mask_tool_call_error_recovery=args.mask_tool_call_error_recovery,
         mask_manual_patch_artifact_turns=args.mask_manual_patch_artifact_turns,
         enable_turn_loss_weights=args.enable_turn_loss_weights,
@@ -925,6 +1215,9 @@ def _dataset_for_count(args: argparse.Namespace, tokenizer: Any, *, shard_rank: 
         require_assistant_tool_calls_for_loss=args.require_assistant_tool_calls_for_loss,
         drop_assistant_content_for_tool_calls=args.drop_assistant_content_for_tool_calls,
         assistant_loss_target=args.assistant_loss_target,
+        reject_manual_patch_targets=args.reject_manual_patch_targets,
+        reject_unverified_submit_targets=args.reject_unverified_submit_targets,
+        reject_nonpassing_submit_targets=args.reject_nonpassing_submit_targets,
         mask_tool_call_error_recovery=args.mask_tool_call_error_recovery,
         mask_manual_patch_artifact_turns=args.mask_manual_patch_artifact_turns,
         enable_turn_loss_weights=args.enable_turn_loss_weights,
@@ -1040,6 +1333,9 @@ def add_common_dataset_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--require-assistant-tool-calls-for-loss", action="store_true")
     parser.add_argument("--drop-assistant-content-for-tool-calls", action="store_true")
     parser.add_argument("--assistant-loss-target", choices=ASSISTANT_LOSS_TARGETS, default="assistant")
+    parser.add_argument("--reject-manual-patch-targets", action="store_true")
+    parser.add_argument("--reject-unverified-submit-targets", action="store_true")
+    parser.add_argument("--reject-nonpassing-submit-targets", action="store_true")
     parser.add_argument("--mask-tool-call-error-recovery", action="store_true")
     parser.add_argument("--mask-manual-patch-artifact-turns", action="store_true")
     parser.add_argument("--enable-turn-loss-weights", action="store_true")
