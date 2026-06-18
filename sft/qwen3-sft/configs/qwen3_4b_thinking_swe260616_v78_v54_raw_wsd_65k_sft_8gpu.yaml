@@ -1,23 +1,25 @@
-# Full-parameter BF16 SFT for Qwen/Qwen3-4B-Thinking-2507 on 8 x H200.
+# v78 Qwen3-4B-Thinking SFT recipe.
 #
-# Target data:
-# /wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260612/
-#   highquality-1x-duplicate-reasoning-90pct-30k-full
+# Goal: keep the strong v54 early-learning behavior while testing whether a
+# lower post-s49 learning rate prevents the s99/s199 collapse.
 #
-# Use the sharded raw data view to avoid every dataloader worker scanning the
-# same 40G monolithic JSONL:
-#   highquality-1x-duplicate-reasoning-90pct-30k-full-raw-sharded/data
+# Controlled choices:
+# - base Qwen/Qwen3-4B-Thinking-2507 start
+# - no prefix expansion
+# - exact v54 raw Mini-SWE-aligned strict-passed data view
+# - v54 runtime assistant loss policy, including verification-aware submit masks
+# - 65k online packing
+# - global batch size 16, matching v54 token exposure per step
+# - warmup-stable-decay LR: peak through about s49, decay by s149, low LR to s199
 
 recipe: TrainFinetuneRecipeForNextTokenPrediction
 
 step_scheduler:
-  # Global/local batch sizes are counts of packed sequences, not tokens.
-  # With 8 GPUs: 16 * 65,536 = 1,048,576 tokens/global update.
   global_batch_size: 16
   local_batch_size: 2
   ckpt_every_steps: 50
   val_every_steps: 1000
-  max_steps: 300
+  max_steps: 200
 
 dist_env:
   backend: nccl
@@ -25,7 +27,7 @@ dist_env:
 
 rng:
   _target_: nemo_automodel.components.training.rng.StatefulRNG
-  seed: 33333
+  seed: 61678
   ranked: true
 
 model:
@@ -47,9 +49,10 @@ fp8:
 
 checkpoint:
   enabled: true
-  checkpoint_dir: checkpoints/qwen3_4b_thinking_swe260612_highquality_65k_toolcall_only_sft/
-  model_save_format: torch_save
-  save_consolidated: false
+  checkpoint_dir: checkpoints/qwen3_4b_thinking_swe260616_v78_v54_raw_exactpolicy_wsd_from_base_65k_sft/
+  model_save_format: safetensors
+  save_consolidated: final
+  v4_compatible: true
 
 distributed:
   strategy: fsdp2
@@ -74,7 +77,7 @@ loss_fn:
 
 dataset:
   _target_: qwen_agentic_sft.online_packed_dataset.OnlinePackedChatDataset
-  raw_root: /wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260612/highquality-1x-duplicate-reasoning-90pct-30k-full-raw-sharded/data
+  raw_root: /wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260616/swerebench-raw2030-targeted-limitations-strict-passed-miniswe-aligned/data
   chat_template_path: /wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/eval/chat_templates/qwen3_thinking_acc.jinja2
   sequence_length: 65536
   max_rows_per_file: 0
@@ -82,14 +85,22 @@ dataset:
   parquet_batch_size: 128
   overlength_strategy: split
   min_label_tokens: 1
-  shuffle_files: true
-  seed: 33333
+  shuffle_files: false
+  seed: 61678
   repeat: true
   log_every_packs: 100
   require_assistant_reasoning_for_loss: true
   require_assistant_tool_calls_for_loss: true
   drop_assistant_content_for_tool_calls: true
-  assistant_loss_target: tool_calls
+  assistant_loss_target: assistant
+  reject_manual_patch_targets: true
+  reject_unverified_submit_targets: true
+  reject_nonpassing_submit_targets: true
+  mask_tool_call_error_recovery: false
+  mask_manual_patch_artifact_turns: false
+  enable_turn_loss_weights: false
+  mask_nonpassing_submit_turns: false
+  mask_empty_patch_submit_turns: false
 
 dataloader:
   _target_: torchdata.stateful_dataloader.StatefulDataLoader
@@ -114,13 +125,16 @@ validation_dataset:
   overlength_strategy: split
   min_label_tokens: 1
   shuffle_files: false
-  seed: 33333
+  seed: 61678
   repeat: false
   log_every_packs: 0
   require_assistant_reasoning_for_loss: true
   require_assistant_tool_calls_for_loss: true
   drop_assistant_content_for_tool_calls: true
-  assistant_loss_target: tool_calls
+  assistant_loss_target: assistant
+  reject_manual_patch_targets: true
+  reject_unverified_submit_targets: true
+  reject_nonpassing_submit_targets: true
 
 validation_dataloader:
   _target_: torchdata.stateful_dataloader.StatefulDataLoader
@@ -138,11 +152,14 @@ optimizer:
   _target_: torch.optim.AdamW
   betas: [0.9, 0.95]
   eps: 1.0e-8
-  lr: 2.0e-6
+  lr: 1.0e-6
   weight_decay: 0.01
   fused: true
 
 lr_scheduler:
-  lr_decay_style: cosine
-  lr_warmup_steps: 20
-  min_lr: 2.0e-7
+  lr_decay_style: WSD
+  lr_warmup_steps: 25
+  lr_decay_steps: 150
+  wsd_decay_steps: 100
+  lr_wsd_decay_style: cosine
+  min_lr: 1.0e-7

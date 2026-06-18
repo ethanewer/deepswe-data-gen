@@ -1,0 +1,95 @@
+diff --git a/nemo_automodel/components/optim/scheduler.py b/nemo_automodel/components/optim/scheduler.py
+index cc123159..8d93158f 100644
+--- a/nemo_automodel/components/optim/scheduler.py
++++ b/nemo_automodel/components/optim/scheduler.py
+@@ -57,6 +57,8 @@ class OptimizerParamScheduler:
+         override_opt_param_scheduler: Optional[bool] = False,
+         wsd_decay_steps: Optional[int] = None,
+         lr_wsd_decay_style: Optional[str] = None,
++        lr_cooldown_start_steps: Optional[int] = None,
++        lr_cooldown_steps: Optional[int] = None,
+     ) -> None:
+         """
+         Constructor for OptimizerParamScheduler.
+@@ -80,6 +82,10 @@ class OptimizerParamScheduler:
+             wsd_decay_steps (int, optional): number of weight decay decay steps. Defaults to None.
+             lr_wsd_decay_style (str, optional): decay style for learning rate during weight decay decay
+                 steps. Defaults to None.
++            lr_cooldown_start_steps (int, optional): for cosine-then-cooldown schedules, the step where the
++                second cooldown begins. Defaults to None.
++            lr_cooldown_steps (int, optional): for cosine-then-cooldown schedules, the number of steps used
++                to decay from the prefix-cosine LR to min_lr after cooldown begins. Defaults to None.
+         """
+         # Class values.
+         self.optimizer = optimizer
+@@ -96,12 +102,19 @@ class OptimizerParamScheduler:
+         self.lr_decay_steps = lr_decay_steps
+         self.wsd_decay_steps = wsd_decay_steps
+         self.lr_wsd_decay_style = lr_wsd_decay_style
++        self.lr_cooldown_start_steps = lr_cooldown_start_steps
++        self.lr_cooldown_steps = lr_cooldown_steps
+         assert self.lr_decay_steps > 0
+         assert self.lr_warmup_steps < self.lr_decay_steps
+ 
+         self.lr_decay_style = lr_decay_style
+         if self.lr_decay_style == "WSD":
+             assert self.wsd_decay_steps is not None
++        if self.lr_decay_style == "cosine_then_cooldown":
++            assert self.lr_cooldown_start_steps is not None
++            assert self.lr_cooldown_steps is not None
++            assert self.lr_warmup_steps < self.lr_cooldown_start_steps <= self.lr_decay_steps
++            assert self.lr_cooldown_steps > 0
+ 
+         self.start_wd = start_wd
+         self.end_wd = end_wd
+@@ -142,6 +155,13 @@ class OptimizerParamScheduler:
+                     f"        lr_wsd_decay_style: {self.lr_wsd_decay_style}",
+                 ]
+             )
++        if self.lr_decay_style == "cosine_then_cooldown":
++            lines.extend(
++                [
++                    f"        cooldown_start_steps: {self.lr_cooldown_start_steps}",
++                    f"        cooldown_steps: {self.lr_cooldown_steps}",
++                ]
++            )
+ 
+         lines.extend(
+             [
+@@ -239,6 +259,23 @@ class OptimizerParamScheduler:
+                     coeff = (2.0 * math.pow(0.5, wsd_decay_ratio)) - 1.0
+                 elif self.lr_wsd_decay_style == "minus_sqrt":
+                     coeff = 1.0 - math.sqrt(wsd_decay_ratio)
++        elif self.lr_decay_style == "cosine_then_cooldown":
++            assert self.lr_cooldown_start_steps is not None
++            assert self.lr_cooldown_steps is not None
++
++            def cosine_coeff(step: int) -> float:
++                step_ratio = float(step - self.lr_warmup_steps) / float(decay_steps_)
++                assert step_ratio >= 0.0
++                assert step_ratio <= 1.0
++                return 0.5 * (math.cos(math.pi * step_ratio) + 1.0)
++
++            if self.num_steps < self.lr_cooldown_start_steps:
++                coeff = cosine_coeff(self.num_steps)
++            else:
++                start_coeff = cosine_coeff(self.lr_cooldown_start_steps)
++                cooldown_step = min(self.num_steps - self.lr_cooldown_start_steps, self.lr_cooldown_steps)
++                cooldown_ratio = float(cooldown_step) / float(self.lr_cooldown_steps)
++                coeff = start_coeff * 0.5 * (math.cos(math.pi * cooldown_ratio) + 1.0)
+ 
+         else:
+             raise Exception(f"{self.lr_decay_style} decay style is not supported.")
+@@ -276,6 +313,12 @@ class OptimizerParamScheduler:
+             "wd_incr_style": self.wd_incr_style,
+             "wd_incr_steps": self.wd_incr_steps,
+         }
++        if self.lr_decay_style == "WSD":
++            state_dict["wsd_decay_steps"] = self.wsd_decay_steps
++            state_dict["lr_wsd_decay_style"] = self.lr_wsd_decay_style
++        if self.lr_decay_style == "cosine_then_cooldown":
++            state_dict["lr_cooldown_start_steps"] = self.lr_cooldown_start_steps
++            state_dict["lr_cooldown_steps"] = self.lr_cooldown_steps
+         return state_dict
+ 
+     def _check_and_set(self, cls_value: _T, sd_value: _T, name: str) -> _T:

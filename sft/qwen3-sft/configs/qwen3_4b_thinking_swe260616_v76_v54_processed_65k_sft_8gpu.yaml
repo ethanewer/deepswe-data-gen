@@ -1,23 +1,26 @@
-# Full-parameter BF16 SFT for Qwen/Qwen3-4B-Thinking-2507 on 8 x H200.
+# v76 Qwen3-4B-Thinking SFT recipe.
 #
-# Target data:
-# /wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260612/
-#   highquality-1x-duplicate-reasoning-90pct-30k-full
-#
-# Use the sharded raw data view to avoid every dataloader worker scanning the
-# same 40G monolithic JSONL:
-#   highquality-1x-duplicate-reasoning-90pct-30k-full-raw-sharded/data
+# Goal: test whether the best v54 data view scales better with gentler
+# optimizer dynamics. This recipe intentionally uses the exact processed v54
+# examples and materialized assistant loss masks, then changes only training
+# hyperparameters:
+# - base Qwen/Qwen3-4B-Thinking-2507 start
+# - no prefix expansion
+# - 65k online packing
+# - finite one epoch with dataset padding, not repeat-forever training
+# - global batch size 32 via grad accumulation
+# - lower LR than v54/v75, 10% warmup, cosine decay, AdamW betas 0.9/0.95
 
 recipe: TrainFinetuneRecipeForNextTokenPrediction
 
 step_scheduler:
   # Global/local batch sizes are counts of packed sequences, not tokens.
-  # With 8 GPUs: 16 * 65,536 = 1,048,576 tokens/global update.
-  global_batch_size: 16
+  # With 8 GPUs and grad_accum=2: 32 * 65,536 = 2,097,152 tokens/update.
+  global_batch_size: 32
   local_batch_size: 2
   ckpt_every_steps: 50
   val_every_steps: 1000
-  max_steps: 300
+  max_steps: 150
 
 dist_env:
   backend: nccl
@@ -25,7 +28,7 @@ dist_env:
 
 rng:
   _target_: nemo_automodel.components.training.rng.StatefulRNG
-  seed: 33333
+  seed: 61676
   ranked: true
 
 model:
@@ -47,9 +50,11 @@ fp8:
 
 checkpoint:
   enabled: true
-  checkpoint_dir: checkpoints/qwen3_4b_thinking_swe260612_highquality_65k_toolcall_only_sft/
-  model_save_format: torch_save
+  checkpoint_dir: checkpoints/qwen3_4b_thinking_swe260616_v76_v54_processed_from_base_65k_lr5e7_gbs32_one_epoch_sft/
+  model_save_format: safetensors
   save_consolidated: false
+  v4_compatible: true
+  dcp_process_group_backend: gloo
 
 distributed:
   strategy: fsdp2
@@ -74,7 +79,7 @@ loss_fn:
 
 dataset:
   _target_: qwen_agentic_sft.online_packed_dataset.OnlinePackedChatDataset
-  raw_root: /wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260612/highquality-1x-duplicate-reasoning-90pct-30k-full-raw-sharded/data
+  raw_root: /wbl-fast/usrs/ee/code-swe-data/runtime/hf_datasets/qwen3-4b-thinking-sft-v54-raw2030-strictpassed-processed/data
   chat_template_path: /wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/eval/chat_templates/qwen3_thinking_acc.jinja2
   sequence_length: 65536
   max_rows_per_file: 0
@@ -82,14 +87,22 @@ dataset:
   parquet_batch_size: 128
   overlength_strategy: split
   min_label_tokens: 1
-  shuffle_files: true
-  seed: 33333
-  repeat: true
+  shuffle_files: false
+  seed: 61676
+  repeat: false
+  pad_to_pack_count: 0
   log_every_packs: 100
-  require_assistant_reasoning_for_loss: true
-  require_assistant_tool_calls_for_loss: true
-  drop_assistant_content_for_tool_calls: true
-  assistant_loss_target: tool_calls
+  # The uploaded processed v54 rows already include loss:false on masked
+  # assistant turns and tool-call content has already been reduced to reasoning.
+  require_assistant_reasoning_for_loss: false
+  require_assistant_tool_calls_for_loss: false
+  drop_assistant_content_for_tool_calls: false
+  assistant_loss_target: assistant
+  mask_tool_call_error_recovery: false
+  mask_manual_patch_artifact_turns: false
+  enable_turn_loss_weights: false
+  mask_nonpassing_submit_turns: false
+  mask_empty_patch_submit_turns: false
 
 dataloader:
   _target_: torchdata.stateful_dataloader.StatefulDataLoader
@@ -114,13 +127,13 @@ validation_dataset:
   overlength_strategy: split
   min_label_tokens: 1
   shuffle_files: false
-  seed: 33333
+  seed: 61676
   repeat: false
   log_every_packs: 0
-  require_assistant_reasoning_for_loss: true
-  require_assistant_tool_calls_for_loss: true
-  drop_assistant_content_for_tool_calls: true
-  assistant_loss_target: tool_calls
+  require_assistant_reasoning_for_loss: false
+  require_assistant_tool_calls_for_loss: false
+  drop_assistant_content_for_tool_calls: false
+  assistant_loss_target: assistant
 
 validation_dataloader:
   _target_: torchdata.stateful_dataloader.StatefulDataLoader
@@ -138,11 +151,11 @@ optimizer:
   _target_: torch.optim.AdamW
   betas: [0.9, 0.95]
   eps: 1.0e-8
-  lr: 2.0e-6
-  weight_decay: 0.01
+  lr: 5.0e-7
+  weight_decay: 1.0e-4
   fused: true
 
 lr_scheduler:
   lr_decay_style: cosine
-  lr_warmup_steps: 20
-  min_lr: 2.0e-7
+  lr_warmup_steps: 15
+  min_lr: 5.0e-8

@@ -195,18 +195,27 @@ cleanup_smoke
 trap - EXIT
 nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv,noheader,nounits
 
-echo "Waiting for checkpoint metadata: $CHECKPOINT_STEP_DIR/model/.metadata"
-while [ ! -f "$CHECKPOINT_STEP_DIR/model/.metadata" ]; do
-  latest_train_log="$(find "$REPO_ROOT/logs" -maxdepth 1 -type f -name "$(basename "$TRAIN_LOG_GLOB")" -printf '%T@ %p\n' 2>/dev/null | sort -nr | awk 'NR == 1 {print $2}')"
+checkpoint_ready() {
+  [ -f "$CHECKPOINT_STEP_DIR/model/.metadata" ] && return 0
+  [ -d "$CHECKPOINT_STEP_DIR/model/.hf_metadata" ] && compgen -G "$CHECKPOINT_STEP_DIR/model/*.safetensors" >/dev/null
+}
+
+echo "Waiting for checkpoint model files in: $CHECKPOINT_STEP_DIR/model"
+while ! checkpoint_ready; do
   latest_step=""
-  if [ -n "$latest_train_log" ]; then
-    latest_step="$(tail -n 120 "$latest_train_log" 2>/dev/null | grep -E 'step [0-9]+ \\|' | tail -n 1 || true)"
+  if [ -n "${TRAINING_LOG:-}" ] && [ -f "$TRAINING_LOG" ]; then
+    latest_step="$(grep -E 'step [0-9]+ \\|' "$TRAINING_LOG" | tail -n 1 || true)"
+  else
+    latest_train_log="$(find "$REPO_ROOT/logs" -maxdepth 1 -type f -name "$(basename "$TRAIN_LOG_GLOB")" -printf '%T@ %p\n' 2>/dev/null | sort -nr | awk 'NR == 1 {print $2}')"
+    if [ -n "$latest_train_log" ]; then
+      latest_step="$(tail -n 120 "$latest_train_log" 2>/dev/null | grep -E 'step [0-9]+ \\|' | tail -n 1 || true)"
+    fi
   fi
   echo "[$(date -Is)] checkpoint not ready; latest_step=${latest_step:-unknown}"
   sleep "$POLL_SECONDS"
 done
 
-echo "[$(date -Is)] Found checkpoint metadata; waiting ${STABILIZE_SECONDS}s for writes to settle"
+echo "[$(date -Is)] Found checkpoint model files; waiting ${STABILIZE_SECONDS}s for writes to settle"
 sleep "$STABILIZE_SECONDS"
 
 echo "Starting real step-50 eval on warmed L40S allocation"

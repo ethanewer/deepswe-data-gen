@@ -10,20 +10,22 @@ if [ ! -x .venv/bin/python ]; then
 fi
 VENV_PYTHON="$ROOT_DIR/.venv/bin/python"
 AUTOMODEL_BIN="$ROOT_DIR/.venv/bin/automodel"
-AUTOMODEL_ROOT="${AUTOMODEL_ROOT:-$ROOT_DIR/third_party/Automodel}"
-if [ ! -d "$AUTOMODEL_ROOT/nemo_automodel" ]; then
-  echo "Missing nemo_automodel under AUTOMODEL_ROOT=$AUTOMODEL_ROOT" >&2
-  echo "Set AUTOMODEL_ROOT to an Automodel checkout containing nemo_automodel." >&2
-  exit 1
-fi
 
-export PYTHONPATH="$AUTOMODEL_ROOT:$ROOT_DIR/src${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONPATH="$ROOT_DIR/third_party/Automodel:$ROOT_DIR/src${PYTHONPATH:+:$PYTHONPATH}"
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}"
 export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"
 export WANDB_MODE="${WANDB_MODE:-disabled}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION="${PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION:-python}"
 export NCCL_DEBUG="${NCCL_DEBUG:-WARN}"
+
+SHARED_HF_HOME="/wbl-fast/usrs/ee/code-swe-data/.cache/huggingface"
+if [ -d "$SHARED_HF_HOME/hub" ]; then
+  export HF_HOME="${HF_HOME:-$SHARED_HF_HOME}"
+  export HF_HUB_CACHE="${HF_HUB_CACHE:-$SHARED_HF_HOME/hub}"
+  export HUGGINGFACE_HUB_CACHE="${HUGGINGFACE_HUB_CACHE:-$SHARED_HF_HOME/hub}"
+  export TRANSFORMERS_CACHE="${TRANSFORMERS_CACHE:-$SHARED_HF_HOME/hub}"
+fi
 
 IFS=',' read -r -a visible_gpus <<< "$CUDA_VISIBLE_DEVICES"
 NPROC_PER_NODE="${NPROC_PER_NODE:-${#visible_gpus[@]}}"
@@ -106,6 +108,9 @@ DROP_ASSISTANT_CONTENT_FOR_TOOL_CALLS="${DROP_ASSISTANT_CONTENT_FOR_TOOL_CALLS:-
 ASSISTANT_LOSS_TARGET="${ASSISTANT_LOSS_TARGET:-}"
 DATASET_REPEAT="${DATASET_REPEAT:-}"
 PAD_TO_PACK_COUNT="${PAD_TO_PACK_COUNT:-}"
+REJECT_MANUAL_PATCH_TARGETS="${REJECT_MANUAL_PATCH_TARGETS:-}"
+REJECT_UNVERIFIED_SUBMIT_TARGETS="${REJECT_UNVERIFIED_SUBMIT_TARGETS:-}"
+REJECT_NONPASSING_SUBMIT_TARGETS="${REJECT_NONPASSING_SUBMIT_TARGETS:-}"
 MASK_TOOL_CALL_ERROR_RECOVERY="${MASK_TOOL_CALL_ERROR_RECOVERY:-}"
 MASK_MANUAL_PATCH_ARTIFACT_TURNS="${MASK_MANUAL_PATCH_ARTIFACT_TURNS:-}"
 ENABLE_TURN_LOSS_WEIGHTS="${ENABLE_TURN_LOSS_WEIGHTS:-}"
@@ -132,6 +137,7 @@ CHECKPOINT_DIR="${CHECKPOINT_DIR:-$DEFAULT_CHECKPOINT_DIR}"
 CHECKPOINT_MODEL_SAVE_FORMAT="${CHECKPOINT_MODEL_SAVE_FORMAT:-torch_save}"
 CHECKPOINT_SAVE_CONSOLIDATED="${CHECKPOINT_SAVE_CONSOLIDATED:-false}"
 CHECKPOINT_V4_COMPATIBLE="${CHECKPOINT_V4_COMPATIBLE:-false}"
+CHECKPOINT_DCP_PROCESS_GROUP_BACKEND="${CHECKPOINT_DCP_PROCESS_GROUP_BACKEND:-}"
 RESTORE_FROM="${RESTORE_FROM:-}"
 VALIDATION_ENABLED="${VALIDATION_ENABLED:-false}"
 RUN_NAME="${RUN_NAME:-${DEFAULT_RUN_PREFIX}_pack${PACK_SIZE}_gbs${GLOBAL_BATCH_SIZE}}"
@@ -168,6 +174,9 @@ if [ -n "$REQUIRE_ASSISTANT_REASONING_FOR_LOSS" ] || [ -n "$REQUIRE_ASSISTANT_TO
 fi
 if [ -n "$DROP_ASSISTANT_CONTENT_FOR_TOOL_CALLS" ] || [ -n "$ASSISTANT_LOSS_TARGET" ]; then
   echo "Assistant tool-call loss shaping: drop_content=${DROP_ASSISTANT_CONTENT_FOR_TOOL_CALLS:-config} target=${ASSISTANT_LOSS_TARGET:-config}"
+fi
+if [ -n "$REJECT_MANUAL_PATCH_TARGETS" ] || [ -n "$REJECT_UNVERIFIED_SUBMIT_TARGETS" ] || [ -n "$REJECT_NONPASSING_SUBMIT_TARGETS" ]; then
+  echo "Assistant loss rejection policy: manual_patch=${REJECT_MANUAL_PATCH_TARGETS:-config} unverified_submit=${REJECT_UNVERIFIED_SUBMIT_TARGETS:-config} nonpassing_submit=${REJECT_NONPASSING_SUBMIT_TARGETS:-config}"
 fi
 if [ -n "$ENABLE_TURN_LOSS_WEIGHTS" ]; then
   echo "Assistant turn loss weights: enabled=${ENABLE_TURN_LOSS_WEIGHTS} read=${READ_LOSS_WEIGHT:-config} write=${WRITE_LOSS_WEIGHT:-config} test=${TEST_LOSS_WEIGHT:-config} verify=${VERIFY_LOSS_WEIGHT:-config} submit=${SUBMIT_LOSS_WEIGHT:-config} nonpassing_multiplier=${NONPASSING_LOSS_MULTIPLIER:-config}"
@@ -235,6 +244,10 @@ args=(
   --checkpoint.v4_compatible "$CHECKPOINT_V4_COMPATIBLE"
 )
 
+if [ -n "$CHECKPOINT_DCP_PROCESS_GROUP_BACKEND" ]; then
+  args+=(--checkpoint.dcp_process_group_backend "$CHECKPOINT_DCP_PROCESS_GROUP_BACKEND")
+fi
+
 if [ -n "$WEIGHT_DECAY" ]; then
   args+=(--optimizer.weight_decay "$WEIGHT_DECAY")
 fi
@@ -269,6 +282,18 @@ fi
 
 if [ -n "$PAD_TO_PACK_COUNT" ]; then
   args+=(--dataset.pad_to_pack_count "$PAD_TO_PACK_COUNT")
+fi
+
+if [ -n "$REJECT_MANUAL_PATCH_TARGETS" ]; then
+  args+=(--dataset.reject_manual_patch_targets "$REJECT_MANUAL_PATCH_TARGETS")
+fi
+
+if [ -n "$REJECT_UNVERIFIED_SUBMIT_TARGETS" ]; then
+  args+=(--dataset.reject_unverified_submit_targets "$REJECT_UNVERIFIED_SUBMIT_TARGETS")
+fi
+
+if [ -n "$REJECT_NONPASSING_SUBMIT_TARGETS" ]; then
+  args+=(--dataset.reject_nonpassing_submit_targets "$REJECT_NONPASSING_SUBMIT_TARGETS")
 fi
 
 if [ -n "$MASK_TOOL_CALL_ERROR_RECOVERY" ]; then
@@ -346,6 +371,15 @@ if [ "$VALIDATION_ENABLED" = "true" ]; then
   fi
   if [ -n "$ASSISTANT_LOSS_TARGET" ]; then
     args+=(--validation_dataset.assistant_loss_target "$ASSISTANT_LOSS_TARGET")
+  fi
+  if [ -n "$REJECT_MANUAL_PATCH_TARGETS" ]; then
+    args+=(--validation_dataset.reject_manual_patch_targets "$REJECT_MANUAL_PATCH_TARGETS")
+  fi
+  if [ -n "$REJECT_UNVERIFIED_SUBMIT_TARGETS" ]; then
+    args+=(--validation_dataset.reject_unverified_submit_targets "$REJECT_UNVERIFIED_SUBMIT_TARGETS")
+  fi
+  if [ -n "$REJECT_NONPASSING_SUBMIT_TARGETS" ]; then
+    args+=(--validation_dataset.reject_nonpassing_submit_targets "$REJECT_NONPASSING_SUBMIT_TARGETS")
   fi
   if [ "$CHAT_TEMPLATE_SOURCE" != "tokenizer" ]; then
     args+=(--validation_dataset.chat_template_path "$CHAT_TEMPLATE")

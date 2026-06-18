@@ -35,17 +35,20 @@ else
   echo "Using existing AutoModel checkout at $AUTOMODEL_DIR. Set UPDATE_AUTOMODEL=1 to update it."
 fi
 
-AUTOMODEL_PATCH="$ROOT_DIR/patches/automodel-qwen3-vl-text.patch"
-if [ -f "$AUTOMODEL_PATCH" ]; then
-  if git -C "$AUTOMODEL_DIR" apply --check "$AUTOMODEL_PATCH"; then
-    git -C "$AUTOMODEL_DIR" apply "$AUTOMODEL_PATCH"
-  elif git -C "$AUTOMODEL_DIR" apply --reverse --check "$AUTOMODEL_PATCH"; then
-    echo "AutoModel Qwen3-VL text patch already applied."
-  else
-    echo "AutoModel Qwen3-VL text patch does not apply cleanly: $AUTOMODEL_PATCH" >&2
-    exit 1
+for AUTOMODEL_PATCH in \
+  "$ROOT_DIR/patches/automodel-qwen3-vl-text.patch" \
+  "$ROOT_DIR/patches/automodel-cosine-then-cooldown-scheduler.patch"; do
+  if [ -f "$AUTOMODEL_PATCH" ]; then
+    if git -C "$AUTOMODEL_DIR" apply --check "$AUTOMODEL_PATCH"; then
+      git -C "$AUTOMODEL_DIR" apply "$AUTOMODEL_PATCH"
+    elif git -C "$AUTOMODEL_DIR" apply --reverse --check "$AUTOMODEL_PATCH"; then
+      echo "AutoModel patch already applied: $AUTOMODEL_PATCH"
+    else
+      echo "AutoModel patch does not apply cleanly: $AUTOMODEL_PATCH" >&2
+      exit 1
+    fi
   fi
-fi
+done
 
 if [ -d .venv ] && [ "${RECREATE_VENV:-0}" != "1" ]; then
   uv venv --python "$PYTHON_BIN" --allow-existing .venv
