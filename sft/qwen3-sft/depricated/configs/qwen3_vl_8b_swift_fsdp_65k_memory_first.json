@@ -1,0 +1,10 @@
+{
+  "activation_checkpointing": true,
+  "backward_prefetch": "backward_post",
+  "forward_prefetch": false,
+  "limit_all_gathers": true,
+  "transformer_layer_cls_to_wrap": [
+    "Qwen3VLTextDecoderLayer"
+  ],
+  "use_orig_params": true
+}

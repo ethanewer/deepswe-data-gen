@@ -1,21 +1,26 @@
-# One-epoch Qwen3-4B-Thinking SFT recipe for SWE-bench multilingual work.
+# v84 Qwen3-4B-Thinking SFT recipe.
 #
-# v74 fixes the v73 regression by supervising the full assistant span again
-# instead of tool-call-only spans. It keeps prefix expansion off, starts from the
-# base Qwen3-4B-Thinking checkpoint, and uses the verification-enhanced mixed50
-# view where modified verification rows replace matching source rows.
+# Goal: reproduce v54 through the known-good s49 checkpoint, then immediately
+# drop to the LR floor so later checkpoints test low-LR consolidation rather
+# than additional hot SFT updates.
+#
+# This keeps the v54 data, seed, row order, active masks, base checkpoint, 65k
+# packing, and global batch size. The only intended behavioral change from v54
+# is the LR after step 49.
+#
+# LR schedule:
+# - steps <= 49: exact v54 cosine schedule with lr_decay_steps=350
+# - step 50: v54 step-50 LR
+# - step 51 onward: 1e-7 floor through s175
 
 recipe: TrainFinetuneRecipeForNextTokenPrediction
 
 step_scheduler:
-  # Global/local batch sizes are counts of packed sequences, not tokens.
-  # With 8 GPUs and grad_accum=2: 32 * 65,536 = 2,097,152 tokens/update.
-  global_batch_size: 32
+  global_batch_size: 16
   local_batch_size: 2
-  ckpt_every_steps: 50
+  ckpt_every_steps: 25
   val_every_steps: 1000
-  # The wrapper computes the exact one-epoch value after a shard count audit.
-  max_steps: 100
+  max_steps: 175
 
 dist_env:
   backend: nccl
@@ -45,9 +50,10 @@ fp8:
 
 checkpoint:
   enabled: true
-  checkpoint_dir: checkpoints/qwen3_4b_thinking_swe260617_v74_verification_weighted_submitmaskfix_one_epoch_65k_sft/
-  model_save_format: torch_save
-  save_consolidated: false
+  checkpoint_dir: checkpoints/qwen3_4b_thinking_swe260616_v84_v54_exact49_hardfloor_from_base_65k_sft/
+  model_save_format: safetensors
+  save_consolidated: final
+  v4_compatible: true
 
 distributed:
   strategy: fsdp2
@@ -72,7 +78,7 @@ loss_fn:
 
 dataset:
   _target_: qwen_agentic_sft.online_packed_dataset.OnlinePackedChatDataset
-  raw_root: /wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260617/swerebench-verification-enhanced-v74-mixed50-cleanpatch-provenance-miniswe-aligned/data
+  raw_root: /wbl-fast/usrs/ee/code-swe-data/data/new-synthetic-data/260616/swerebench-raw2030-targeted-limitations-strict-passed-miniswe-aligned/data
   chat_template_path: /wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/eval/chat_templates/qwen3_thinking_acc.jinja2
   sequence_length: 65536
   max_rows_per_file: 0
@@ -80,27 +86,22 @@ dataset:
   parquet_batch_size: 128
   overlength_strategy: split
   min_label_tokens: 1
-  shuffle_files: true
-  seed: 33333
-  repeat: false
-  pad_to_pack_count: 0
+  shuffle_files: false
+  seed: 61654
+  repeat: true
   log_every_packs: 100
   require_assistant_reasoning_for_loss: true
   require_assistant_tool_calls_for_loss: true
   drop_assistant_content_for_tool_calls: true
   assistant_loss_target: assistant
-  mask_tool_call_error_recovery: true
-  mask_manual_patch_artifact_turns: true
-  enable_turn_loss_weights: true
-  read_loss_weight: 0.5
-  write_loss_weight: 1.0
-  test_loss_weight: 1.0
-  verify_loss_weight: 1.5
-  submit_loss_weight: 2.0
-  default_loss_weight: 1.0
-  nonpassing_loss_multiplier: 0.75
+  reject_manual_patch_targets: true
+  reject_unverified_submit_targets: true
+  reject_nonpassing_submit_targets: true
+  mask_tool_call_error_recovery: false
+  mask_manual_patch_artifact_turns: false
+  enable_turn_loss_weights: false
   mask_nonpassing_submit_turns: false
-  mask_empty_patch_submit_turns: true
+  mask_empty_patch_submit_turns: false
 
 dataloader:
   _target_: torchdata.stateful_dataloader.StatefulDataLoader
@@ -113,25 +114,6 @@ dataloader:
   pin_memory: true
   persistent_workers: false
   prefetch_factor: 2
-
-validation_dataset:
-  _target_: qwen_agentic_sft.online_packed_dataset.OnlinePackedChatDataset
-  raw_root: data/smoke_raw
-  chat_template_path: /wbl-fast/usrs/ee/code-swe-data/deepswe-data-gen/eval/chat_templates/qwen3_thinking_acc.jinja2
-  sequence_length: 65536
-  max_rows_per_file: 0
-  max_examples: 128
-  parquet_batch_size: 128
-  overlength_strategy: split
-  min_label_tokens: 1
-  shuffle_files: false
-  seed: 33333
-  repeat: false
-  log_every_packs: 0
-  require_assistant_reasoning_for_loss: true
-  require_assistant_tool_calls_for_loss: true
-  drop_assistant_content_for_tool_calls: true
-  assistant_loss_target: assistant
 
 validation_dataloader:
   _target_: torchdata.stateful_dataloader.StatefulDataLoader
@@ -149,11 +131,14 @@ optimizer:
   _target_: torch.optim.AdamW
   betas: [0.9, 0.95]
   eps: 1.0e-8
-  lr: 1.0e-5
-  weight_decay: 1.0e-4
+  lr: 1.0e-6
+  weight_decay: 0.01
   fused: true
 
 lr_scheduler:
-  lr_decay_style: cosine
-  lr_warmup_steps: 10
-  min_lr: 1.0e-6
+  lr_decay_style: cosine_then_cooldown
+  lr_warmup_steps: 25
+  lr_decay_steps: 350
+  lr_cooldown_start_steps: 50
+  lr_cooldown_steps: 1
+  min_lr: 1.0e-7
