@@ -1,1 +1,0 @@
-{"messages":[{"role":"user","content":"What should be tested before increasing packed sequence length?"},{"role":"assistant","content":"Run a short training smoke test, check peak GPU memory, and only then increase the packed sequence size."}]}
