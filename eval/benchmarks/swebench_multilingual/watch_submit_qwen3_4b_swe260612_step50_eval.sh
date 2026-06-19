@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
+# =============================================================================
+# SLURM-GPU helper: poll a training checkpoint dir until a step-50 HF checkpoint
+# (*.safetensors) appears, then submit the L40S step50 eval sbatch (8-GPU if an
+# l40s-8gpu node is idle, else 4-GPU). Pairs with the served-checkpoint eval
+# flow; the retired NeMo DCP .metadata trigger was replaced by *.safetensors.
+# =============================================================================
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CHECKPOINT_DIR="${CHECKPOINT_DIR:-$REPO_ROOT/sft/qwen3-sft/checkpoints/qwen3_4b_thinking_swe260612_miniswe_aligned_65k_toolcall_only_h200_4gpu_sft}"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+CHECKPOINT_DIR="${CHECKPOINT_DIR:-$REPO_ROOT/sft/qwen3/checkpoints/qwen3_4b_thinking_swe260612_miniswe_aligned_65k_toolcall_only_h200_4gpu_sft}"
 CHECKPOINT_STEP_DIR="${CHECKPOINT_STEP_DIR:-$CHECKPOINT_DIR/epoch_0_step_49}"
 EVAL_SBATCH_8GPU="${EVAL_SBATCH_8GPU:-$REPO_ROOT/eval/benchmarks/swebench_multilingual/slurm_qwen3_4b_swe260612_step50_l40s_8gpu.sbatch}"
 EVAL_SBATCH_4GPU="${EVAL_SBATCH_4GPU:-$REPO_ROOT/eval/benchmarks/swebench_multilingual/slurm_qwen3_4b_swe260612_step50_l40s_4gpu.sbatch}"
@@ -31,11 +37,11 @@ choose_eval_sbatch() {
 }
 
 {
-  echo "[$(date -Is)] Waiting for $CHECKPOINT_STEP_DIR/model/.metadata"
-  while [ ! -f "$CHECKPOINT_STEP_DIR/model/.metadata" ]; do
+  echo "[$(date -Is)] Waiting for HF checkpoint shards at $CHECKPOINT_STEP_DIR/*.safetensors"
+  while ! compgen -G "$CHECKPOINT_STEP_DIR/*.safetensors" >/dev/null; do
     sleep "$POLL_SECONDS"
   done
-  echo "[$(date -Is)] Found checkpoint metadata; waiting ${STABILIZE_SECONDS}s for writes to settle"
+  echo "[$(date -Is)] Found checkpoint shards; waiting ${STABILIZE_SECONDS}s for writes to settle"
   sleep "$STABILIZE_SECONDS"
   selected_eval_sbatch="$(choose_eval_sbatch)"
   echo "[$(date -Is)] Submitting L40S eval job with $selected_eval_sbatch"

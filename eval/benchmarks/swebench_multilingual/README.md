@@ -28,8 +28,8 @@ then runs the predictive-30 (or easy-10) subset.
   it now expects a servable HF checkpoint (`*.safetensors`).
 - `slurm_qwen3_4b_swe260612_step50_l40s_8gpu.sbatch` /
   `..._4gpu.sbatch` — SLURM wrappers that set `EVAL_GPU_COUNT` and `exec` the
-  driver. `scripts/watch_submit_qwen3_4b_swe260612_step50_eval.sh` submits the
-  8- or 4-GPU wrapper depending on idle nodes.
+  driver. `watch_submit_qwen3_4b_swe260612_step50_eval.sh` (in this dir) submits
+  the 8- or 4-GPU wrapper depending on idle nodes.
 - `slurm_qwen3_4b_swe260612_warm_wait_step50_l40s_8gpu.sbatch` — grabs the L40S
   allocation early, runs a base-model smoke serve to warm caches, **waits** for
   the training checkpoint to land, then execs the driver.

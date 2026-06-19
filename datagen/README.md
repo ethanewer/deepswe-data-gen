@@ -5,13 +5,53 @@ not benchmark runners.
 
 ## Layout
 
-- `datagen/swerebench_v2/`: SWE-rebench V2 filtering, prompt rewriting, and
-  Harbor task generation.
+- `datagen/swerebench_v2/` — the SWE-rebench V2 synthetic-trace pipeline (flat
+  modules, grouped by stage in the module map below), its `monitoring/` helpers,
+  and committed `data/`, `examples/`, `reports/`, and `minisweagent_*.yaml`
+  profile configs.
+- `datagen/dataset_builders/` — standalone dataset-construction CLIs
+  (other-source ingestion, append-only raw builds, trace compaction, quality
+  audits). Previously under the top-level `scripts/` directory; several import
+  each other by bare module name, so they live together in one directory.
+  `compact_long_passed_traces.py` imports `litellm`, which is in
+  `requirements-terminus.txt` (the terminus extras), not the base requirements.
 
-Generated outputs should go under `runs/` unless they are committed source data.
+All modules run via `python -m datagen.<pkg>.<module>` from the repo root.
+Generated outputs go under `runs/` unless they are committed source data.
 
-See `docs/swerebench_datagen_harness.md` for the current SWE-rebench datagen
-harness, audit/export, compaction, other-source, and raw source dataset tools.
+See `docs/swerebench_datagen_harness.md` for the full datagen harness — it spans
+both `datagen/swerebench_v2/` and `datagen/dataset_builders/` — covering
+audit/export, compaction, other-source, and raw source dataset tools.
+
+## Module map (`datagen/swerebench_v2/`)
+
+The flat modules form a pipeline; flow is generate → select → manifest → submit →
+run (drivers) → monitor → audit/report:
+
+| Stage | Modules |
+| --- | --- |
+| generate | `generate_high_quality_subset`, `run_data_generation`, `run_all` |
+| prompts | `analyze_prompts`, `rewrite_prompts` |
+| selection | `select_supplemental_tasks`, `select_openrouter_original_wave`, `prepare_openrouter_comparison`, `build_mimo_easy_assignments` |
+| manifests | `prepare_pyxis_manifest`, `build_direct_retry_manifest` |
+| tasks | `generate_harbor_tasks` |
+| runners | `pyxis_miniswe_agent_driver`, `run_docker_datagen_packed`, `write_pyxis_failure_result` |
+| submit | `submit_pyxis_datagen`, `submit_pyxis_datagen_packed`, `submit_docker_datagen_packed` |
+| monitoring (in `monitoring/`) | `monitor_l40s_direct_qwen`, `monitor`, `active_hourly_check` |
+| reporting | `audit_export_clean_trajectory`, `audit_export_clean_run`, `summarize_pier_runs` |
+
+Supporting assets at the package root:
+
+- `data/` — committed source artifacts; `high_quality_conf_ge_0.95_tasks.csv` is
+  the canonical input consumed by the analyze/rewrite/generate/select modules.
+- `examples/` — rewritten-prompt samples; `rewrites.jsonl` in each
+  `rewritten-prompts*` dir is a live input to `generate_harbor_tasks`, not just a
+  sample.
+- `reports/` — committed markdown analyses, including the DeepSWE datagen
+  progress log (`progress-report-deepswe-datagen.md`).
+- `minisweagent_*.yaml` — prompt/submission profiles (datagen-strict,
+  swebench-multilingual, deepswe-pier, and the mimo system/observation/combined
+  variants) selected by the submit/runner modules.
 
 ## SWE-rebench V2
 

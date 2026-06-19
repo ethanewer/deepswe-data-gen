@@ -121,18 +121,18 @@ top-ups auditable.
 
 Targeted limitation selectors:
 
-- `scripts/select_initial_limitations_wave.py`
-- `scripts/select_limitations_target_tasks.py`
-- `scripts/research_task_sources.py`
-- `scripts/prepare_other_source_datagen.py`
-- `scripts/assert_other_source_task_quality.py`
+- `datagen/dataset_builders/select_initial_limitations_wave.py`
+- `datagen/dataset_builders/select_limitations_target_tasks.py`
+- `datagen/dataset_builders/research_task_sources.py`
+- `datagen/dataset_builders/prepare_other_source_datagen.py`
+- `datagen/dataset_builders/assert_other_source_task_quality.py`
 
 These scripts prioritize underrepresented languages, small diffs, strict
 metadata, and runnable/verifiable task sources.
 
 ## Compaction
 
-`scripts/compact_long_passed_traces.py` creates compacted rows from long passed
+`datagen/dataset_builders/compact_long_passed_traces.py` creates compacted rows from long passed
 traces. It keeps:
 
 - original row identifiers and source paths;
@@ -144,11 +144,11 @@ traces. It keeps:
 Audit compaction outputs with:
 
 ```bash
-python scripts/audit_compaction_outputs.py \
+python datagen/dataset_builders/audit_compaction_outputs.py \
   --compaction-output /path/to/compaction-output \
   --output-dir /path/to/compaction-audit
 
-python scripts/audit_compaction_prompt_boundaries.py \
+python datagen/dataset_builders/audit_compaction_prompt_boundaries.py \
   --dataset /path/to/raw-source-dataset \
   --output-dir /path/to/boundary-audit
 ```
@@ -161,12 +161,12 @@ original row when training on its compacted descendant.
 Raw source dataset builders intentionally include generated traces without
 enforcing final SFT filters:
 
-- `scripts/build_raw_all_generated_dataset_20260616.py`
-- `scripts/build_raw_all_generated_dataset_fast_20260616.py`
-- `scripts/build_raw_all_generated_append_only_20260616.py`
-- `scripts/build_limitations_raw_dataset.py`
-- `scripts/build_combined_other_sources_dataset.py`
-- `scripts/build_c_cpp_only_dataset.py`
+- `datagen/dataset_builders/build_raw_all_generated_dataset_20260616.py`
+- `datagen/dataset_builders/build_raw_all_generated_dataset_fast_20260616.py`
+- `datagen/dataset_builders/build_raw_all_generated_append_only_20260616.py`
+- `datagen/dataset_builders/build_limitations_raw_dataset.py`
+- `datagen/dataset_builders/build_combined_other_sources_dataset.py`
+- `datagen/dataset_builders/build_c_cpp_only_dataset.py`
 
 These scripts attach metadata for source paths, source kind, pass/fail state,
 reasoning fraction, token-length signals where available, audit status,

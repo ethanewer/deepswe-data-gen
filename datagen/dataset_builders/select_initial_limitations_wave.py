@@ -21,7 +21,7 @@ DEFAULT_BASE = Path(
     "/wbl-fast/usrs/ee/code-swe-data/runtime/hf_upload/"
     "swerebench-traces-raw-source-plus-all-local-generated-plus-other-sources-exact-20260616-0745"
 )
-DEFAULT_TASKS_CSV = Path(__file__).resolve().parents[1] / "datagen" / "swerebench_v2" / "data" / "high_quality_conf_ge_0.95_tasks.csv"
+DEFAULT_TASKS_CSV = Path(__file__).resolve().parents[2] / "datagen" / "swerebench_v2" / "data" / "high_quality_conf_ge_0.95_tasks.csv"
 TARGETS = {
     "c": 120,
     "cpp": 120,

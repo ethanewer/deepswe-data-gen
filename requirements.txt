@@ -12,3 +12,4 @@ openai
 pyarrow
 swebench
 uvicorn
+zstandard

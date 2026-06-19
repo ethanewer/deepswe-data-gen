@@ -35,6 +35,7 @@ virtualenv/
 
 __pycache__/
 *.pyc
+.pytest_cache/
 .DS_Store
 
 # Local model serving runtime artifacts. Keep scripts/docs in git, but keep
