@@ -200,6 +200,57 @@ activation checkpointing on, `limit_all_gathers=true`,
 `SAVE_STEPS`, `PACKING_LENGTH`, `PER_DEVICE_BATCH_SIZE`, `GRAD_ACCUM_STEPS`,
 `OUTPUT_DIR`, `RUN_NAME`.
 
+## Assistant-turn loss masking (current behavior)
+
+**Today every assistant turn is trained on.** The only masking applied is the
+standard SFT one: loss is computed on assistant tokens, while system/user turns
+and tool observations (which `materialize_swift_messages_dataset.py` renders as
+`role: user` `<tool_response>...`) get zero loss. There is **no per-assistant-turn
+masking** — in particular, turns containing failed or "bad" tool calls are *not*
+masked; the model is trained to imitate them.
+
+This is worth flagging because the masking signal exists upstream but is dropped:
+
+- The published v75 dataset *does* carry a per-message `loss` field. A small
+  fraction of assistant turns are marked `loss: false` (~0.3%; in a 44k-turn
+  sample, 143 turns). Those turns are **reasoning-free tool-call turns** (a tool
+  call with no `<think>` block) — *not* failed tool calls: only 8/143 preceded a
+  non-zero `returncode`, while ~2.8k turns that *did* precede a tool failure were
+  left trainable. So even the upstream policy does not target bad tool calls.
+- `scripts/materialize_swift_messages_dataset.py` flattens each assistant message
+  to `{"role": "assistant", "content": ...}` and **does not propagate `loss`**, so
+  the `train.jsonl` the recipes consume has no per-turn masking at all.
+
+### How to enable per-turn masking in the future
+
+ms-swift's messages preprocessor already honors a per-message `loss` key: its
+default `loss_scale` plugin reads `loss = messages[2*i+1].get('loss')` for each
+assistant response and sets that turn's `loss_scale = float(loss)` — so
+`"loss": false` masks the turn, absent/`true` trains it normally (verified in
+`swift/plugin/loss_scale/loss_scale.py`). No extra `swift sft` flag is required.
+So masking is purely a data-materialization change:
+
+1. **Re-propagate the dataset's existing policy** — in `_convert_row` of
+   `materialize_swift_messages_dataset.py`, carry the flag through when building
+   the assistant message:
+
+   ```python
+   asst = {"role": "assistant", "content": _assistant_content(message)}
+   if message.get("loss") is False:   # honor upstream loss policy
+       asst["loss"] = False
+   messages.append(asst)
+   ```
+
+2. **Add a new "mask bad tool calls" policy** (not present in the data today) —
+   at materialization time the tool result is the very next message, so set
+   `loss: false` on an assistant turn whose following `role: tool` response is a
+   failure, e.g. its content has `<returncode>` ≠ 0 (or the tool call failed to
+   parse). Compute it in the same `_convert_row` loop and emit `"loss": false`.
+
+Re-materialize to a new `--output-dir` and point `TRAIN_DATASET` at it; this only
+affects future runs. Add/extend a case in `tests/test_qwen_agentic_sft_data.py`
+to lock the chosen policy.
+
 ## Reproducing the v75 dataset (provenance)
 
 `dataset_reproduce/` documents how the published HF dataset
