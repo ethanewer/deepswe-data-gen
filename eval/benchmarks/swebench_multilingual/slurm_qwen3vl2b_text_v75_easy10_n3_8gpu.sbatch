@@ -40,7 +40,9 @@ TEMPERATURE="${TEMPERATURE:-0.6}"
 GENERATION_STEP_LIMIT="${GENERATION_STEP_LIMIT:-250}"
 GENERATION_WORKERS="${GENERATION_WORKERS:-8}"
 EVAL_WORKERS="${EVAL_WORKERS:-4}"
-EXTRA_BODY_JSON="${EXTRA_BODY_JSON:-{\"top_p\":0.95,\"top_k\":20,\"min_p\":0,\"presence_penalty\":0}}"
+if [ -z "${EXTRA_BODY_JSON:-}" ]; then
+  EXTRA_BODY_JSON='{"top_p":0.95,"top_k":20,"min_p":0,"presence_penalty":0}'
+fi
 RUN_SUFFIX="${RUN_SUFFIX:-$(date -u +%Y%m%dT%H%M%SZ)}"
 RUN_STEM="${RUN_STEM:-qwen3-2b-thinking-v75-${CHECKPOINT_LABEL}-40k-l40s-${EVAL_GPU_COUNT}gpu-swebench-ml-easy10}"
 

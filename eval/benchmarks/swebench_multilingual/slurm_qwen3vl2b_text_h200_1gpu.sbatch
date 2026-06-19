@@ -46,7 +46,9 @@ MAX_TOKENS="${MAX_TOKENS:-16384}"
 GENERATION_WORKERS="${GENERATION_WORKERS:-1}"
 EVAL_WORKERS="${EVAL_WORKERS:-4}"
 SERVE_HEALTH_TIMEOUT="${SERVE_HEALTH_TIMEOUT:-2400}"
-EXTRA_BODY_JSON="${EXTRA_BODY_JSON:-{\"top_p\":0.95,\"top_k\":20,\"min_p\":0,\"presence_penalty\":0}}"
+if [ -z "${EXTRA_BODY_JSON:-}" ]; then
+  EXTRA_BODY_JSON='{"top_p":0.95,"top_k":20,"min_p":0,"presence_penalty":0}'
+fi
 
 export PATH="$REPO_ROOT/.venv/bin:$PATH"
 export PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}"
