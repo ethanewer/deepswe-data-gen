@@ -21,8 +21,6 @@
     "chat_template": "eval/chat_templates/qwen3_thinking_acc.jinja2",
     "chat_template_content_format": "string",
     "vllm_args": [
-      "--reasoning-parser",
-      "deepseek_r1",
       "--enable-auto-tool-choice",
       "--tool-call-parser",
       "hermes"
@@ -49,7 +47,7 @@
     }
   },
   "notes": [
-    "vLLM 0.19.1 exposes --reasoning-parser but not the older --enable-reasoning flag.",
+    "No vLLM reasoning parser is used: deepseek_r1 dropped reasoning_content here; with no parser the model's own <think>...</think> stays in `content` and is retained across the agent chat history, matching training.",
     "The model card says this checkpoint supports only thinking mode; do not pass enable_thinking=false."
   ]
 }

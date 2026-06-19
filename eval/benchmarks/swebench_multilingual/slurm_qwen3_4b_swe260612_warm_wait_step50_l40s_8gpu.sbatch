@@ -120,8 +120,6 @@ payload = {
             "TMPDIR": f"{serve_cache_dir}/backend-{{backend_index}}/tmp",
         },
         "vllm_args": [
-            "--reasoning-parser",
-            "deepseek_r1",
             "--enable-auto-tool-choice",
             "--tool-call-parser",
             "hermes",
