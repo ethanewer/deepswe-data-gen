@@ -25,6 +25,7 @@ export FSDP_CONFIG="${FSDP_CONFIG:-$ROOT_DIR/configs/qwen3_swift_fsdp_65k_memory
 # all-gather that is ruinous on PCIe-only L40S boxes (no NVLink).
 export FSDP_SHARDING="${FSDP_SHARDING:-full_shard auto_wrap}"
 export SEQUENCE_PARALLEL_SIZE="${SEQUENCE_PARALLEL_SIZE:-1}"
+export PACKING="${PACKING:-true}"
 # Training duration: prefer epochs. If NUM_EPOCHS is set, train that many epochs
 # (max_steps disabled); otherwise fall back to a fixed MAX_STEPS. Epoch-based is the
 # default mode for recipes (1 epoch typical, 2 as a targeted choice).
@@ -55,7 +56,7 @@ common_args=(
   --lr_scheduler_type cosine \
   --warmup_ratio "$WARMUP_RATIO" \
   --gradient_accumulation_steps "$GRAD_ACCUM_STEPS" \
-  --packing true \
+  --packing "$PACKING" \
   --packing_length "$PACKING_LENGTH" \
   --max_length "$PACKING_LENGTH" \
   --truncation_strategy right \
@@ -98,6 +99,7 @@ else
 fi
 
 echo "parallelism=fsdp '$FSDP_SHARDING' (data-parallel, no tensor parallelism), sequence_parallel_size=$SEQUENCE_PARALLEL_SIZE"
+echo "packing=$PACKING packing_length=$PACKING_LENGTH"
 echo "fsdp_config=$FSDP_CONFIG"
 echo "duration: $duration_desc"
 

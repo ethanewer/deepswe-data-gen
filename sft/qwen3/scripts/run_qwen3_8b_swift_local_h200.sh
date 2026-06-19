@@ -12,6 +12,7 @@ LR="${LR:-1e-5}"
 MAX_STEPS="${MAX_STEPS:-100}"
 NUM_EPOCHS="${NUM_EPOCHS:-1}"   # epoch-based by default (1 epoch); set NUM_EPOCHS="" to use MAX_STEPS
 SAVE_STEPS="${SAVE_STEPS:-50}"
+PACKING="${PACKING:-true}"
 PACKING_LENGTH="${PACKING_LENGTH:-65536}"
 PER_DEVICE_BATCH_SIZE="${PER_DEVICE_BATCH_SIZE:-1}"
 GRAD_ACCUM_STEPS="${GRAD_ACCUM_STEPS:-2}"
@@ -47,13 +48,15 @@ fi
 DP_SIZE=$WORLD_SIZE
 GLOBAL_PACKS=$((DP_SIZE * PER_DEVICE_BATCH_SIZE * GRAD_ACCUM_STEPS))
 GLOBAL_TOKENS=$((GLOBAL_PACKS * PACKING_LENGTH))
-if [ "$GLOBAL_PACKS" -ne 16 ]; then
-  echo "Expected 16 packed sequences/update, got $GLOBAL_PACKS" >&2
-  exit 1
-fi
-if [ "$GLOBAL_TOKENS" -ne 1048576 ]; then
-  echo "Expected 1,048,576 tokens/update, got $GLOBAL_TOKENS" >&2
-  exit 1
+if [ "$PACKING" = "true" ]; then
+  if [ "$GLOBAL_PACKS" -ne 16 ]; then
+    echo "Expected 16 packed sequences/update, got $GLOBAL_PACKS" >&2
+    exit 1
+  fi
+  if [ "$GLOBAL_TOKENS" -ne 1048576 ]; then
+    echo "Expected 1,048,576 tokens/update, got $GLOBAL_TOKENS" >&2
+    exit 1
+  fi
 fi
 if [ ! -f "$TRAIN_DATASET" ]; then
   echo "Missing TRAIN_DATASET=$TRAIN_DATASET. Run materialize_swift_messages_dataset.py first." >&2
@@ -79,11 +82,11 @@ echo "model=$MODEL"
 echo "train_dataset=$TRAIN_DATASET"
 echo "output_dir=$OUTPUT_DIR"
 echo "lr=$LR max_steps=$MAX_STEPS save_steps=$SAVE_STEPS"
-echo "packing_length=$PACKING_LENGTH world_size=$WORLD_SIZE dp_size=$DP_SIZE global_packs=$GLOBAL_PACKS global_tokens=$GLOBAL_TOKENS"
+echo "packing=$PACKING packing_length=$PACKING_LENGTH world_size=$WORLD_SIZE dp_size=$DP_SIZE global_packs=$GLOBAL_PACKS global_tokens=$GLOBAL_TOKENS"
 echo "parallelism=fsdp full_shard (data-parallel, no tensor parallelism)"
 echo "fsdp_config=$FSDP_CONFIG"
 
-export ROOT_DIR MODEL TRAIN_DATASET LR MAX_STEPS NUM_EPOCHS SAVE_STEPS PACKING_LENGTH
+export ROOT_DIR MODEL TRAIN_DATASET LR MAX_STEPS NUM_EPOCHS SAVE_STEPS PACKING PACKING_LENGTH
 export PER_DEVICE_BATCH_SIZE GRAD_ACCUM_STEPS WARMUP_RATIO WEIGHT_DECAY OUTPUT_DIR
 export MASTER_ADDR MASTER_PORT
 export FSDP_CONFIG
@@ -108,6 +111,7 @@ exec docker run --rm \
   -e MAX_STEPS \
   -e NUM_EPOCHS \
   -e SAVE_STEPS \
+  -e PACKING \
   -e PACKING_LENGTH \
   -e PER_DEVICE_BATCH_SIZE \
   -e GRAD_ACCUM_STEPS \
