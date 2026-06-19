@@ -2,13 +2,15 @@
 
 Full-parameter supervised fine-tuning of Qwen3 thinking models on agentic
 SWE traces, using [ms-swift](https://github.com/modelscope/ms-swift) inside the
-ModelScope Swift Docker image. Two recipes are supported:
+ModelScope Swift Docker image. Three recipes are supported:
 
+- **2B** — `eewer/qwen3-vl-2b-thinking-text`, single 8×H200 node.
 - **4B** — `Qwen/Qwen3-4B-Thinking-2507`, single 8×H200 node.
-- **8B** — a normal Qwen3 checkpoint converted from the `Qwen/Qwen3-VL-8B-Thinking`
-  text tower, trained on 2×8×H200 nodes.
+- **8B** — `eewer/qwen3-vl-8b-thinking-text`, 2×8×H200 nodes.
 
-Both recipes are **FSDP fully-sharded data-parallel with no tensor parallelism**:
+The 2B and 8B bases are **text-only Qwen3 checkpoints derived from the Qwen3-VL
+text towers** (see "Base checkpoints" below); the 4B base is a native Qwen3
+release. All recipes are **FSDP fully-sharded data-parallel with no tensor parallelism**:
 every rank is a data-parallel replica whose parameters, gradients, and optimizer
 state are sharded across ranks (ZeRO-3 equivalent). There is intentionally no
 DeepSpeed or tensor-parallel code path.
@@ -19,11 +21,12 @@ DeepSpeed or tensor-parallel code path.
 configs/qwen3_swift_fsdp_65k_memory_first.json   shared FSDP config (wraps Qwen3DecoderLayer)
 scripts/                                         the recipe (run these)
   run_qwen3_swift_inside_container.sh            the `swift sft` invocation; runs INSIDE the container
+  run_qwen3_2b_swift_local_h200.sh               2B launcher: 1 node × 8 H200 (docker)
   run_qwen3_4b_swift_local_h200.sh               4B launcher: 1 node × 8 H200 (docker)
   slurm_qwen3_8b_swift_2node_h200.sbatch         8B launcher: 2 nodes × 8 H200 (slurm + docker)
   materialize_swift_messages_dataset.py          data prep: HF dataset -> swift messages train.jsonl
-  prepare_qwen3_vl_text_checkpoint.py            8B step 1: text-only view of Qwen3-VL-8B-Thinking
-  save_qwen3_vl_text_as_qwen3_checkpoint.py      8B step 2: convert that view to a normal Qwen3 checkpoint
+  prepare_qwen3_vl_text_checkpoint.py            VL->text: build a text-only view of a Qwen3-VL model
+  save_qwen3_vl_text_as_qwen3_checkpoint.py      VL->text: convert that view to a normal Qwen3 checkpoint
 dataset_reproduce/                               provenance: how the published v75 HF dataset was built
 src/qwen_agentic_sft/                            normalization + loss-policy lib used by dataset_reproduce/
 data/                                            gitignored; recipe inputs/outputs land here
@@ -39,6 +42,32 @@ data/                                            gitignored; recipe inputs/outpu
 The launchers default `ROOT_DIR` and HF cache paths to a specific cluster
 (`/wbl-fast/...`); override `ROOT_DIR`, `HF_HOME`, `DOCKER_IMAGE`, `MODEL`, etc.
 to run elsewhere.
+
+## Base checkpoints
+
+The 2B and 8B recipes train **text-only Qwen3 checkpoints** extracted from the
+Qwen3-VL text towers (vision/aligner modules dropped, `model.language_model.*`
+renamed to `model.*`, `model_type: qwen3`). All four are published (private)
+under the `eewer` account and were built with
+`prepare_qwen3_vl_text_checkpoint.py` + `save_qwen3_vl_text_as_qwen3_checkpoint.py`:
+
+| Base (HF repo)                     | Source VL model              | Used by |
+| ---------------------------------- | ---------------------------- | ------- |
+| `eewer/qwen3-vl-2b-thinking-text`  | `Qwen/Qwen3-VL-2B-Thinking`  | 2B recipe (default) |
+| `eewer/qwen3-vl-2b-instruct-text`  | `Qwen/Qwen3-VL-2B-Instruct`  | 2B recipe (`MODEL=` override) |
+| `eewer/qwen3-vl-8b-thinking-text`  | `Qwen/Qwen3-VL-8B-Thinking`  | 8B recipe (default) |
+| `eewer/qwen3-vl-8b-instruct-text`  | `Qwen/Qwen3-VL-8B-Instruct`  | 8B recipe (`MODEL=` override) |
+
+The 4B recipe uses the native `Qwen/Qwen3-4B-Thinking-2507` release (no
+conversion). To rebuild any text checkpoint locally (e.g. to re-upload):
+
+```bash
+./scripts/prepare_qwen3_vl_text_checkpoint.py --repo-id Qwen/Qwen3-VL-8B-Thinking \
+  --output-dir data/qwen3_vl_8b_thinking_view
+./scripts/save_qwen3_vl_text_as_qwen3_checkpoint.py \
+  --input-dir data/qwen3_vl_8b_thinking_view \
+  --output-dir data/qwen3_vl_8b_thinking_text --copy-files
+```
 
 ## 1. Prepare the training data
 
@@ -78,29 +107,27 @@ Defaults: `MODEL=Qwen/Qwen3-4B-Thinking-2507`, `PACKING_LENGTH=65536`,
 1,048,576 tokens per optimizer update. The wrapper sets env defaults and execs
 `run_qwen3_swift_inside_container.sh` inside the Swift container.
 
-## 2b. Train the 8B recipe (2 nodes × 8 H200)
-
-The 8B recipe trains a **normal Qwen3 checkpoint converted from the
-Qwen3-VL-8B-Thinking text tower**. Build it once (two steps):
+## 2b. Train the 2B recipe (1 node × 8 H200)
 
 ```bash
-# Step 1: filtered text-only safetensors view of Qwen/Qwen3-VL-8B-Thinking
-./scripts/prepare_qwen3_vl_text_checkpoint.py \
-  --output-dir data/qwen3_vl_8b_text_checkpoint
-
-# Step 2: convert that view into a real Qwen3 causal-LM checkpoint
-#         (model_type: qwen3, architectures: ["Qwen3ForCausalLM"],
-#          model.language_model.* keys renamed to model.*)
-./scripts/save_qwen3_vl_text_as_qwen3_checkpoint.py \
-  --input-dir data/qwen3_vl_8b_text_checkpoint \
-  --output-dir data/qwen3_vl_8b_text_as_qwen3_checkpoint
+./scripts/run_qwen3_2b_swift_local_h200.sh
 ```
 
-Then submit the 2-node recipe (its default `MODEL` is the converted checkpoint):
+Defaults: `MODEL=eewer/qwen3-vl-2b-thinking-text` (downloaded from the Hub),
+`GRAD_ACCUM_STEPS=2` → 16 packed sequences / 1,048,576 tokens per optimizer
+update. This launcher mirrors the 4B one apart from the base model. Use the
+instruct base with `MODEL=eewer/qwen3-vl-2b-instruct-text`.
+
+## 2c. Train the 8B recipe (2 nodes × 8 H200)
 
 ```bash
 sbatch scripts/slurm_qwen3_8b_swift_2node_h200.sbatch
 ```
+
+Defaults: `MODEL=eewer/qwen3-vl-8b-thinking-text` (downloaded from the Hub),
+2 × 8 H200, `PACKING_LENGTH=65536`, `PER_DEVICE_BATCH_SIZE=1`,
+`GRAD_ACCUM_STEPS=1` → 16 packed sequences / 1,048,576 tokens per update. Use the
+instruct base with `MODEL=eewer/qwen3-vl-8b-instruct-text`.
 
 LR-sweep example:
 
@@ -109,9 +136,6 @@ sbatch \
   --export=ALL,LR=1e-6,RUN_NAME=qwen3_8b_swift_lr1e6_s100_2node_h200 \
   scripts/slurm_qwen3_8b_swift_2node_h200.sbatch
 ```
-
-Defaults: 2 × 8 H200, `PACKING_LENGTH=65536`, `PER_DEVICE_BATCH_SIZE=1`,
-`GRAD_ACCUM_STEPS=1` → 16 packed sequences / 1,048,576 tokens per update.
 
 ## Shared training arguments
 
