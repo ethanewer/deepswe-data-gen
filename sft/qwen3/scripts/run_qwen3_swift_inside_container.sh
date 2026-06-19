@@ -25,6 +25,10 @@ export FSDP_CONFIG="${FSDP_CONFIG:-$ROOT_DIR/configs/qwen3_swift_fsdp_65k_memory
 # all-gather that is ruinous on PCIe-only L40S boxes (no NVLink).
 export FSDP_SHARDING="${FSDP_SHARDING:-full_shard auto_wrap}"
 export SEQUENCE_PARALLEL_SIZE="${SEQUENCE_PARALLEL_SIZE:-1}"
+# Training duration: prefer epochs. If NUM_EPOCHS is set, train that many epochs
+# (max_steps disabled); otherwise fall back to a fixed MAX_STEPS. Epoch-based is the
+# default mode for recipes (1 epoch typical, 2 as a targeted choice).
+export NUM_EPOCHS="${NUM_EPOCHS:-}"
 
 echo "node_rank=$NODE_RANK host=$(hostname -f 2>/dev/null || hostname)"
 nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv,noheader,nounits | sed -n "1,8p"
@@ -60,7 +64,6 @@ common_args=(
   --save_total_limit 4 \
   --save_only_model true \
   --logging_steps 1 \
-  --max_steps "$MAX_STEPS" \
   --dataloader_num_workers 8 \
   --dataset_num_proc 8 \
   --output_dir "$OUTPUT_DIR" \
@@ -85,7 +88,17 @@ if [ "${SEQUENCE_PARALLEL_SIZE:-1}" -gt 1 ]; then
   distributed_args+=(--sequence_parallel_size "$SEQUENCE_PARALLEL_SIZE")
 fi
 
+# Training duration: epochs if NUM_EPOCHS set (recipe default), else fixed steps.
+if [ -n "${NUM_EPOCHS:-}" ]; then
+  duration_args=(--num_train_epochs "$NUM_EPOCHS" --max_steps -1)
+  duration_desc="num_train_epochs=$NUM_EPOCHS"
+else
+  duration_args=(--max_steps "$MAX_STEPS")
+  duration_desc="max_steps=$MAX_STEPS"
+fi
+
 echo "parallelism=fsdp '$FSDP_SHARDING' (data-parallel, no tensor parallelism), sequence_parallel_size=$SEQUENCE_PARALLEL_SIZE"
 echo "fsdp_config=$FSDP_CONFIG"
+echo "duration: $duration_desc"
 
-swift sft "${common_args[@]}" "${distributed_args[@]}"
+swift sft "${common_args[@]}" "${distributed_args[@]}" "${duration_args[@]}"

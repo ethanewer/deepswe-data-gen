@@ -10,6 +10,7 @@ MODEL="${MODEL:-eewer/qwen3-vl-8b-thinking-text}"
 TRAIN_DATASET="${TRAIN_DATASET:-$ROOT_DIR/data/qwen3_v75_swift_messages/train.jsonl}"
 LR="${LR:-1e-5}"
 MAX_STEPS="${MAX_STEPS:-100}"
+NUM_EPOCHS="${NUM_EPOCHS:-1}"   # epoch-based by default (1 epoch); set NUM_EPOCHS="" to use MAX_STEPS
 SAVE_STEPS="${SAVE_STEPS:-50}"
 PACKING_LENGTH="${PACKING_LENGTH:-65536}"
 PER_DEVICE_BATCH_SIZE="${PER_DEVICE_BATCH_SIZE:-1}"
@@ -24,7 +25,8 @@ MASTER_ADDR="${MASTER_ADDR:-127.0.0.1}"
 MASTER_PORT="${MASTER_PORT:-$((30000 + ($$ % 10000)))}"
 
 RUN_STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-RUN_NAME="${RUN_NAME:-qwen3_8b_thinking_v75_msswift_dp8_lr${LR}_s${MAX_STEPS}_local_h200_${RUN_STAMP}}"
+if [ -n "$NUM_EPOCHS" ]; then DUR_TAG="ep${NUM_EPOCHS}"; else DUR_TAG="s${MAX_STEPS}"; fi
+RUN_NAME="${RUN_NAME:-qwen3_8b_thinking_v75_msswift_dp8_lr${LR}_${DUR_TAG}_local_h200_${RUN_STAMP}}"
 OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/checkpoints/$RUN_NAME}"
 CONTAINER_NAME="${CONTAINER_NAME:-swift_${RUN_NAME}}"
 
@@ -81,7 +83,7 @@ echo "packing_length=$PACKING_LENGTH world_size=$WORLD_SIZE dp_size=$DP_SIZE glo
 echo "parallelism=fsdp full_shard (data-parallel, no tensor parallelism)"
 echo "fsdp_config=$FSDP_CONFIG"
 
-export ROOT_DIR MODEL TRAIN_DATASET LR MAX_STEPS SAVE_STEPS PACKING_LENGTH
+export ROOT_DIR MODEL TRAIN_DATASET LR MAX_STEPS NUM_EPOCHS SAVE_STEPS PACKING_LENGTH
 export PER_DEVICE_BATCH_SIZE GRAD_ACCUM_STEPS WARMUP_RATIO WEIGHT_DECAY OUTPUT_DIR
 export MASTER_ADDR MASTER_PORT
 export FSDP_CONFIG
@@ -104,6 +106,7 @@ exec docker run --rm \
   -e TRAIN_DATASET \
   -e LR \
   -e MAX_STEPS \
+  -e NUM_EPOCHS \
   -e SAVE_STEPS \
   -e PACKING_LENGTH \
   -e PER_DEVICE_BATCH_SIZE \
