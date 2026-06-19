@@ -47,8 +47,8 @@ to run elsewhere.
 
 The 2B and 8B recipes train **text-only Qwen3 checkpoints** extracted from the
 Qwen3-VL text towers (vision/aligner modules dropped, `model.language_model.*`
-renamed to `model.*`, `model_type: qwen3`). All four are published (private)
-under the `eewer` account and were built with
+renamed to `model.*`, `model_type: qwen3`). They are reformatted Apache-2.0 base
+weights, so all four are published publicly under the `eewer` account, built with
 `prepare_qwen3_vl_text_checkpoint.py` + `save_qwen3_vl_text_as_qwen3_checkpoint.py`:
 
 | Base (HF repo)                     | Source VL model              | Used by |
