@@ -259,6 +259,9 @@ built from raw verification-enhanced traces. It is kept for provenance and is
 not needed for normal training (start from step 1 above instead). The pipeline:
 
 1. `build_swerebench_verification_enhanced_strict_pass_allowlist.py` — strict-passed cap-4 allowlist
+   (`build_swerebench_verification_enhanced_expanded_allowlist.py` builds the
+   experimental expanded mix: strict-passed rows plus a capped slice of
+   submitted, non-empty, patch-verified non-passing traces)
 2. `build_swe260612_miniswe_raw.py` — apply allowlist, normalize to mini-swe-agent format
    (uses `build_swebench_ml_sft_mix.py` and `src/qwen_agentic_sft`)
 3. `spread_miniswe_rows_by_task.py` → `reorder_miniswe_shards_preserve_prefix.py` — shard for training
