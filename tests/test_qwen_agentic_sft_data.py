@@ -46,8 +46,15 @@ class CharTokenizer:
             role = message["role"]
             content = str(message.get("content") or "")
             if role == "assistant":
+                # Mirror the Qwen3 thinking chat template (qwen3_thinking_acc.jinja2):
+                # prefer the reasoning_content field, else extract reasoning from a
+                # <think> block in content. The loss policy moves dropped reasoning
+                # into reasoning_content, so the mock must read it from there.
                 reasoning = ""
-                if "</think>" in content:
+                reasoning_content = message.get("reasoning_content")
+                if isinstance(reasoning_content, str) and reasoning_content:
+                    reasoning = reasoning_content.strip()
+                elif "</think>" in content:
                     reasoning = content.split("</think>")[0].split("<think>", 1)[-1].strip()
                     content = content.split("</think>", 1)[1].lstrip("\n")
                 rendered += f"<|im_start|>assistant\n<think>\n{reasoning}\n</think>\n\n{content.lstrip()}"
@@ -203,8 +210,9 @@ def test_loss_policy_can_drop_visible_content_on_tool_call_turn() -> None:
 
     assistant = filtered["messages"][1]
     assert assistant.get("loss") is not False
-    assert "I should list files." in assistant["content"]
-    assert "Let me inspect" not in assistant["content"]
+    # Reasoning is preserved in reasoning_content; the visible content is dropped.
+    assert "I should list files." in assistant["reasoning_content"]
+    assert assistant["content"] == ""
 
 
 def test_tool_call_loss_target_masks_reasoning_and_visible_content() -> None:
