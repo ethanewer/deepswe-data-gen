@@ -23,6 +23,8 @@ scripts/                                         the recipe (run these)
   run_qwen3_swift_inside_container.sh            the `swift sft` invocation; runs INSIDE the container
   run_qwen3_2b_swift_local_h200.sh               2B launcher: 1 node × 8 H200 (docker)
   run_qwen3_4b_swift_local_h200.sh               4B launcher: 1 node × 8 H200 (docker)
+  run_qwen3_2b_swift_local_l40s.sh               2B launcher: 1 node × 8 L40S 46GB (docker)
+  run_qwen3_4b_swift_local_l40s.sh               4B launcher: 1 node × 8 L40S 46GB (docker)
   slurm_qwen3_8b_swift_2node_h200.sbatch         8B launcher: 2 nodes × 8 H200 (slurm + docker)
   materialize_swift_messages_dataset.py          data prep: HF dataset -> swift messages train.jsonl
   prepare_qwen3_vl_text_checkpoint.py            VL->text: build a text-only view of a Qwen3-VL model
@@ -136,6 +138,56 @@ sbatch \
   --export=ALL,LR=1e-6,RUN_NAME=qwen3_8b_swift_lr1e6_s100_2node_h200 \
   scripts/slurm_qwen3_8b_swift_2node_h200.sbatch
 ```
+
+## 2d. Train locally on 8 × L40S (46 GB)
+
+```bash
+./scripts/run_qwen3_2b_swift_local_l40s.sh    # 2B, 1 node × 8 L40S
+./scripts/run_qwen3_4b_swift_local_l40s.sh    # 4B, 1 node × 8 L40S
+```
+
+These mirror the H200 launchers (same `swift sft` path, same FSDP config) and keep
+the **identical global batch**: `PACKING_LENGTH=65536`, `PER_DEVICE_BATCH_SIZE=1`,
+`GRAD_ACCUM_STEPS=2` → **16 packed sequences / 1,048,576 tokens per optimizer
+update**, byte-for-byte the same optimization as the H200 recipes.
+
+The L40S is a 46 GB, PCIe-only card (no NVLink) with far less compute and HBM
+bandwidth than an H200, so the launchers differ from the H200 ones in exactly one
+tuned knob — `FSDP_SHARDING`:
+
+- At 64K packing the box is **compute/bandwidth-bound, not communication-bound**:
+  every GPU pegs at 100% on the quadratic 64K attention. Total work per step (16
+  packs × 64K) is fixed regardless of how it is parallelized, so tensor- or
+  sequence-parallelism would only *add* PCIe traffic — they were not used.
+- The one lever that helps is dropping the ZeRO-3 per-layer parameter all-gather.
+  **ZeRO-2** (`FSDP_SHARDING="shard_grad_op auto_wrap"`, parameters resident, only
+  gradients + optimizer state sharded) is the default for both recipes: ~13%
+  faster for 2B and ~8% faster for 4B than the H200-style ZeRO-3 `full_shard`.
+- ZeRO-2 keeps the parameters resident, so it costs memory. For 2B that is
+  irrelevant (~24 GiB peak). For 4B it peaks at ~43.7 GiB — fits the 46 GiB card
+  with a deterministic ~2 GiB margin (every pack is exactly 64K). If you OOM
+  (other GPU users / larger `PACKING_LENGTH` / a bigger model), set
+  `FSDP_SHARDING="full_shard auto_wrap"` (ZeRO-3, ~38.9 GiB peak, ~8% slower).
+
+`USE_HF=1` (set by `run_qwen3_swift_inside_container.sh`) makes swift resolve the
+`eewer/*` Hub ids from HuggingFace rather than ModelScope. Override `ROOT_DIR`,
+`HF_HOME`, `DOCKER_IMAGE`, `MODEL`, `LR`, `MAX_STEPS`, etc. as for the H200 recipes.
+
+### Measured throughput (8 × L40S, this node)
+
+Steady-state, warmup step dropped, real v75 SWE data, 1,048,576 tokens/update in
+every row. TPS = tokens / wall-clock-second; "peak" is `torch` reserved memory
+per GPU on the 46 GiB (≈45 GiB usable) card. Step time varies ±~10% run-to-run
+(L40S clock throttling under sustained 100% load).
+
+| Recipe | `FSDP_SHARDING`            | s/step | **tokens/s (8 GPUs)** | tokens/s/GPU | peak mem/GPU |
+| ------ | ------------------------- | -----: | --------------------: | -----------: | -----------: |
+| **2B** | `shard_grad_op` (ZeRO-2, default) | ~31.8 | **~33,000** | ~4,130 | ~23.6 GiB |
+| 2B     | `full_shard` (ZeRO-3)     | ~36.0  | ~29,100               | ~3,640       | ~21.0 GiB    |
+| **4B** | `shard_grad_op` (ZeRO-2, default) | ~80.0 | **~13,100** | ~1,640 | ~43.7 GiB |
+| 4B     | `full_shard` (ZeRO-3)     | ~88.0  | ~11,900               | ~1,490       | ~38.2 GiB    |
+
+(H200 throughput was not measured on this node, which has only L40S GPUs.)
 
 ## Shared training arguments
 

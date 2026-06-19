@@ -9,11 +9,22 @@ export WANDB_MODE=disabled
 export HF_HOME="${HF_HOME:-/wbl-fast/usrs/ee/code-swe-data/.cache/huggingface}"
 export HUGGINGFACE_HUB_CACHE="${HUGGINGFACE_HUB_CACHE:-$HF_HOME/hub}"
 export TRANSFORMERS_CACHE="${TRANSFORMERS_CACHE:-$HF_HOME/hub}"
+# Resolve Hub model ids from HuggingFace (the eewer/* bases live there and the
+# caches above are HF). Without this the ModelScope image defaults to the
+# ModelScope hub and 404s on a HF-only repo id. Local checkpoint paths (e.g. the
+# 4B recipe) bypass hub resolution entirely, so this is a no-op for them.
+export USE_HF="${USE_HF:-1}"
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-8}"
 export NPROC_PER_NODE="${NPROC_PER_NODE:-8}"
 export NNODES="${NNODES:-${SLURM_NNODES:?SLURM_NNODES is required}}"
 export NODE_RANK="${NODE_RANK:-${SLURM_NODEID:?SLURM_NODEID is required}}"
 export FSDP_CONFIG="${FSDP_CONFIG:-$ROOT_DIR/configs/qwen3_swift_fsdp_65k_memory_first.json}"
+# Sharding/parallelism knobs. Defaults reproduce the original H200 recipe exactly
+# (ZeRO-3 full_shard, data-parallel, no sequence parallelism). The L40S launchers
+# override FSDP_SHARDING to ZeRO-2 (shard_grad_op) to avoid the per-layer parameter
+# all-gather that is ruinous on PCIe-only L40S boxes (no NVLink).
+export FSDP_SHARDING="${FSDP_SHARDING:-full_shard auto_wrap}"
+export SEQUENCE_PARALLEL_SIZE="${SEQUENCE_PARALLEL_SIZE:-1}"
 
 echo "node_rank=$NODE_RANK host=$(hostname -f 2>/dev/null || hostname)"
 nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv,noheader,nounits | sed -n "1,8p"
@@ -59,15 +70,22 @@ common_args=(
 
 # FSDP fully-sharded data parallelism, no tensor parallelism. Every rank is a
 # data-parallel replica whose parameters/gradients/optimizer state are sharded
-# across ranks (ZeRO-3 equivalent). This recipe is intentionally DP-only: there
-# is no DeepSpeed or tensor-parallel code path.
+# across ranks. With FSDP_SHARDING="full_shard auto_wrap" this is ZeRO-3 (the
+# H200 default); with "shard_grad_op auto_wrap" it is ZeRO-2 (params resident,
+# only gradients + optimizer state sharded), which removes the per-layer param
+# all-gather and is much faster on PCIe-only nodes. This recipe is intentionally
+# DP-only: there is no tensor-parallel code path. SEQUENCE_PARALLEL_SIZE>1 adds
+# DeepSpeed-Ulysses sequence parallelism (composes with FSDP).
 distributed_args=(
-  --fsdp "full_shard auto_wrap" \
+  --fsdp "$FSDP_SHARDING" \
   --fsdp_config "$FSDP_CONFIG" \
   --no_gradient_checkpointing
 )
+if [ "${SEQUENCE_PARALLEL_SIZE:-1}" -gt 1 ]; then
+  distributed_args+=(--sequence_parallel_size "$SEQUENCE_PARALLEL_SIZE")
+fi
 
-echo "parallelism=fsdp full_shard (data-parallel, no tensor parallelism)"
+echo "parallelism=fsdp '$FSDP_SHARDING' (data-parallel, no tensor parallelism), sequence_parallel_size=$SEQUENCE_PARALLEL_SIZE"
 echo "fsdp_config=$FSDP_CONFIG"
 
 swift sft "${common_args[@]}" "${distributed_args[@]}"
