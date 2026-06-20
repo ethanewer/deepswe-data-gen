@@ -133,6 +133,8 @@ CONFIG_PATH="$REPO_ROOT/runs/serving_configs/${RUN_NAME}.json"
 SERVE_DIR="$REPO_ROOT/runs/serving/$RUN_NAME"
 OUTPUT_DIR="$BENCHMARK_OUTPUT_ROOT/$RUN_NAME"
 SERVE_CACHE_DIR="${SERVE_CACHE_DIR:-/tmp/q3eval-${SLURM_JOB_ID:-manual}-real}"
+export HF_DATASETS_CACHE="${HF_DATASETS_CACHE:-$SERVE_CACHE_DIR/hf_datasets}"
+mkdir -p "$HF_DATASETS_CACHE"
 mkdir -p "$BENCHMARK_OUTPUT_ROOT"
 
 if [ "${ENABLE_EVAL_TRIAL_LOCK:-true}" = "true" ] && [ -n "$RUN_SUFFIX" ]; then
