@@ -9,6 +9,7 @@
 #   STEPS                          checkpoint steps to watch (default: 50 100 150 196)
 #   TRIALS                         eval trials per checkpoint (default: 3)
 #   MAX_TOKENS                     eval output cap (default: 8192)
+#   EXPECTED_SHARDS                non-empty checkpoint shard count (default: 4)
 #   SESSION_PREFIX                 tmux session prefix (default derived from label)
 #   EVAL_REPO_ROOT                 eval harness repo root
 set -euo pipefail
@@ -25,6 +26,7 @@ TRIALS="${TRIALS:-3}"
 TRIAL_START="${TRIAL_START:-1}"
 STEPS="${STEPS:-50 100 150 196}"
 MAX_TOKENS="${MAX_TOKENS:-8192}"
+EXPECTED_SHARDS="${EXPECTED_SHARDS:-4}"
 TEMPERATURE="${TEMPERATURE:-0.6}"
 GENERATION_STEP_LIMIT="${GENERATION_STEP_LIMIT:-250}"
 EVAL_GPU_COUNT="${EVAL_GPU_COUNT:-4}"
@@ -46,6 +48,10 @@ if ! [[ "$TRIAL_START" =~ ^[1-9][0-9]*$ ]]; then
 fi
 if ! [[ "$MAX_TOKENS" =~ ^[1-9][0-9]*$ ]]; then
   echo "MAX_TOKENS must be a positive integer; got $MAX_TOKENS" >&2
+  exit 1
+fi
+if ! [[ "$EXPECTED_SHARDS" =~ ^[1-9][0-9]*$ ]]; then
+  echo "EXPECTED_SHARDS must be a positive integer; got $EXPECTED_SHARDS" >&2
   exit 1
 fi
 if [ ! -x "$SLURM_WRAPPER" ]; then
@@ -85,10 +91,24 @@ watch_one_step() {
 
     local checkpoint_dir="${run_v0_dir}/checkpoint-${WATCH_STEP}"
     echo "[$(date -Is)] waiting for ${checkpoint_dir}"
-    while ! compgen -G "${checkpoint_dir}/*.safetensors" >/dev/null; do
+    while true; do
+      local shard_count=0
+      local has_empty_shard=false
+      local shard
+      for shard in "${checkpoint_dir}"/model-*-of-*.safetensors; do
+        [ -e "$shard" ] || continue
+        if [ ! -s "$shard" ]; then
+          has_empty_shard=true
+          break
+        fi
+        shard_count=$((shard_count + 1))
+      done
+      if [ "$shard_count" -ge "$EXPECTED_SHARDS" ] && [ "$has_empty_shard" = "false" ]; then
+        break
+      fi
       sleep "$POLL_SECONDS"
     done
-    echo "[$(date -Is)] found checkpoint-${WATCH_STEP}; waiting ${STABLE_SLEEP}s for stable writes"
+    echo "[$(date -Is)] found checkpoint-${WATCH_STEP} with ${shard_count} non-empty shards; waiting ${STABLE_SLEEP}s for stable writes"
     sleep "$STABLE_SLEEP"
 
     cd "$EVAL_REPO_ROOT"
@@ -127,6 +147,6 @@ for step in $STEPS; do
     continue
   fi
   tmux new-session -d -s "$session_name" \
-    "env WATCHER_WORKER=true WATCH_STEP='$step' RUN_V0_DIR='${RUN_V0_DIR:-}' TRAIN_RUN_ROOT='${TRAIN_RUN_ROOT:-}' CHECKPOINT_LABEL_PREFIX='$CHECKPOINT_LABEL_PREFIX' RUN_STEM_PREFIX='$RUN_STEM_PREFIX' EVAL_REPO_ROOT='$EVAL_REPO_ROOT' INSTANCE_IDS_PATH='$INSTANCE_IDS_PATH' SLURM_WRAPPER='$SLURM_WRAPPER' MODEL_NAME='$MODEL_NAME' TRIALS='$TRIALS' TRIAL_START='$TRIAL_START' MAX_TOKENS='$MAX_TOKENS' TEMPERATURE='$TEMPERATURE' GENERATION_STEP_LIMIT='$GENERATION_STEP_LIMIT' EVAL_GPU_COUNT='$EVAL_GPU_COUNT' DEVICE_LABEL='$DEVICE_LABEL' BENCHMARK_LABEL='$BENCHMARK_LABEL' RUN_SUFFIX_PREFIX='$RUN_SUFFIX_PREFIX' STABLE_SLEEP='$STABLE_SLEEP' POLL_SECONDS='$POLL_SECONDS' LOG_DIR='$LOG_DIR' bash '$SCRIPT_PATH'"
+    "env WATCHER_WORKER=true WATCH_STEP='$step' RUN_V0_DIR='${RUN_V0_DIR:-}' TRAIN_RUN_ROOT='${TRAIN_RUN_ROOT:-}' CHECKPOINT_LABEL_PREFIX='$CHECKPOINT_LABEL_PREFIX' RUN_STEM_PREFIX='$RUN_STEM_PREFIX' EVAL_REPO_ROOT='$EVAL_REPO_ROOT' INSTANCE_IDS_PATH='$INSTANCE_IDS_PATH' SLURM_WRAPPER='$SLURM_WRAPPER' MODEL_NAME='$MODEL_NAME' TRIALS='$TRIALS' TRIAL_START='$TRIAL_START' MAX_TOKENS='$MAX_TOKENS' EXPECTED_SHARDS='$EXPECTED_SHARDS' TEMPERATURE='$TEMPERATURE' GENERATION_STEP_LIMIT='$GENERATION_STEP_LIMIT' EVAL_GPU_COUNT='$EVAL_GPU_COUNT' DEVICE_LABEL='$DEVICE_LABEL' BENCHMARK_LABEL='$BENCHMARK_LABEL' RUN_SUFFIX_PREFIX='$RUN_SUFFIX_PREFIX' STABLE_SLEEP='$STABLE_SLEEP' POLL_SECONDS='$POLL_SECONDS' LOG_DIR='$LOG_DIR' bash '$SCRIPT_PATH'"
   echo "started ${session_name}"
 done
