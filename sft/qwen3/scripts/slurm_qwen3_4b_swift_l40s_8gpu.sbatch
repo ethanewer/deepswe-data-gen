@@ -17,11 +17,13 @@ set -euo pipefail
 export ROOT_DIR="${ROOT_DIR:-/wbl-fast/usrs/ee/clean-20260619/deepswe-data-gen/sft/qwen3}"
 export LR="${LR:-1e-5}"
 export MAX_STEPS="${MAX_STEPS:-250}"
+export NUM_EPOCHS="${NUM_EPOCHS:-1}"
 export SAVE_STEPS="${SAVE_STEPS:-50}"
-export RUN_NAME="${RUN_NAME:-qwen3_4b_v75_l40s_lr${LR}_s${MAX_STEPS}_${SLURM_JOB_ID:-manual}}"
+if [ -n "$NUM_EPOCHS" ]; then DUR_TAG="ep${NUM_EPOCHS}"; else DUR_TAG="s${MAX_STEPS}"; fi
+export RUN_NAME="${RUN_NAME:-qwen3_4b_v75_l40s_lr${LR}_${DUR_TAG}_${SLURM_JOB_ID:-manual}}"
 export CONTAINER_NAME="${CONTAINER_NAME:-train_4b_l40s_${SLURM_JOB_ID:-manual}}"
 
 cd "$ROOT_DIR"
 echo "job_id=${SLURM_JOB_ID:-none} node=$(hostname) run_name=$RUN_NAME"
-echo "lr=$LR max_steps=$MAX_STEPS save_steps=$SAVE_STEPS"
+echo "lr=$LR max_steps=$MAX_STEPS num_epochs=$NUM_EPOCHS save_steps=$SAVE_STEPS"
 exec bash scripts/run_qwen3_4b_swift_local_l40s.sh

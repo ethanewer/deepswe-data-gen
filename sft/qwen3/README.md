@@ -171,7 +171,9 @@ tuned knob — `FSDP_SHARDING`:
 
 `USE_HF=1` (set by `run_qwen3_swift_inside_container.sh`) makes swift resolve the
 `eewer/*` Hub ids from HuggingFace rather than ModelScope. Override `ROOT_DIR`,
-`HF_HOME`, `DOCKER_IMAGE`, `MODEL`, `LR`, `MAX_STEPS`, etc. as for the H200 recipes.
+`HF_HOME`, `DOCKER_IMAGE`, `MODEL`, `LR`, `NUM_EPOCHS`, `MAX_STEPS`, etc. as for
+the H200 recipes. `NUM_EPOCHS=1` is the default for the 4B L40S launcher; set
+`NUM_EPOCHS=""` only for targeted fixed-step probes.
 
 ### Measured throughput (8 × L40S, this node)
 
