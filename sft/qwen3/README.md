@@ -253,6 +253,19 @@ Re-materialize to a new `--output-dir` and point `TRAIN_DATASET` at it; this onl
 affects future runs. Add/extend a case in `tests/test_qwen_agentic_sft_data.py`
 to lock the chosen policy.
 
+For an already-materialized Swift messages file, use:
+
+```bash
+scripts/mask_failed_tool_turns.py \
+  --input data/qwen3_v75_expanded_swift_messages/train.jsonl \
+  --output-dir data/qwen3_v75_expanded_swift_messages_mask_failed_tools
+```
+
+This preserves message content and row metadata, adding `loss: false` only to the
+assistant turn immediately before a rendered `<tool_response>` with a nonzero
+`<returncode>`. No Swift flag is needed; train by pointing `TRAIN_DATASET` at the
+new `train.jsonl`.
+
 ## Reproducing the v75 dataset (provenance)
 
 `dataset_reproduce/` documents how the published HF dataset
