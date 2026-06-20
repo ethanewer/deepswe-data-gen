@@ -250,7 +250,43 @@ trap cleanup EXIT
 
 EVAL_WORKERS="${EVAL_WORKERS:-$EVAL_GPU_COUNT}"
 GENERATION_WORKERS="${GENERATION_WORKERS:-$EVAL_GPU_COUNT}"
-EXTRA_BODY="${EXTRA_BODY_JSON:-{\"top_p\":0.95,\"top_k\":20,\"min_p\":0,\"presence_penalty\":0}}"
+if [ -n "${EXTRA_BODY_JSON:-}" ]; then
+  EXTRA_BODY="$EXTRA_BODY_JSON"
+else
+  EXTRA_BODY="$("$PYTHON" - <<'PY'
+import json
+import os
+
+
+def number_env(name: str, default: float | int | None = None):
+    value = os.getenv(name)
+    if value is None or value == "":
+        return default
+    try:
+        numeric = float(value)
+    except ValueError as exc:
+        raise SystemExit(f"{name} must be numeric; got {value!r}") from exc
+    return int(numeric) if numeric.is_integer() else numeric
+
+
+body = {
+    "top_p": number_env("EXTRA_BODY_TOP_P", 0.95),
+    "top_k": number_env("EXTRA_BODY_TOP_K", 20),
+    "min_p": number_env("EXTRA_BODY_MIN_P", 0),
+    "presence_penalty": number_env("EXTRA_BODY_PRESENCE_PENALTY", 0),
+}
+optional_keys = {
+    "EXTRA_BODY_REPETITION_PENALTY": "repetition_penalty",
+    "EXTRA_BODY_FREQUENCY_PENALTY": "frequency_penalty",
+}
+for env_name, json_key in optional_keys.items():
+    value = number_env(env_name)
+    if value is not None:
+        body[json_key] = value
+print(json.dumps(body, separators=(",", ":")))
+PY
+)"
+fi
 if [ "$ENABLE_DOCKER_STDIO_PROXY" = "true" ]; then
   DOCKER_PROXY_DIR="$(mktemp -d "/tmp/swebench-docker-proxy.${SLURM_JOB_ID:-manual}.XXXXXX")"
   DOCKER_PROXY_SOCKET="$DOCKER_PROXY_DIR/docker.sock"
