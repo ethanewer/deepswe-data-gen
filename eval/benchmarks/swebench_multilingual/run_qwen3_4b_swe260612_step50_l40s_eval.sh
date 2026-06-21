@@ -254,6 +254,11 @@ EVAL_WORKERS="${EVAL_WORKERS:-$EVAL_GPU_COUNT}"
 GENERATION_WORKERS="${GENERATION_WORKERS:-$EVAL_GPU_COUNT}"
 if [ "${ENABLE_STRICT_MSWEA_GUARDS:-false}" = "true" ]; then
   export PYDEPS_OVERLAY="${PYDEPS_OVERLAY:-/wbl-fast/usrs/ee/code-swe-data/runtime/pydeps-miniswe-upstream-a85bf5e-fixed-20260610T2238}"
+  if [ ! -d "$PYDEPS_OVERLAY/minisweagent" ]; then
+    echo "Missing mini-swe-agent overlay at PYDEPS_OVERLAY=$PYDEPS_OVERLAY" >&2
+    exit 1
+  fi
+  export PYTHONPATH="$PYDEPS_OVERLAY${PYTHONPATH:+:$PYTHONPATH}"
   export EXTRA_BODY_TOP_P="${EXTRA_BODY_TOP_P:-0.95}"
   export EXTRA_BODY_TOP_K="${EXTRA_BODY_TOP_K:-20}"
   export EXTRA_BODY_MIN_P="${EXTRA_BODY_MIN_P:-0}"
@@ -285,6 +290,13 @@ if [ "${ENABLE_STRICT_MSWEA_GUARDS:-false}" = "true" ]; then
   export MSWEA_VALIDATE_SMOKE="${MSWEA_VALIDATE_SMOKE:-true}"
   export MSWEA_VALIDATE_SMOKE_TIMEOUT="${MSWEA_VALIDATE_SMOKE_TIMEOUT:-120}"
   echo "Enabled strict mini-swe-agent eval guards via ENABLE_STRICT_MSWEA_GUARDS=true"
+  "$PYTHON" - <<'PY'
+import minisweagent.run.benchmarks.utils.common as common
+
+if not hasattr(common.ProgressTrackingAgent, "_validate_submission_from_env"):
+    raise SystemExit(f"strict mini-swe-agent overlay not active: {common.__file__}")
+print(f"Using strict mini-swe-agent overlay: {common.__file__}")
+PY
 fi
 if [ -n "${EXTRA_BODY_JSON:-}" ]; then
   EXTRA_BODY="$EXTRA_BODY_JSON"
